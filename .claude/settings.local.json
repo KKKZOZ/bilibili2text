@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python groq.py:*)",
+      "Bash(ffmpeg:*)",
+      "Bash(ls:*)",
+      "Bash(just to-mp3:*)",
+      "Bash(just clip:*)",
+      "Bash(ffprobe:*)",
+      "WebSearch",
+      "WebFetch(domain:help.aliyun.com)",
+      "Bash(python convert_to_md.py:*)",
+      "Bash(python:*)",
+      "Bash(uv pip install:*)",
+      "Bash(b2t:*)"
+    ]
+  }
+}

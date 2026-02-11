@@ -1,0 +1,19 @@
+[project]
+name = "bilibili-to-text"
+version = "0.1.0"
+description = "Bilibili 视频转文字工具：下载音频 → 转录 → Markdown → LLM 总结"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "alibabacloud-oss-v2>=1.2.4",
+    "dashscope>=1.25.12",
+    "openai>=2.17.0",
+    "requests>=2.31.0",
+    "yutto>=2.1.1",
+]
+
+[tool.setuptools.packages.find]
+include = ["b2t*"]
+
+[project.scripts]
+b2t = "b2t.cli:main"

@@ -1,0 +1,23 @@
+[download]
+audio_quality = "30216"
+output_dir = "./transcriptions"
+
+[oss]
+region = "cn-beijing"
+bucket = "your-bucket-name"
+access_key_id = "your-access-key-id"
+access_key_secret = "your-access-key-secret"
+
+[stt]
+api_key = "your-dashscope-api-key"
+model = "qwen3-asr-flash-filetrans"
+language = "zh"
+base_url = "https://dashscope.aliyuncs.com/api/v1"
+
+[polish]
+api_key = "your-openrouter-api-key"
+base_url = "https://openrouter.ai/api/v1"
+model = "moonshotai/kimi-k2.5"
+
+[converter]
+min_length = 60
