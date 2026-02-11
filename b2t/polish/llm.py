@@ -5,7 +5,7 @@ from pathlib import Path
 
 from openai import OpenAI
 
-from b2t.config import PolishConfig
+from b2t.config import PolishConfig, SummaryPresetsConfig, resolve_summary_preset_name
 
 logger = logging.getLogger(__name__)
 
@@ -13,15 +13,16 @@ logger = logging.getLogger(__name__)
 def summarize(
     md_path: Path | str,
     config: PolishConfig,
-    prompt_template: str | None = None,
+    summary_presets: SummaryPresetsConfig,
+    preset: str | None = None,
 ) -> Path:
     """使用 LLM 对 Markdown 文件进行总结
 
     Args:
         md_path: Markdown 文件路径
         config: 润色配置
-        prompt_template: 自定义提示词模板，须包含 {content} 占位符。
-                         为 None 时使用配置中的默认模板。
+        summary_presets: 总结 preset 配置
+        preset: 可选，覆盖默认 preset 名称
 
     Returns:
         生成的总结文件路径
@@ -32,10 +33,15 @@ def summarize(
     md_path = Path(md_path)
     content = md_path.read_text(encoding="utf-8")
 
-    template = prompt_template or config.prompt_template
+    preset_name = resolve_summary_preset_name(
+        polish=config,
+        summary_presets=summary_presets,
+        override=preset,
+    )
+    template = summary_presets.presets[preset_name].prompt_template
     prompt = template.format(content=content)
 
-    logger.info("正在使用 %s 模型进行总结...", config.model)
+    logger.info("正在使用 %s 模型进行总结（preset: %s）...", config.model, preset_name)
 
     client = OpenAI(
         base_url=config.base_url,

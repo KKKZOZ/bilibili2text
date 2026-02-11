@@ -16,6 +16,76 @@ def ms_to_mmss(milliseconds: int) -> str:
     return f"{minutes:02d}:{seconds:02d}"
 
 
+def _extract_timed_sentences(data: dict) -> list[tuple[int, str]]:
+    """从不同 STT Provider 的 JSON 中提取 (毫秒时间戳, 文本) 列表。"""
+    timed_sentences: list[tuple[int, str]] = []
+
+    # Qwen 格式: transcripts[].sentences[]
+    transcripts = data.get("transcripts", [])
+    if isinstance(transcripts, list) and transcripts:
+        for transcript in transcripts:
+            if not isinstance(transcript, dict):
+                continue
+            sentences = transcript.get("sentences", [])
+            if not isinstance(sentences, list):
+                continue
+
+            for sentence in sentences:
+                if not isinstance(sentence, dict):
+                    continue
+                begin_time = int(sentence.get("begin_time", 0))
+                text = str(sentence.get("text", "")).strip()
+                if text:
+                    timed_sentences.append((begin_time, text))
+        return timed_sentences
+
+    # Groq 格式: segments[]
+    segments = data.get("segments", [])
+    if isinstance(segments, list) and segments:
+        for segment in segments:
+            if not isinstance(segment, dict):
+                continue
+            start_seconds = float(segment.get("start", 0))
+            text = str(segment.get("text", "")).strip()
+            if text:
+                timed_sentences.append((int(start_seconds * 1000), text))
+        return timed_sentences
+
+    # 兜底：整段文本
+    text = str(data.get("text", "")).strip()
+    if text:
+        timed_sentences.append((0, text))
+
+    return timed_sentences
+
+
+def _join_paragraph_texts(parts: list[str]) -> str:
+    """拼接段落文本，避免不同 provider 输出被无空格粘连。"""
+    if not parts:
+        return ""
+
+    merged = parts[0]
+    for part in parts[1:]:
+        if not part:
+            continue
+
+        if not merged:
+            merged = part
+            continue
+
+        if merged[-1].isspace() or part[0].isspace():
+            merged += part
+            continue
+
+        if merged[-1] in "，。！？,.!?;；:：、)]】}”\"'":
+            merged += part
+            continue
+
+        merged += " " + part
+
+    return merged
+
+
 def convert_json_to_md(
     json_path: Path | str,
     output_path: Path | str | None = None,
@@ -59,43 +129,31 @@ def convert_json_to_md(
     current_time = datetime.now().strftime("%Y年%m月%d日 %H:%M")
     lines.append(f"{current_time}")
 
-    # 处理转录内容
-    transcripts = data.get("transcripts", [])
+    # 处理转录内容（兼容 Qwen 与 Groq）
+    timed_sentences = _extract_timed_sentences(data)
 
-    for transcript in transcripts:
-        sentences = transcript.get("sentences", [])
-
-        if not sentences:
+    i = 0
+    while i < len(timed_sentences):
+        start_time, text = timed_sentences[i]
+        if not text:
+            i += 1
             continue
 
-        i = 0
-        while i < len(sentences):
-            sentence = sentences[i]
-            begin_time = sentence.get("begin_time", 0)
-            text = sentence.get("text", "").strip()
+        paragraph_texts = [text]
 
-            if not text:
-                i += 1
-                continue
-
-            paragraph_texts = [text]
-            start_time = begin_time
-
-            while len(text) <= min_length and i + 1 < len(sentences):
-                i += 1
-                next_sentence = sentences[i]
-                next_text = next_sentence.get("text", "").strip()
-
-                if next_text:
-                    paragraph_texts.append(next_text)
-                    text = next_text
-
-            time_str = ms_to_mmss(start_time)
-            lines.append(f"发言人 {time_str}")
-            lines.append("".join(paragraph_texts))
-            lines.append("")
-
+        while len(text) <= min_length and i + 1 < len(timed_sentences):
             i += 1
+            _, next_text = timed_sentences[i]
+            if next_text:
+                paragraph_texts.append(next_text)
+                text = next_text
+
+        time_str = ms_to_mmss(start_time)
+        lines.append(f"发言人 {time_str}")
+        lines.append(_join_paragraph_texts(paragraph_texts))
+        lines.append("")
+
+        i += 1
 
     output_path.write_text("\n".join(lines), encoding="utf-8")
 

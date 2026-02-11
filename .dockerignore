@@ -1,0 +1,17 @@
+.git
+.gitignore
+.DS_Store
+.claude
+.venv
+__pycache__/
+*.pyc
+
+web-ui/frontend/node_modules
+web-ui/frontend/dist
+
+test-audio
+transcriptions
+
+config.toml
+scripts.md
+bilibili_to_text.egg-info

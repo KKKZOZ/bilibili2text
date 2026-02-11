@@ -9,15 +9,30 @@ access_key_id = "your-access-key-id"
 access_key_secret = "your-access-key-secret"
 
 [stt]
-api_key = "your-dashscope-api-key"
-model = "qwen3-asr-flash-filetrans"
+# 可选: "qwen" 或 "groq"
+provider = "qwen"
 language = "zh"
-base_url = "https://dashscope.aliyuncs.com/api/v1"
+
+# Qwen (DashScope)
+qwen_api_key = "your-dashscope-api-key"
+qwen_model = "qwen3-asr-flash-filetrans"
+qwen_base_url = "https://dashscope.aliyuncs.com/api/v1"
+
+# Groq
+# groq_api_key 可从 https://console.groq.com/keys 获取
+groq_api_key = "your-groq-api-key"
+groq_model = "whisper-large-v3-turbo"
+groq_base_url = "https://api.groq.com/openai/v1"
+groq_chunk_length = 1800
+groq_overlap = 10
+groq_bitrate = "64k"
 
 [polish]
 api_key = "your-openrouter-api-key"
 base_url = "https://openrouter.ai/api/v1"
 model = "moonshotai/kimi-k2.5"
+preset = "timeline_merge"
+presets_file = "summary_presets.toml"
 
 [converter]
 min_length = 60

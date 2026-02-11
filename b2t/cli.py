@@ -22,6 +22,11 @@ def main() -> None:
         "--no-summary", action="store_true", help="跳过 LLM 总结步骤"
     )
     parser.add_argument(
+        "--summary-preset",
+        default=None,
+        help="指定总结 preset 名称（默认使用配置中的 preset）",
+    )
+    parser.add_argument(
         "-v", "--verbose", action="store_true", help="显示详细日志"
     )
 
@@ -46,6 +51,7 @@ def main() -> None:
             args.url,
             config,
             skip_summary=args.no_summary,
+            summary_preset=args.summary_preset,
             output_dir=args.output,
         )
 

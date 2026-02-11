@@ -40,7 +40,7 @@ class OSSManager:
         file_path = Path(file_path)
         object_key = f"temp-audio/{uuid.uuid4()}-{file_path.name}"
 
-        logger.info("上传文件到 OSS: %s", object_key)
+        logger.info("上传文件到 OSS: temp-audio/[REDACTED_OBJECT_KEY]")
         result = self._client.put_object_from_file(
             oss.PutObjectRequest(
                 bucket=self._bucket,
@@ -56,7 +56,7 @@ class OSSManager:
 
     def delete(self, object_key: str) -> None:
         """从 OSS 删除文件"""
-        logger.info("删除 OSS 文件: %s", object_key)
+        logger.info("删除 OSS 文件: temp-audio/[REDACTED_OBJECT_KEY]")
         result = self._client.delete_object(
             oss.DeleteObjectRequest(bucket=self._bucket, key=object_key)
         )

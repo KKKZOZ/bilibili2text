@@ -2,9 +2,7 @@ from groq import Groq, RateLimitError
 from pydub import AudioSegment
 import json
 from pathlib import Path
-from datetime import datetime
 import time
-import subprocess
 import os
 import tempfile
 import re
@@ -24,69 +22,7 @@ try:
 except ImportError:
     PDF_AVAILABLE = False
 
-api_key = "your_groq_api_key_here"  # Replace with your actual Groq API key or set via environment variable
-
-
-def preprocess_audio(input_path: Path) -> Path:
-    """
-    Preprocess audio file to 16kHz mono FLAC using ffmpeg.
-    FLAC provides lossless compression for faster upload times.
-    """
-    if not input_path.exists():
-        raise FileNotFoundError(f"Input file not found: {input_path}")
-
-    # Get original file size
-    original_size = input_path.stat().st_size
-    original_size_mb = original_size / (1024 * 1024)
-
-    with tempfile.NamedTemporaryFile(suffix=".flac", delete=False) as temp_file:
-        output_path = Path(temp_file.name)
-
-    print("Converting audio to 16kHz mono FLAC...")
-    try:
-        subprocess.run(
-            [
-                "ffmpeg",
-                "-hide_banner",
-                "-loglevel",
-                "error",
-                "-i",
-                input_path,
-                "-ar",
-                "16000",
-                "-ac",
-                "1",
-                "-c:a",
-                "flac",
-                "-y",
-                output_path,
-            ],
-            check=True,
-        )
-
-        # Get processed file size
-        processed_size = output_path.stat().st_size
-        processed_size_mb = processed_size / (1024 * 1024)
-
-        # Print file sizes
-        print(
-            f"Original file size: {original_size_mb:.2f} MB ({original_size:,} bytes)"
-        )
-        print(
-            f"Processed file size: {processed_size_mb:.2f} MB ({processed_size:,} bytes)"
-        )
-
-        # Check if processed file is larger than original
-        assert processed_size <= original_size, (
-            f"Processed file ({processed_size_mb:.2f} MB) is larger than original "
-            f"({original_size_mb:.2f} MB). This should not happen with FLAC compression."
-        )
-
-        return output_path
-    # We'll raise an error if our FFmpeg conversion fails
-    except subprocess.CalledProcessError as e:
-        output_path.unlink(missing_ok=True)
-        raise RuntimeError(f"FFmpeg conversion failed: {e.stderr}")
+api_key = "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"
 
 
 def transcribe_single_chunk(
@@ -812,7 +748,6 @@ def transcribe_audio_in_chunks(
     audio_path: Path,
     chunk_length: int = 600,
     overlap: int = 10,
-    preprocess: bool = False,
 ) -> dict:
     """
     Transcribe audio in chunks with overlap with Whisper via Groq API.
@@ -821,7 +756,6 @@ def transcribe_audio_in_chunks(
         audio_path: Path to audio file
         chunk_length: Length of each chunk in seconds
         overlap: Overlap between chunks in seconds
-        preprocess: Whether to preprocess audio to 16kHz mono FLAC (default: False)
 
     Returns:
         dict: Containing transcription results
@@ -838,70 +772,52 @@ def transcribe_audio_in_chunks(
     # Make sure your Groq API key is configured. If you don't have one, you can get one at https://console.groq.com/keys!
     client = Groq(api_key=api_key, max_retries=0)
 
-    processed_path = None
+    # Always use the original audio file.
+    audio_file_path = audio_path
+    audio_format = audio_path.suffix.lstrip(".")
     try:
-        # Conditionally preprocess audio based on flag
-        if preprocess:
-            print("Preprocessing enabled: converting to 16kHz mono FLAC...")
-            processed_path = preprocess_audio(audio_path)
-            audio_file_path = processed_path
-            audio_format = "flac"
-        else:
-            print("Using original audio file without preprocessing...")
-            audio_file_path = audio_path
-            # Try to detect format from file extension
-            audio_format = audio_path.suffix.lstrip(".")
+        audio = AudioSegment.from_file(audio_file_path, format=audio_format)
+    except Exception as e:
+        raise RuntimeError(f"Failed to load audio: {str(e)}")
 
-        try:
-            audio = AudioSegment.from_file(audio_file_path, format=audio_format)
-        except Exception as e:
-            raise RuntimeError(f"Failed to load audio: {str(e)}")
+    duration = len(audio)
+    print(f"Audio duration: {duration / 1000:.2f}s")
 
-        duration = len(audio)
-        print(f"Audio duration: {duration / 1000:.2f}s")
+    # Calculate # of chunks
+    chunk_ms = chunk_length * 1000
+    overlap_ms = overlap * 1000
+    total_chunks = (duration // (chunk_ms - overlap_ms)) + 1
+    print(f"Processing {total_chunks} chunks...")
 
-        # Calculate # of chunks
-        chunk_ms = chunk_length * 1000
-        overlap_ms = overlap * 1000
-        total_chunks = (duration // (chunk_ms - overlap_ms)) + 1
-        print(f"Processing {total_chunks} chunks...")
+    results = []
+    total_transcription_time = 0
+    total_export_time = 0
 
-        results = []
-        total_transcription_time = 0
-        total_export_time = 0
+    # Loop through each chunk, extract current chunk from audio, transcribe
+    for i in range(total_chunks):
+        start = i * (chunk_ms - overlap_ms)
+        end = min(start + chunk_ms, duration)
 
-        # Loop through each chunk, extract current chunk from audio, transcribe
-        for i in range(total_chunks):
-            start = i * (chunk_ms - overlap_ms)
-            end = min(start + chunk_ms, duration)
+        print(f"\nProcessing chunk {i + 1}/{total_chunks}")
+        print(f"Time range: {start / 1000:.1f}s - {end / 1000:.1f}s")
 
-            print(f"\nProcessing chunk {i + 1}/{total_chunks}")
-            print(f"Time range: {start / 1000:.1f}s - {end / 1000:.1f}s")
-
-            chunk = audio[start:end]
-            result, chunk_api_time, chunk_export_time = transcribe_single_chunk(
-                client, chunk, i + 1, total_chunks
-            )
-            total_transcription_time += chunk_api_time
-            total_export_time += chunk_export_time
-            results.append((result, start))
-
-        final_result = merge_transcripts(results)
-        save_results(final_result, audio_path)
-
-        print(f"\n--- Timing Summary ---")
-        print(f"Total export time: {total_export_time:.2f}s")
-        print(f"Total Groq API time: {total_transcription_time:.2f}s")
-        print(
-            f"Total processing time: {total_export_time + total_transcription_time:.2f}s"
+        chunk = audio[start:end]
+        result, chunk_api_time, chunk_export_time = transcribe_single_chunk(
+            client, chunk, i + 1, total_chunks
         )
+        total_transcription_time += chunk_api_time
+        total_export_time += chunk_export_time
+        results.append((result, start))
 
-        return final_result
+    final_result = merge_transcripts(results)
+    save_results(final_result, audio_path)
 
-    # Clean up temp files regardless of successful creation (only if preprocessing was used)
-    finally:
-        if preprocess and processed_path:
-            Path(processed_path).unlink(missing_ok=True)
+    print(f"\n--- Timing Summary ---")
+    print(f"Total export time: {total_export_time:.2f}s")
+    print(f"Total Groq API time: {total_transcription_time:.2f}s")
+    print(f"Total processing time: {total_export_time + total_transcription_time:.2f}s")
+
+    return final_result
 
 
 if __name__ == "__main__":
@@ -912,12 +828,6 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "audio_file", type=str, help="Path to the audio file to transcribe"
-    )
-    parser.add_argument(
-        "--preprocess",
-        "-p",
-        action="store_true",
-        help="Preprocess audio to 16kHz mono FLAC before transcription (default: False)",
     )
     parser.add_argument(
         "--chunk-length",
@@ -944,5 +854,4 @@ if __name__ == "__main__":
         audio_path,
         chunk_length=args.chunk_length,
         overlap=args.overlap,
-        preprocess=args.preprocess,
     )
