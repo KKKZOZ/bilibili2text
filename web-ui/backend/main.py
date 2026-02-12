@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import logging
 from pathlib import Path
 import re
+import sys
 from threading import Lock, Thread, get_ident
 import time
 from typing import Literal
@@ -15,7 +16,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from b2t.config import AppConfig, load_config, resolve_summary_preset_name
+# Ensure `b2t` imports work when starting uvicorn from `web-ui/`.
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+_ROOT_CONFIG_PATH = _PROJECT_ROOT / "config.toml"
+
+from b2t.config import (
+    AppConfig,
+    load_config,
+    resolve_summarize_model_profile,
+    resolve_summary_preset_name,
+)
 from b2t.pipeline import run_pipeline
 
 LOG_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
@@ -191,6 +203,10 @@ class ProcessRequest(BaseModel):
         default=None,
         description="总结 preset 名称",
     )
+    summary_profile: str | None = Field(
+        default=None,
+        description="总结模型 profile 名称",
+    )
 
 
 class ProcessStartResponse(BaseModel):
@@ -205,9 +221,16 @@ class ProcessStatusResponse(BaseModel):
     progress: int = Field(ge=0, le=100)
     download_url: str
     filename: str | None = None
+    txt_download_url: str | None = None
+    txt_filename: str | None = None
     summary_download_url: str | None = None
     summary_filename: str | None = None
+    summary_txt_download_url: str | None = None
+    summary_txt_filename: str | None = None
+    summary_table_pdf_download_url: str | None = None
+    summary_table_pdf_filename: str | None = None
     summary_preset: str | None = None
+    summary_profile: str | None = None
     error: str | None = None
     logs: list[str] = Field(default_factory=list)
     stage_durations: dict[str, str] = Field(default_factory=dict)
@@ -224,6 +247,18 @@ class SummaryPresetListResponse(BaseModel):
     default_preset: str
     selected_preset: str
     presets: list[SummaryPresetItemResponse]
+
+
+class SummaryProfileItemResponse(BaseModel):
+    name: str
+    model: str
+    endpoint: str
+
+
+class SummaryProfileListResponse(BaseModel):
+    default_profile: str
+    selected_profile: str
+    profiles: list[SummaryProfileItemResponse]
 
 
 app = FastAPI(title="bilibili-to-text API", version="0.1.0")
@@ -248,7 +283,7 @@ _job_lock = Lock()
 _job_limit = 200
 
 try:
-    _app_config: AppConfig | None = load_config()
+    _app_config: AppConfig | None = load_config(_ROOT_CONFIG_PATH)
 except FileNotFoundError:
     _app_config = None
 
@@ -278,6 +313,7 @@ def _create_job(
     *,
     skip_summary: bool,
     summary_preset: str | None,
+    summary_profile: str | None,
 ) -> dict[str, JobValue]:
     now = _utc_iso()
     job_id = uuid4().hex
@@ -289,13 +325,20 @@ def _create_job(
         "progress": 0,
         "download_url": "",
         "filename": None,
+        "txt_download_url": None,
+        "txt_filename": None,
         "summary_download_url": None,
         "summary_filename": None,
+        "summary_txt_download_url": None,
+        "summary_txt_filename": None,
+        "summary_table_pdf_download_url": None,
+        "summary_table_pdf_filename": None,
         "error": None,
         "created_at": now,
         "updated_at": now,
         "skip_summary": skip_summary,
         "summary_preset": summary_preset,
+        "summary_profile": summary_profile,
         "logs": [],
         "stage_started_monotonic": time.monotonic(),
         "stage_durations_seconds": {key: 0 for key in STAGE_KEYS},
@@ -320,8 +363,14 @@ def _update_job(
     error: str | None = None,
     download_url: str | None = None,
     filename: str | None = None,
+    txt_download_url: str | None = None,
+    txt_filename: str | None = None,
     summary_download_url: str | None = None,
     summary_filename: str | None = None,
+    summary_txt_download_url: str | None = None,
+    summary_txt_filename: str | None = None,
+    summary_table_pdf_download_url: str | None = None,
+    summary_table_pdf_filename: str | None = None,
 ) -> None:
     with _job_lock:
         job = _job_index.get(job_id)
@@ -373,10 +422,22 @@ def _update_job(
             job["download_url"] = download_url
         if filename is not None:
             job["filename"] = filename
+        if txt_download_url is not None:
+            job["txt_download_url"] = txt_download_url
+        if txt_filename is not None:
+            job["txt_filename"] = txt_filename
         if summary_download_url is not None:
             job["summary_download_url"] = summary_download_url
         if summary_filename is not None:
             job["summary_filename"] = summary_filename
+        if summary_txt_download_url is not None:
+            job["summary_txt_download_url"] = summary_txt_download_url
+        if summary_txt_filename is not None:
+            job["summary_txt_filename"] = summary_txt_filename
+        if summary_table_pdf_download_url is not None:
+            job["summary_table_pdf_download_url"] = summary_table_pdf_download_url
+        if summary_table_pdf_filename is not None:
+            job["summary_table_pdf_filename"] = summary_table_pdf_filename
 
         job["updated_at"] = _utc_iso()
 
@@ -418,7 +479,7 @@ def _get_app_config() -> AppConfig:
     if _app_config is not None:
         return _app_config
 
-    _app_config = load_config()
+    _app_config = load_config(_ROOT_CONFIG_PATH)
     return _app_config
 
 
@@ -428,21 +489,23 @@ def _run_job(
     url: str,
     skip_summary: bool,
     summary_preset: str | None,
+    summary_profile: str | None,
 ) -> None:
     try:
         config = _get_app_config()
-    except FileNotFoundError:
+    except FileNotFoundError as exc:
+        error_message = str(exc) or "配置文件或总结 preset 配置文件不存在"
         _update_job(
             job_id,
             status="failed",
             stage="failed",
             stage_label="处理失败",
             progress=0,
-            error="配置文件不存在，请先在项目根目录创建 config.toml",
+            error=error_message,
         )
         _append_job_log(
             job_id,
-            f"{datetime.now().strftime(JOB_LOG_DATE_FORMAT)} [ERROR] b2t.pipeline: 配置文件不存在，请先在项目根目录创建 config.toml",
+            f"{datetime.now().strftime(JOB_LOG_DATE_FORMAT)} [ERROR] b2t.pipeline: {_redact_text(error_message)}",
         )
         return
 
@@ -465,6 +528,7 @@ def _run_job(
                 config,
                 skip_summary=skip_summary,
                 summary_preset=summary_preset,
+                summary_profile=summary_profile,
                 progress_callback=lambda stage, label, progress: _update_job(
                     job_id,
                     status="running",
@@ -503,14 +567,57 @@ def _run_job(
             return
 
         download_id = _store_download(md_path)
+        txt_path = results.get("text")
+        if txt_path is None:
+            _update_job(
+                job_id,
+                status="failed",
+                stage="failed",
+                stage_label="处理失败",
+                error="未生成 TXT 文件",
+            )
+            _append_job_log(
+                job_id,
+                f"{datetime.now().strftime(JOB_LOG_DATE_FORMAT)} [ERROR] b2t.pipeline: 未生成 TXT 文件",
+            )
+            return
+        txt_download_id = _store_download(txt_path)
 
         summary_download_url: str | None = None
         summary_filename: str | None = None
+        summary_txt_download_url: str | None = None
+        summary_txt_filename: str | None = None
+        summary_table_pdf_download_url: str | None = None
+        summary_table_pdf_filename: str | None = None
         summary_path = results.get("summary")
         if summary_path is not None:
             summary_download_id = _store_download(summary_path)
             summary_download_url = f"/api/download/{summary_download_id}"
             summary_filename = summary_path.name
+            summary_txt_path = results.get("summary_text")
+            if summary_txt_path is None:
+                _update_job(
+                    job_id,
+                    status="failed",
+                    stage="failed",
+                    stage_label="处理失败",
+                    error="未生成总结 TXT 文件",
+                )
+                _append_job_log(
+                    job_id,
+                    f"{datetime.now().strftime(JOB_LOG_DATE_FORMAT)} [ERROR] b2t.pipeline: 未生成总结 TXT 文件",
+                )
+                return
+            summary_txt_download_id = _store_download(summary_txt_path)
+            summary_txt_download_url = f"/api/download/{summary_txt_download_id}"
+            summary_txt_filename = summary_txt_path.name
+            summary_table_pdf_path = results.get("summary_table_pdf")
+            if summary_table_pdf_path is not None:
+                summary_table_pdf_download_id = _store_download(summary_table_pdf_path)
+                summary_table_pdf_download_url = (
+                    f"/api/download/{summary_table_pdf_download_id}"
+                )
+                summary_table_pdf_filename = summary_table_pdf_path.name
 
         _update_job(
             job_id,
@@ -520,8 +627,14 @@ def _run_job(
             progress=100,
             download_url=f"/api/download/{download_id}",
             filename=md_path.name,
+            txt_download_url=f"/api/download/{txt_download_id}",
+            txt_filename=txt_path.name,
             summary_download_url=summary_download_url,
             summary_filename=summary_filename,
+            summary_txt_download_url=summary_txt_download_url,
+            summary_txt_filename=summary_txt_filename,
+            summary_table_pdf_download_url=summary_table_pdf_download_url,
+            summary_table_pdf_filename=summary_table_pdf_filename,
             error=None,
         )
     finally:
@@ -544,10 +657,16 @@ def process_video(payload: ProcessRequest) -> ProcessStartResponse:
     )
     if summary_preset == "":
         summary_preset = None
+    summary_profile = (
+        payload.summary_profile.strip() if payload.summary_profile else None
+    )
+    if summary_profile == "":
+        summary_profile = None
 
     job = _create_job(
         skip_summary=payload.skip_summary,
         summary_preset=summary_preset,
+        summary_profile=summary_profile,
     )
     Thread(
         target=_run_job,
@@ -556,6 +675,7 @@ def process_video(payload: ProcessRequest) -> ProcessStartResponse:
             "url": payload.url.strip(),
             "skip_summary": payload.skip_summary,
             "summary_preset": summary_preset,
+            "summary_profile": summary_profile,
         },
         daemon=True,
     ).start()
@@ -577,14 +697,35 @@ def process_status(job_id: str) -> ProcessStatusResponse:
         progress=int(job["progress"]),
         download_url=str(job["download_url"]),
         filename=job["filename"] if isinstance(job["filename"], str) else None,
+        txt_download_url=job["txt_download_url"]
+        if isinstance(job["txt_download_url"], str)
+        else None,
+        txt_filename=job["txt_filename"]
+        if isinstance(job["txt_filename"], str)
+        else None,
         summary_download_url=job["summary_download_url"]
         if isinstance(job["summary_download_url"], str)
         else None,
         summary_filename=job["summary_filename"]
         if isinstance(job["summary_filename"], str)
         else None,
+        summary_txt_download_url=job["summary_txt_download_url"]
+        if isinstance(job["summary_txt_download_url"], str)
+        else None,
+        summary_txt_filename=job["summary_txt_filename"]
+        if isinstance(job["summary_txt_filename"], str)
+        else None,
+        summary_table_pdf_download_url=job["summary_table_pdf_download_url"]
+        if isinstance(job["summary_table_pdf_download_url"], str)
+        else None,
+        summary_table_pdf_filename=job["summary_table_pdf_filename"]
+        if isinstance(job["summary_table_pdf_filename"], str)
+        else None,
         summary_preset=job["summary_preset"]
         if isinstance(job["summary_preset"], str)
+        else None,
+        summary_profile=job["summary_profile"]
+        if isinstance(job["summary_profile"], str)
         else None,
         error=job["error"] if isinstance(job["error"], str) else None,
         logs=job["logs"] if isinstance(job["logs"], list) else [],
@@ -600,17 +741,17 @@ def process_status(job_id: str) -> ProcessStatusResponse:
 def summary_presets() -> SummaryPresetListResponse:
     try:
         config = _get_app_config()
-    except FileNotFoundError:
+    except FileNotFoundError as exc:
         raise HTTPException(
             status_code=503,
-            detail="配置文件不存在，请先在项目根目录创建 config.toml",
+            detail=str(exc) or "配置文件或总结 preset 配置文件不存在",
         ) from None
 
     try:
         selected = resolve_summary_preset_name(
-            polish=config.polish,
+            summarize=config.summarize,
             summary_presets=config.summary_presets,
-            override=config.polish.preset,
+            override=config.summarize.preset,
         )
     except ValueError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -626,19 +767,60 @@ def summary_presets() -> SummaryPresetListResponse:
     )
 
 
+@app.get("/api/summarize-profiles", response_model=SummaryProfileListResponse)
+def summarize_profiles() -> SummaryProfileListResponse:
+    try:
+        config = _get_app_config()
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=str(exc) or "配置文件或总结 preset 配置文件不存在",
+        ) from None
+
+    try:
+        resolve_summarize_model_profile(config.summarize)
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    profiles = [
+        SummaryProfileItemResponse(
+            name=name,
+            model=profile.model,
+            endpoint=profile.endpoint,
+        )
+        for name, profile in config.summarize.profiles.items()
+    ]
+    return SummaryProfileListResponse(
+        default_profile=config.summarize.profile,
+        selected_profile=config.summarize.profile,
+        profiles=profiles,
+    )
+
+
+def _media_type_for_file(path: Path) -> str:
+    suffix = path.suffix.lower()
+    if suffix in {".md", ".markdown"}:
+        return "text/markdown; charset=utf-8"
+    if suffix == ".txt":
+        return "text/plain; charset=utf-8"
+    if suffix == ".pdf":
+        return "application/pdf"
+    return "application/octet-stream"
+
+
 @app.get("/api/download/{download_id}")
 def download_markdown(download_id: str) -> FileResponse:
     with _download_lock:
-        md_path = _download_index.get(download_id)
+        file_path = _download_index.get(download_id)
 
-    if md_path is None:
+    if file_path is None:
         raise HTTPException(status_code=404, detail="下载链接不存在或已过期")
 
-    if not md_path.exists() or not md_path.is_file():
+    if not file_path.exists() or not file_path.is_file():
         raise HTTPException(status_code=410, detail="文件不存在，请重新生成")
 
     return FileResponse(
-        path=md_path,
-        media_type="text/markdown; charset=utf-8",
-        filename=md_path.name,
+        path=file_path,
+        media_type=_media_type_for_file(file_path),
+        filename=file_path.name,
     )

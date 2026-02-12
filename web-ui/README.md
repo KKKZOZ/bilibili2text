@@ -17,8 +17,14 @@
 - `provider = "qwen"`：DashScope + OSS 上传流程
 - `provider = "groq"`：Groq 本地分块转录流程
 
-`[polish]` 可指定总结 preset：
+`[summarize]` 可指定总结模型与 preset：
 
+- `profile`：当前启用的模型配置名（对应 `[summarize.profiles.<name>]`，默认 `dashscope` 即 `qwen3-max`）
+- `profiles.<name>.model`：模型名称（OpenAI compatible）
+- `profiles.<name>.endpoint`：接口地址（OpenAI compatible endpoint）
+- `profiles.<name>.api_key`：对应接口 key
+- `profiles.<name>.providers`：可选，仅 OpenRouter 生效。支持 1 个或多个 provider 名称，会透传为 `provider.order`
+- `enable_thinking`：是否开启思考模式（默认 `true`，通过 `extra_body.enable_thinking` 透传）
 - `preset`：默认使用的总结 preset 名称
 - `presets_file`：总结 preset TOML 文件路径（默认 `summary_presets.toml`）
 
@@ -29,6 +35,8 @@
 ```bash
 uv sync
 ```
+
+确保本机已安装 `pandoc`（用于将 Markdown 转换为 TXT）。
 
 然后在 `web-ui` 目录下执行：
 
@@ -41,7 +49,8 @@ uv run uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
 - `POST /api/process`：提交 bilibili URL，返回 `job_id`
 - `GET /api/process/{job_id}`：查询任务阶段与进度
 - `GET /api/summary-presets`：获取可用总结 presets
-- `GET /api/download/{download_id}`：下载生成的 Markdown
+- `GET /api/summarize-profiles`：获取可用总结模型配置
+- `GET /api/download/{download_id}`：下载生成文件（Markdown / TXT）
 
 ### 3. 启动前端（Vue + Bun）
 
@@ -58,7 +67,7 @@ bun run dev
 
 1. 在前端输入 bilibili 视频 URL，按需选择是否启用总结与总结 preset，然后提交。
 2. 前端自动轮询并展示当前阶段（下载 / 转录 / 总结等）。
-3. 点击下载按钮获取原文或总结 Markdown。
+3. 点击下载按钮获取原文/总结的 Markdown 或 TXT。
 
 ### 5. Docker 打包与运行（前后端同容器）
 
@@ -93,7 +102,6 @@ docker run --rm \
 - `FRONTEND_PORT`：前端服务端口（默认 `6010`）
 - `BACKEND_HOST`：后端监听地址（默认 `127.0.0.1`）
 - `BACKEND_PORT`：后端监听端口（默认 `8000`）
-- `B2T_CONFIG`：配置文件路径（默认 `/app/config.toml`）
 
 示例（改前端端口到 `8080`）：
 

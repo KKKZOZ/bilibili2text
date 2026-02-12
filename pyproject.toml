@@ -11,6 +11,7 @@ dependencies = [
     "groq>=1.0.0",
     "openai>=2.17.0",
     "pydub>=0.25.1",
+    "reportlab>=4.4.9",
     "requests>=2.31.0",
     "uvicorn>=0.35.0",
     "yutto>=2.1.1",
@@ -21,3 +22,4 @@ include = ["b2t*"]
 
 [project.scripts]
 b2t = "b2t.cli:main"
+md-table-pdf = "b2t.converter.md_table_to_pdf:main"

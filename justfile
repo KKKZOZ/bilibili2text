@@ -55,3 +55,90 @@ to-mp3 file:
     echo "Converting to MP3 (mono, ${samplerate}Hz, ${bitrate_k}kb/s)..."; \
     ffmpeg -hide_banner -y -i "$in" -vn -ac 1 -ar "$samplerate" -c:a libmp3lame -b:a "${bitrate_k}k" "$out"; \
     echo "OK -> $out"
+
+# Start or stop web backend/frontend services.
+# Usage:
+#   just web on
+#   just web off
+web action:
+    @cd "{{invocation_directory()}}"; \
+    action="{{action}}"; \
+    frontend_port=6010; \
+    backend_port=8000; \
+    frontend_pid="$(lsof -tiTCP:${frontend_port} -sTCP:LISTEN || true)"; \
+    backend_pid="$(lsof -tiTCP:${backend_port} -sTCP:LISTEN || true)"; \
+    case "$action" in \
+      on) \
+        if [[ -n "$frontend_pid" && -n "$backend_pid" ]]; then \
+          echo "web is running (frontend:${frontend_port} backend:${backend_port})"; \
+          exit 0; \
+        fi; \
+        mkdir -p web-ui/logs; \
+        if [[ -z "$backend_pid" ]]; then \
+          echo "Starting backend on :${backend_port} ..."; \
+          if [[ -x ".venv/bin/uvicorn" ]]; then \
+            nohup env PYTHONPATH="$PWD" .venv/bin/uvicorn backend.main:app --app-dir web-ui --host 0.0.0.0 --port "${backend_port}" > web-ui/logs/backend.log 2>&1 & \
+          elif command -v uv >/dev/null 2>&1; then \
+            nohup env PYTHONPATH="$PWD" uv run uvicorn backend.main:app --app-dir web-ui --host 0.0.0.0 --port "${backend_port}" > web-ui/logs/backend.log 2>&1 & \
+          else \
+            echo "Cannot find uvicorn: need .venv/bin/uvicorn or uv in PATH" >&2; \
+            exit 1; \
+          fi \
+        else \
+          echo "Backend already running on :${backend_port} (pid: ${backend_pid})"; \
+        fi; \
+        if [[ -z "$frontend_pid" ]]; then \
+          echo "Starting frontend on :${frontend_port} ..."; \
+          nohup bash -lc 'cd web-ui/frontend && bun run dev' > web-ui/logs/frontend.log 2>&1 & \
+        else \
+          echo "Frontend already running on :${frontend_port} (pid: ${frontend_pid})"; \
+        fi; \
+        for _ in {1..15}; do \
+          frontend_pid="$(lsof -tiTCP:${frontend_port} -sTCP:LISTEN || true)"; \
+          backend_pid="$(lsof -tiTCP:${backend_port} -sTCP:LISTEN || true)"; \
+          if [[ -n "$frontend_pid" && -n "$backend_pid" ]]; then \
+            break; \
+          fi; \
+          sleep 1; \
+        done; \
+        if [[ -n "$frontend_pid" && -n "$backend_pid" ]]; then \
+          echo "web started (frontend:${frontend_port} backend:${backend_port})"; \
+        else \
+          echo "web start failed, check web-ui/logs/frontend.log and web-ui/logs/backend.log" >&2; \
+          exit 1; \
+        fi \
+        ;; \
+      off) \
+        stopped=0; \
+        if [[ -n "$frontend_pid" ]]; then \
+          kill ${frontend_pid} 2>/dev/null || true; \
+          echo "Stopped frontend on :${frontend_port} (pid: ${frontend_pid})"; \
+          stopped=1; \
+        fi; \
+        if [[ -n "$backend_pid" ]]; then \
+          kill ${backend_pid} 2>/dev/null || true; \
+          echo "Stopped backend on :${backend_port} (pid: ${backend_pid})"; \
+          stopped=1; \
+        fi; \
+        sleep 1; \
+        frontend_pid="$(lsof -tiTCP:${frontend_port} -sTCP:LISTEN || true)"; \
+        backend_pid="$(lsof -tiTCP:${backend_port} -sTCP:LISTEN || true)"; \
+        if [[ -n "$frontend_pid" ]]; then \
+          kill -9 ${frontend_pid} 2>/dev/null || true; \
+          echo "Force stopped frontend on :${frontend_port} (pid: ${frontend_pid})"; \
+          stopped=1; \
+        fi; \
+        if [[ -n "$backend_pid" ]]; then \
+          kill -9 ${backend_pid} 2>/dev/null || true; \
+          echo "Force stopped backend on :${backend_port} (pid: ${backend_pid})"; \
+          stopped=1; \
+        fi; \
+        if [[ "$stopped" -eq 0 ]]; then \
+          echo "web is not running"; \
+        fi \
+        ;; \
+      *) \
+        echo "Unknown action: $action. Use: on|off" >&2; \
+        exit 1 \
+        ;; \
+    esac

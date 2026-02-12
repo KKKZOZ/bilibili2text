@@ -22,7 +22,13 @@ const url = ref("");
 const error = ref("");
 const enableSummary = ref(true);
 const summaryPresets = ref([]);
+const summaryProfiles = ref([]);
 const selectedSummaryPreset = ref("");
+const selectedSummaryProfile = ref("");
+const summaryPresetError = ref("");
+const summaryProfileError = ref("");
+const isLoadingSummaryPresets = ref(false);
+const isLoadingSummaryProfiles = ref(false);
 const currentSkipSummary = ref(false);
 const isStarting = ref(false);
 const isPolling = ref(false);
@@ -35,9 +41,16 @@ const job = ref({
   progress: 0,
   download_url: "",
   filename: "",
+  txt_download_url: "",
+  txt_filename: "",
   summary_download_url: "",
   summary_filename: "",
+  summary_txt_download_url: "",
+  summary_txt_filename: "",
+  summary_table_pdf_download_url: "",
+  summary_table_pdf_filename: "",
   summary_preset: "",
+  summary_profile: "",
   error: "",
   logs: [],
   stage_durations: {},
@@ -53,6 +66,18 @@ const isRunning = computed(
 const isDone = computed(() => job.value.status === "succeeded");
 const hasFailed = computed(() => job.value.status === "failed");
 const progressText = computed(() => `${job.value.progress}%`);
+const jobStatusText = computed(() => {
+  if (job.value.status === "succeeded") {
+    return "已完成";
+  }
+  if (job.value.status === "failed") {
+    return "失败";
+  }
+  if (job.value.status === "running" || job.value.status === "queued") {
+    return "进行中";
+  }
+  return "等待中";
+});
 const shouldSkipSummary = computed(() => {
   if (job.value.status === "idle") {
     return !enableSummary.value;
@@ -112,9 +137,16 @@ const resetJob = () => {
     progress: 0,
     download_url: "",
     filename: "",
+    txt_download_url: "",
+    txt_filename: "",
     summary_download_url: "",
     summary_filename: "",
+    summary_txt_download_url: "",
+    summary_txt_filename: "",
+    summary_table_pdf_download_url: "",
+    summary_table_pdf_filename: "",
     summary_preset: "",
+    summary_profile: "",
     error: "",
     logs: [],
     stage_durations: {},
@@ -159,6 +191,8 @@ const pollStatus = async () => {
 };
 
 const loadSummaryPresets = async () => {
+  isLoadingSummaryPresets.value = true;
+  summaryPresetError.value = "";
   try {
     const resp = await fetch("/api/summary-presets");
     const data = await resp.json();
@@ -181,6 +215,46 @@ const loadSummaryPresets = async () => {
     console.error(err);
     summaryPresets.value = [];
     selectedSummaryPreset.value = "";
+    summaryPresetError.value =
+      err instanceof Error
+        ? `preset 加载失败：${err.message}`
+        : "preset 加载失败，请检查后端服务是否已启动";
+  } finally {
+    isLoadingSummaryPresets.value = false;
+  }
+};
+
+const loadSummaryProfiles = async () => {
+  isLoadingSummaryProfiles.value = true;
+  summaryProfileError.value = "";
+  try {
+    const resp = await fetch("/api/summarize-profiles");
+    const data = await resp.json();
+
+    if (!resp.ok) {
+      throw new Error(data.detail || "获取总结模型配置失败");
+    }
+
+    const profiles = Array.isArray(data.profiles) ? data.profiles : [];
+    summaryProfiles.value = profiles;
+    if (profiles.length === 0) {
+      selectedSummaryProfile.value = "";
+      return;
+    }
+
+    const fallback = profiles[0].name;
+    selectedSummaryProfile.value =
+      data.selected_profile || data.default_profile || fallback;
+  } catch (err) {
+    console.error(err);
+    summaryProfiles.value = [];
+    selectedSummaryProfile.value = "";
+    summaryProfileError.value =
+      err instanceof Error
+        ? `模型配置加载失败：${err.message}`
+        : "模型配置加载失败，请检查后端服务是否已启动";
+  } finally {
+    isLoadingSummaryProfiles.value = false;
   }
 };
 
@@ -211,6 +285,10 @@ const submit = async () => {
           skipSummary || !selectedSummaryPreset.value
             ? null
             : selectedSummaryPreset.value,
+        summary_profile:
+          skipSummary || !selectedSummaryProfile.value
+            ? null
+            : selectedSummaryProfile.value,
       }),
     });
     const data = await resp.json();
@@ -246,7 +324,7 @@ onBeforeUnmount(() => {
 });
 
 onMounted(() => {
-  void loadSummaryPresets();
+  void Promise.all([loadSummaryProfiles(), loadSummaryPresets()]);
 });
 </script>
 
@@ -264,6 +342,14 @@ onMounted(() => {
           </div>
           <h1>bilibili-to-text</h1>
           <p>输入 B 站视频链接，自动生成转录后的文本内容和大模型总结。</p>
+          <div class="hero-meta">
+            <span class="hero-pill">
+              {{ isRunning ? "处理中" : "准备就绪" }}
+            </span>
+            <span class="hero-pill hero-pill-soft">
+              总结{{ enableSummary ? "已开启" : "已关闭" }}
+            </span>
+          </div>
         </header>
 
         <form class="form" @submit.prevent="submit">
@@ -288,21 +374,68 @@ onMounted(() => {
             </a>
           </p>
 
-          <label class="switch">
-            <input v-model="enableSummary" type="checkbox" />
-            <span>启用 LLM 整理总结</span>
+          <label class="switch" for="enable-summary">
+            <input id="enable-summary" v-model="enableSummary" type="checkbox" />
+            <span class="switch-track">
+              <span class="switch-thumb"></span>
+            </span>
+            <span class="switch-label">启用 LLM 整理总结</span>
           </label>
 
-          <div
-            v-if="enableSummary && summaryPresets.length > 0"
-            class="summary-preset"
-          >
+          <div v-if="enableSummary" class="summary-preset">
+            <label for="summary-profile-select">总结模型配置</label>
+            <select
+              id="summary-profile-select"
+              v-model="selectedSummaryProfile"
+              class="preset-select"
+              :disabled="isLoadingSummaryProfiles || summaryProfiles.length === 0"
+            >
+              <option v-if="isLoadingSummaryProfiles" value="">
+                正在加载模型配置...
+              </option>
+              <option v-else-if="summaryProfiles.length === 0" value="">
+                未获取到模型配置（将使用后端默认）
+              </option>
+              <option
+                v-for="profile in summaryProfiles"
+                :key="profile.name"
+                :value="profile.name"
+              >
+                {{ profile.name }} ({{ profile.model }})
+              </option>
+            </select>
+            <p v-if="summaryProfileError" class="preset-hint preset-hint-error">
+              {{ summaryProfileError }}
+              <button
+                class="preset-retry"
+                type="button"
+                @click="loadSummaryProfiles"
+              >
+                重试
+              </button>
+            </p>
+            <p
+              v-else-if="summaryProfiles.length === 0"
+              class="preset-hint"
+            >
+              暂未连接到后端模型配置接口，提交时会使用服务端默认模型。
+            </p>
+          </div>
+
+          <div v-if="enableSummary" class="summary-preset">
             <label for="summary-preset-select">总结 preset</label>
             <select
               id="summary-preset-select"
               v-model="selectedSummaryPreset"
               class="preset-select"
+              :disabled="isLoadingSummaryPresets || summaryPresets.length === 0"
             >
+              <option v-if="isLoadingSummaryPresets" value="">
+                正在加载 preset...
+              </option>
+              <option v-else-if="summaryPresets.length === 0" value="">
+                未获取到 preset（将使用后端默认）
+              </option>
               <option
                 v-for="preset in summaryPresets"
                 :key="preset.name"
@@ -311,6 +444,22 @@ onMounted(() => {
                 {{ preset.label }}
               </option>
             </select>
+            <p v-if="summaryPresetError" class="preset-hint preset-hint-error">
+              {{ summaryPresetError }}
+              <button
+                class="preset-retry"
+                type="button"
+                @click="loadSummaryPresets"
+              >
+                重试
+              </button>
+            </p>
+            <p
+              v-else-if="summaryPresets.length === 0"
+              class="preset-hint"
+            >
+              暂未连接到后端 preset 接口，提交时会使用服务端默认 preset。
+            </p>
           </div>
 
           <button class="submit" type="submit" :disabled="isStarting || isRunning">
@@ -327,13 +476,6 @@ onMounted(() => {
         </p>
 
         <div v-if="isDone" class="download-card">
-          <div>
-            <p class="download-title">生成完成</p>
-            <p class="download-name">{{ job.filename }}</p>
-            <p v-if="job.summary_filename" class="download-name">
-              {{ job.summary_filename }}
-            </p>
-          </div>
           <div class="download-actions">
             <button
               class="download"
@@ -342,6 +484,15 @@ onMounted(() => {
             >
               <Download :size="16" />
               <span>下载原文 Markdown</span>
+            </button>
+            <button
+              v-if="job.txt_download_url"
+              class="download"
+              type="button"
+              @click="download(job.txt_download_url, job.txt_filename || 'output.txt')"
+            >
+              <Download :size="16" />
+              <span>下载原文 TXT</span>
             </button>
             <button
               v-if="job.summary_download_url"
@@ -354,14 +505,47 @@ onMounted(() => {
               <Download :size="16" />
               <span>下载总结 Markdown</span>
             </button>
+            <button
+              v-if="job.summary_txt_download_url"
+              class="download download-secondary"
+              type="button"
+              @click="
+                download(
+                  job.summary_txt_download_url,
+                  job.summary_txt_filename || 'summary.txt',
+                )
+              "
+            >
+              <Download :size="16" />
+              <span>下载总结 TXT</span>
+            </button>
+            <button
+              v-if="job.summary_table_pdf_download_url"
+              class="download download-secondary"
+              type="button"
+              @click="
+                download(
+                  job.summary_table_pdf_download_url,
+                  job.summary_table_pdf_filename || 'summary_table.pdf',
+                )
+              "
+            >
+              <Download :size="16" />
+              <span>下载总结表格 PDF</span>
+            </button>
           </div>
         </div>
       </article>
 
       <article class="panel panel-progress">
         <header class="progress-header">
-          <h2>任务进度</h2>
-          <p>{{ job.stage_label }}</p>
+          <div>
+            <h2>任务进度</h2>
+            <p>{{ job.stage_label }}</p>
+          </div>
+          <span class="progress-state" :class="`state-${job.status}`">
+            {{ jobStatusText }}
+          </span>
         </header>
 
         <div class="progress-wrap">

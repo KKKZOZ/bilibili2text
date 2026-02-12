@@ -29,7 +29,7 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /app
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends nginx ffmpeg gettext-base \
+    && apt-get install -y --no-install-recommends nginx ffmpeg gettext-base pandoc \
     && rm -rf /var/lib/apt/lists/* \
     && rm -f /etc/nginx/sites-enabled/default /etc/nginx/conf.d/default.conf
 

@@ -2,8 +2,11 @@
 
 import os
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+
+DEFAULT_SUMMARY_PRESETS_FILE = "summary_presets.toml"
+DEFAULT_SUMMARIZE_PROFILE = "dashscope"
 
 
 @dataclass(frozen=True)
@@ -38,12 +41,39 @@ class STTConfig:
 
 
 @dataclass(frozen=True)
-class PolishConfig:
-    api_key: str = ""
-    base_url: str = "https://openrouter.ai/api/v1"
-    model: str = "moonshotai/kimi-k2.5"
+class SummarizeModelProfile:
+    model: str
+    endpoint: str
+    api_key: str
+    providers: tuple[str, ...] = ()
+
+
+def _default_summarize_profiles() -> dict[str, "SummarizeModelProfile"]:
+    return {
+        "openrouter": SummarizeModelProfile(
+            model="moonshotai/kimi-k2.5",
+            endpoint="https://openrouter.ai/api/v1",
+            api_key="",
+            providers=(),
+        ),
+        "dashscope": SummarizeModelProfile(
+            model="qwen3-max",
+            endpoint="https://dashscope.aliyuncs.com/compatible-mode/v1",
+            api_key="",
+            providers=(),
+        ),
+    }
+
+
+@dataclass(frozen=True)
+class SummarizeConfig:
+    profile: str = DEFAULT_SUMMARIZE_PROFILE
+    profiles: dict[str, SummarizeModelProfile] = field(
+        default_factory=_default_summarize_profiles
+    )
+    enable_thinking: bool = True
     preset: str | None = None
-    presets_file: str = "summary_presets.toml"
+    presets_file: str = DEFAULT_SUMMARY_PRESETS_FILE
 
 
 @dataclass(frozen=True)
@@ -69,9 +99,140 @@ class AppConfig:
     download: DownloadConfig
     oss: OSSConfig
     stt: STTConfig
-    polish: PolishConfig
+    summarize: SummarizeConfig
     summary_presets: SummaryPresetsConfig
     converter: ConverterConfig
+
+
+def _load_summarize_config(raw_summarize: dict) -> SummarizeConfig:
+    summarize = dict(raw_summarize)
+    profile = summarize.get("profile", DEFAULT_SUMMARIZE_PROFILE)
+    if not isinstance(profile, str) or not profile.strip():
+        raise ValueError("summarize.profile 必须是非空字符串")
+    profile = profile.strip()
+
+    raw_profiles = summarize.get("profiles", {})
+    if not isinstance(raw_profiles, dict):
+        raise ValueError("summarize.profiles 必须是 TOML 表")
+
+    profiles = _default_summarize_profiles()
+    for name, value in raw_profiles.items():
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("summarize.profiles 的配置名必须是非空字符串")
+        if not isinstance(value, dict):
+            raise ValueError(f"summarize.profiles.{name} 必须是 TOML 表")
+
+        key = name.strip()
+        base = profiles.get(key)
+
+        raw_model = value.get("model")
+        model: str
+        if isinstance(raw_model, str):
+            model = raw_model.strip()
+        elif base is not None:
+            model = base.model
+        else:
+            raise ValueError(f"summarize.profiles.{key} 缺少 model")
+        if not model:
+            raise ValueError(f"summarize.profiles.{key}.model 必须是非空字符串")
+
+        raw_endpoint = value.get("endpoint")
+        endpoint: str
+        if isinstance(raw_endpoint, str):
+            endpoint = raw_endpoint.strip()
+        elif base is not None:
+            endpoint = base.endpoint
+        else:
+            raise ValueError(f"summarize.profiles.{key} 缺少 endpoint")
+        if not endpoint:
+            raise ValueError(
+                f"summarize.profiles.{key}.endpoint 必须是非空字符串"
+            )
+
+        raw_api_key = value.get("api_key")
+        api_key: str
+        if isinstance(raw_api_key, str):
+            api_key = raw_api_key.strip()
+        elif base is not None:
+            api_key = base.api_key
+        else:
+            raise ValueError(f"summarize.profiles.{key} 缺少 api_key")
+
+        raw_providers = value.get("providers")
+        providers: tuple[str, ...]
+        if raw_providers is None and base is not None:
+            providers = base.providers
+        elif isinstance(raw_providers, str):
+            provider = raw_providers.strip()
+            if not provider:
+                raise ValueError(
+                    f"summarize.profiles.{key}.providers 必须是非空字符串或字符串数组"
+                )
+            providers = (provider,)
+        elif isinstance(raw_providers, list):
+            parsed: list[str] = []
+            for index, item in enumerate(raw_providers):
+                if not isinstance(item, str) or not item.strip():
+                    raise ValueError(
+                        f"summarize.profiles.{key}.providers[{index}] 必须是非空字符串"
+                    )
+                parsed.append(item.strip())
+            providers = tuple(parsed)
+        elif raw_providers is None:
+            providers = ()
+        else:
+            raise ValueError(
+                f"summarize.profiles.{key}.providers 必须是字符串或字符串数组"
+            )
+
+        profiles[key] = SummarizeModelProfile(
+            model=model,
+            endpoint=endpoint,
+            api_key=api_key,
+            providers=providers,
+        )
+
+    if profile not in profiles:
+        available = ", ".join(profiles.keys())
+        raise ValueError(
+            f"summarize.profile `{profile}` 不存在，可选值: {available}"
+        )
+
+    enable_thinking = summarize.get("enable_thinking", True)
+    if not isinstance(enable_thinking, bool):
+        raise ValueError("summarize.enable_thinking 必须是布尔值")
+
+    preset = summarize.get("preset")
+    if preset is not None and not isinstance(preset, str):
+        raise ValueError("summarize.preset 必须是字符串")
+    preset = preset.strip() if isinstance(preset, str) else None
+
+    presets_file = summarize.get("presets_file", DEFAULT_SUMMARY_PRESETS_FILE)
+    if not isinstance(presets_file, str) or not presets_file.strip():
+        raise ValueError("summarize.presets_file 必须是非空字符串")
+
+    return SummarizeConfig(
+        profile=profile,
+        profiles=profiles,
+        enable_thinking=enable_thinking,
+        preset=preset,
+        presets_file=presets_file.strip(),
+    )
+
+
+def resolve_summarize_model_profile(
+    summarize: SummarizeConfig,
+    override: str | None = None,
+) -> SummarizeModelProfile:
+    selected_profile = override or summarize.profile
+    selected_profile = selected_profile.strip()
+    profile = summarize.profiles.get(selected_profile)
+    if profile is None:
+        available = ", ".join(summarize.profiles.keys())
+        raise ValueError(
+            f"summarize.profile `{selected_profile}` 不存在，可选值: {available}"
+        )
+    return profile
 
 
 def _normalize_stt_config(raw_stt: dict) -> dict:
@@ -152,11 +313,11 @@ def _load_summary_presets(path: Path) -> SummaryPresetsConfig:
 
 def resolve_summary_preset_name(
     *,
-    polish: PolishConfig,
+    summarize: SummarizeConfig,
     summary_presets: SummaryPresetsConfig,
     override: str | None = None,
 ) -> str:
-    candidate = override or polish.preset or summary_presets.default
+    candidate = override or summarize.preset or summary_presets.default
     candidate = candidate.strip()
 
     if candidate not in summary_presets.presets:
@@ -169,7 +330,7 @@ def resolve_summary_preset_name(
 def load_config(path: str | Path | None = None) -> AppConfig:
     """加载 TOML 配置文件
 
-    查找顺序：显式路径 → B2T_CONFIG 环境变量 → ./config.toml
+    查找顺序：显式路径 → B2T_CONFIG 环境变量 → <project-root>/config.toml
 
     Args:
         path: 配置文件路径，为 None 时按查找顺序自动定位
@@ -181,40 +342,46 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         FileNotFoundError: 配置文件不存在
     """
     if path is None:
-        path = os.environ.get("B2T_CONFIG", "config.toml")
+        env_config = os.environ.get("B2T_CONFIG")
+        if env_config:
+            path = env_config
+        else:
+            project_root = Path(__file__).resolve().parents[1]
+            path = project_root / "config.toml"
 
-    config_path = Path(path)
+    config_path = Path(path).expanduser()
     if not config_path.exists():
-        raise FileNotFoundError(f"配置文件不存在: {config_path}")
+        raise FileNotFoundError(f"配置文件不存在: {config_path.resolve()}")
 
     with open(config_path, "rb") as f:
         raw = tomllib.load(f)
 
     stt_raw = _normalize_stt_config(raw.get("stt", {}))
-    polish_config = PolishConfig(**raw.get("polish", {}))
+    summarize_config = _load_summarize_config(raw.get("summarize", {}))
     presets_path = _resolve_relative_path(
-        polish_config.presets_file,
+        summarize_config.presets_file,
         base_dir=config_path.parent.resolve(),
     )
+
     summary_presets = _load_summary_presets(presets_path)
     selected_preset = resolve_summary_preset_name(
-        polish=polish_config,
+        summarize=summarize_config,
         summary_presets=summary_presets,
-        override=polish_config.preset,
+        override=summarize_config.preset,
     )
-    polish_config = PolishConfig(
-        api_key=polish_config.api_key,
-        base_url=polish_config.base_url,
-        model=polish_config.model,
+    summarize_config = SummarizeConfig(
+        profile=summarize_config.profile,
+        profiles=summarize_config.profiles,
+        enable_thinking=summarize_config.enable_thinking,
         preset=selected_preset,
-        presets_file=polish_config.presets_file,
+        presets_file=summarize_config.presets_file,
     )
 
     return AppConfig(
         download=DownloadConfig(**raw.get("download", {})),
         oss=OSSConfig(**raw.get("oss", {})),
         stt=STTConfig(**stt_raw),
-        polish=polish_config,
+        summarize=summarize_config,
         summary_presets=summary_presets,
         converter=ConverterConfig(**raw.get("converter", {})),
     )

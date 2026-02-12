@@ -27,6 +27,11 @@ def main() -> None:
         help="指定总结 preset 名称（默认使用配置中的 preset）",
     )
     parser.add_argument(
+        "--summary-profile",
+        default=None,
+        help="指定总结模型 profile 名称（默认使用配置中的 summarize.profile）",
+    )
+    parser.add_argument(
         "-v", "--verbose", action="store_true", help="显示详细日志"
     )
 
@@ -39,6 +44,9 @@ def main() -> None:
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         datefmt="%H:%M:%S",
     )
+    # 避免 yutto 下载阶段刷屏 HTTP 请求日志
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
 
     try:
         config = load_config(args.config)
@@ -52,6 +60,7 @@ def main() -> None:
             config,
             skip_summary=args.no_summary,
             summary_preset=args.summary_preset,
+            summary_profile=args.summary_profile,
             output_dir=args.output,
         )
 
