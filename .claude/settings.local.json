@@ -12,7 +12,16 @@
       "Bash(python convert_to_md.py:*)",
       "Bash(python:*)",
       "Bash(uv pip install:*)",
-      "Bash(b2t:*)"
+      "Bash(b2t:*)",
+      "Bash(python3:*)",
+      "Bash(.venv/bin/python:*)",
+      "Bash(yutto --help:*)",
+      "Bash(yutto:*)",
+      "Bash(npm run type-check:*)",
+      "Bash(npm run build:*)",
+      "Bash(.venv/bin/pip install:*)",
+      "Bash(/opt/homebrew/bin/python3 -m pip install:*)",
+      "Bash(sqlite3:*)"
     ]
   }
 }

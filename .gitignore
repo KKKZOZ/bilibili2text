@@ -14,6 +14,7 @@ config.toml
 
 test-audio/*
 transcriptions/*
+db_data/*
 
 *.md
 *.pdf
@@ -22,6 +23,8 @@ transcriptions/*
 *.txt
 *.json
 *.log
+*.png
+*.html
 
 # Frontend
 web-ui/frontend/node_modules/

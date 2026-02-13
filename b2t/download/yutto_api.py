@@ -14,7 +14,8 @@ from yutto.download_manager import DownloadManager, DownloadTask
 from yutto.utils.fetcher import FetcherContext
 from yutto.validator import initial_validation, validate_basic_arguments
 
-from b2t.download.yutto_cli import normalize_bilibili_target
+from b2t.download.metadata import VideoMetadata, get_video_metadata_async
+from b2t.download.yutto_cli import extract_bvid, normalize_bilibili_target
 
 logger = logging.getLogger(__name__)
 
@@ -90,8 +91,30 @@ async def download_audio_minimal_async(
     *,
     overwrite: bool = False,
     audio_quality: str = "30216",
-) -> None:
-    """Download audio for one URL via yutto's internal API."""
+    fetch_metadata: bool = True,
+) -> VideoMetadata | None:
+    """Download audio for one URL via yutto's internal API.
+
+    Args:
+        url: Bilibili video URL or BV ID
+        output_dir: Output directory
+        overwrite: Whether to overwrite existing files
+        audio_quality: Audio quality code
+        fetch_metadata: Whether to fetch video metadata
+
+    Returns:
+        VideoMetadata if fetch_metadata is True, otherwise None
+    """
+    # 获取元信息（如果需要）
+    metadata = None
+    if fetch_metadata:
+        bvid = extract_bvid(url)
+        if bvid:
+            try:
+                metadata = await get_video_metadata_async(bvid)
+            except Exception as e:
+                logger.warning("获取视频元信息失败: %s", e)
+
     parser = _build_minimal_parser()
     output_dir_path = Path(output_dir).expanduser()
     args = parser.parse_args(
@@ -110,6 +133,8 @@ async def download_audio_minimal_async(
     except SystemExit as e:
         raise MinimalYuttoError(_normalize_exit_code(e.code)) from e
 
+    return metadata
+
 
 def download_audio_minimal(
     url: str,
@@ -117,8 +142,20 @@ def download_audio_minimal(
     *,
     overwrite: bool = False,
     audio_quality: str = "30216",
-) -> None:
-    """Synchronous wrapper of `download_audio_minimal_async`."""
+    fetch_metadata: bool = True,
+) -> VideoMetadata | None:
+    """Synchronous wrapper of `download_audio_minimal_async`.
+
+    Args:
+        url: Bilibili video URL or BV ID
+        output_dir: Output directory
+        overwrite: Whether to overwrite existing files
+        audio_quality: Audio quality code
+        fetch_metadata: Whether to fetch video metadata
+
+    Returns:
+        VideoMetadata if fetch_metadata is True, otherwise None
+    """
     try:
         asyncio.get_running_loop()
     except RuntimeError:
@@ -127,12 +164,13 @@ def download_audio_minimal(
         raise RuntimeError(
             "An event loop is already running; use download_audio_minimal_async instead."
         )
-    asyncio.run(
+    return asyncio.run(
         download_audio_minimal_async(
             url,
             output_dir=output_dir,
             overwrite=overwrite,
             audio_quality=audio_quality,
+            fetch_metadata=fetch_metadata,
         )
     )
 
@@ -141,8 +179,20 @@ def download_audio(
     url: str,
     output_dir: Path | str,
     audio_quality: str = "30216",
-) -> Path:
-    """使用 yutto API 下载音频文件。"""
+    fetch_metadata: bool = True,
+) -> tuple[Path, VideoMetadata | None]:
+    """使用 yutto API 下载音频文件。
+
+    Args:
+        url: Bilibili video URL or BV ID
+        output_dir: Output directory
+        audio_quality: Audio quality code
+        fetch_metadata: Whether to fetch video metadata
+
+    Returns:
+        Tuple of (audio_file_path, metadata)
+        metadata is None if fetch_metadata is False or fetching failed
+    """
     output_dir_path = Path(output_dir)
     output_dir_path.mkdir(parents=True, exist_ok=True)
 
@@ -150,10 +200,11 @@ def download_audio(
     logger.info("正在从 %s 下载音频...", normalized_target)
 
     existing_files = {path.resolve() for path in _collect_audio_files(output_dir_path)}
-    download_audio_minimal(
+    metadata = download_audio_minimal(
         normalized_target,
         output_dir=output_dir_path,
         audio_quality=audio_quality,
+        fetch_metadata=fetch_metadata,
     )
     logger.info("下载完成")
 
@@ -169,4 +220,4 @@ def download_audio(
 
     audio_file = audio_files[0]
     logger.info("音频文件: %s", audio_file)
-    return audio_file
+    return audio_file, metadata

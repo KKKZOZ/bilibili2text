@@ -9,12 +9,17 @@ dependencies = [
     "dashscope>=1.25.12",
     "fastapi>=0.116.1",
     "groq>=1.0.0",
+    "minio>=7.2.12",
     "openai>=2.17.0",
     "pydub>=0.25.1",
+    "questionary>=2.0.0",
+    "rich>=13.7.1",
     "reportlab>=4.4.9",
     "requests>=2.31.0",
+    "textual>=0.45.1",
     "uvicorn>=0.35.0",
     "yutto>=2.1.1",
+    "pytest-playwright>=0.7.2",
 ]
 
 [tool.setuptools.packages.find]

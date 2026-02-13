@@ -1,24 +1,51 @@
 [download]
 audio_quality = "30216"
 output_dir = "./transcriptions"
+# 数据库文件存放目录（CLI 和 Web UI 共享）
+db_dir = "./db_data"
 
-[oss]
+[storage]
+# 可选: "local"、"minio"、"alicloud"
+backend = "minio"
+
+[storage.minio]
+endpoint = "127.0.0.1:9000"
+bucket = "b2t-transcriptions"
+access_key = "your-minio-access-key"
+secret_key = "your-minio-secret-key"
+secure = false
+region = ""
+base_prefix = "b2t"
+auto_create_bucket = true
+temporary_url_expire_seconds = 7200
+
+[storage.alicloud]
 region = "cn-beijing"
-bucket = "your-bucket-name"
+bucket = "your-oss-bucket"
 access_key_id = "your-access-key-id"
 access_key_secret = "your-access-key-secret"
+base_prefix = "b2t"
+temporary_prefix = "temp-audio"
+public_base_url = ""
+auto_create_bucket = false
 
 [stt]
-# 可选: "qwen" 或 "groq"
+# 当前启用的 STT profile
+profile = "qwen-main"
+
+[stt.profiles.qwen-main]
 provider = "qwen"
 language = "zh"
-
-# Qwen (DashScope)
+# 可选: "local"、"minio"、"alicloud"。为空时复用 storage.backend。
+storage_profile = "alicloud"
 qwen_api_key = "your-dashscope-api-key"
 qwen_model = "qwen3-asr-flash-filetrans"
 qwen_base_url = "https://dashscope.aliyuncs.com/api/v1"
 
-# Groq
+[stt.profiles.groq-main]
+provider = "groq"
+language = "zh"
+storage_profile = "minio"
 # groq_api_key 可从 https://console.groq.com/keys 获取
 groq_api_key = "your-groq-api-key"
 groq_model = "whisper-large-v3-turbo"
@@ -29,7 +56,7 @@ groq_bitrate = "64k"
 
 [summarize]
 profile = "dashscope"
-# 仅在 qwen3 系列模型下透传到 extra_body.enable_thinking
+# qwen3 走 extra_body.enable_thinking；OpenRouter 走 extra_body.reasoning
 enable_thinking = true
 preset = "timeline_merge"
 presets_file = "summary_presets.toml"

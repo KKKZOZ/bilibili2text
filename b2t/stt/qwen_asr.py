@@ -7,19 +7,19 @@ import dashscope
 import requests
 from dashscope.audio.qwen_asr import QwenTranscription
 
-from b2t.config import OSSConfig, STTConfig
-from b2t.oss.client import OSSManager
+from b2t.config import STTConfig
+from b2t.storage.base import StorageBackend
 from b2t.stt.base import ProgressCallback, STTProvider
 
 logger = logging.getLogger(__name__)
 
 
 class QwenSTTProvider(STTProvider):
-    """Qwen STT Provider（内部处理 OSS 上传与结果下载）。"""
+    """Qwen STT Provider（内部处理存储上传与结果下载）。"""
 
-    def __init__(self, stt_config: STTConfig, oss_config: OSSConfig) -> None:
+    def __init__(self, stt_config: STTConfig, storage_backend: StorageBackend) -> None:
         self._stt_config = stt_config
-        self._oss_config = oss_config
+        self._storage_backend = storage_backend
 
     def transcribe(
         self,
@@ -34,9 +34,13 @@ class QwenSTTProvider(STTProvider):
         json_path = work_dir / f"{audio_path.stem}_transcription.json"
 
         emit("transcribing", "语音转录", 35)
-        oss_manager = OSSManager(self._oss_config)
+        if not self._storage_backend.supports_public_url():
+            raise ValueError(
+                "当前 STT 上传存储不支持公网 URL，无法用于 qwen 转录。"
+                "请将当前 stt.profile 对应的 storage_profile（或 storage.backend）设置为 minio 或 alicloud。"
+            )
 
-        with oss_manager.temporary_upload(audio_path) as audio_url:
+        with self._storage_backend.temporary_public_url(audio_path) as audio_url:
             emit("transcribing", "语音转录", 50)
             response = self._submit_task(audio_url)
 
