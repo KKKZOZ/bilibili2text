@@ -4,15 +4,19 @@ import logging
 from pathlib import Path
 import re
 
-from openai import OpenAI
-
 from b2t.config import (
     SummarizeConfig,
     SummaryPresetsConfig,
+    resolve_summarize_api_base,
     resolve_summarize_model_profile,
     resolve_summary_preset_name,
 )
+from b2t.converter.markdown_formatter import format_markdown_with_markdownlint
 from b2t.converter.md_table_to_pdf import markdown_table_to_pdf
+from b2t.summarize.litellm_client import (
+    collect_stream_result,
+    stream_summary_completion,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -20,108 +24,6 @@ TABLE_ROW_RE = re.compile(r"^\s*\|?.*\|.*\|?\s*$")
 TABLE_SEPARATOR_RE = re.compile(
     r"^\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?\s*$"
 )
-
-
-def _is_openrouter_endpoint(endpoint: str) -> bool:
-    return "openrouter.ai" in endpoint.lower()
-
-
-def _resolve_openrouter_max_tokens(model: str) -> int | None:
-    normalized = model.strip().lower()
-    if "qwen3-max-thinking" in normalized:
-        return 32768
-    if "qwen3-max" in normalized:
-        return 32768
-    return None
-
-
-def _get_message_field(message: object, field: str) -> object | None:
-    if isinstance(message, dict):
-        return message.get(field)
-    return getattr(message, field, None)
-
-
-def _to_text(value: object | None) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, str):
-        return value
-    if isinstance(value, list):
-        parts: list[str] = []
-        for item in value:
-            if isinstance(item, str):
-                parts.append(item)
-                continue
-            if isinstance(item, dict):
-                text = item.get("text")
-                if isinstance(text, str):
-                    parts.append(text)
-                    continue
-                parts.append(str(item))
-                continue
-            text = getattr(item, "text", None)
-            if isinstance(text, str):
-                parts.append(text)
-            else:
-                parts.append(str(item))
-        return "".join(parts)
-    return str(value)
-
-
-def _extract_reasoning_text(delta: object) -> str:
-    reasoning_content = _get_message_field(delta, "reasoning_content")
-    reasoning_content_text = _to_text(reasoning_content)
-    if reasoning_content_text:
-        return reasoning_content_text
-
-    reasoning_alias = _get_message_field(delta, "reasoning")
-    reasoning_alias_text = _to_text(reasoning_alias)
-    if reasoning_alias_text:
-        return reasoning_alias_text
-
-    reasoning_details = _get_message_field(delta, "reasoning_details")
-    parts: list[str] = []
-    if isinstance(reasoning_details, list):
-        for item in reasoning_details:
-            detail_text = _to_text(_get_message_field(item, "text"))
-            if detail_text:
-                if not parts or parts[-1] != detail_text:
-                    parts.append(detail_text)
-                continue
-
-            summary = _get_message_field(item, "summary")
-            summary_text = _to_text(summary)
-            if summary_text:
-                if not parts or parts[-1] != summary_text:
-                    parts.append(summary_text)
-
-    return "".join(parts)
-
-
-def _collect_stream_result(stream: object) -> tuple[str, str]:
-    reasoning_parts: list[str] = []
-    content_parts: list[str] = []
-
-    for chunk in stream:
-        choices = _get_message_field(chunk, "choices")
-        if not isinstance(choices, list) or not choices:
-            continue
-
-        choice = choices[0]
-        delta = _get_message_field(choice, "delta")
-        if delta is None:
-            continue
-
-        reasoning_piece = _extract_reasoning_text(delta)
-        content_piece = _to_text(_get_message_field(delta, "content"))
-
-        if reasoning_piece:
-            reasoning_parts.append(reasoning_piece)
-        if content_piece:
-            content_parts.append(content_piece)
-
-    return "".join(reasoning_parts), "".join(content_parts)
-
 
 def _extract_markdown_table_blocks(content: str) -> list[str]:
     """Extract markdown table blocks from mixed markdown content."""
@@ -196,6 +98,7 @@ def export_summary_table_markdown(
 
     table_md_path = summary_path.with_name(f"{summary_path.stem}_table.md")
     table_md_path.write_text(table_block, encoding="utf-8")
+    format_markdown_with_markdownlint(table_md_path)
     logger.info("总结表格 Markdown 已生成: %s", table_md_path)
     return table_md_path
 
@@ -253,56 +156,26 @@ def summarize(
     model_profile = resolve_summarize_model_profile(config, override=selected_profile)
 
     logger.info(
-        "正在使用 %s 模型进行总结（profile: %s, preset: %s）...",
+        "正在使用 %s 模型进行总结（profile: %s, provider: %s, api_base: %s, preset: %s）...",
         model_profile.model,
         selected_profile,
+        model_profile.provider,
+        resolve_summarize_api_base(model_profile),
         preset_name,
     )
 
-    client = OpenAI(
-        base_url=model_profile.endpoint,
-        api_key=model_profile.api_key,
-    )
-
-    is_openrouter = _is_openrouter_endpoint(model_profile.endpoint)
-    extra_body: dict[str, object]
-    if is_openrouter:
-        if config.enable_thinking:
-            extra_body = {
-                "reasoning": {"enabled": True},
-                # Legacy fallback accepted by OpenRouter.
-                "include_reasoning": True,
-            }
-        else:
-            extra_body = {
-                "reasoning": {"effort": "none", "exclude": True},
-                "include_reasoning": False,
-            }
-    else:
-        extra_body = {"enable_thinking": config.enable_thinking}
-
-    request_kwargs = {
-        "model": model_profile.model,
-        "messages": [{"role": "user", "content": prompt}],
-        "stream": True,
-        "stream_options": {"include_usage": True},
-        "extra_body": extra_body,
-    }
-    if is_openrouter:
-        max_tokens = _resolve_openrouter_max_tokens(model_profile.model)
-        if max_tokens is not None:
-            request_kwargs["max_tokens"] = max_tokens
-    if is_openrouter and model_profile.providers:
-        request_kwargs["extra_body"]["provider"] = {
-            "order": list(model_profile.providers),
-        }
-        logger.info(
-            "OpenRouter provider 已指定: %s",
-            ", ".join(model_profile.providers),
+    if not model_profile.api_key:
+        raise ValueError(
+            f"summarize.profiles.{selected_profile}.api_key 为空，请先在配置文件中设置"
         )
 
-    stream = client.chat.completions.create(**request_kwargs)
-    reasoning_content, content = _collect_stream_result(stream)
+    stream = stream_summary_completion(
+        prompt=prompt,
+        summarize_config=config,
+        model_profile=model_profile,
+        include_usage=True,
+    )
+    reasoning_content, content = collect_stream_result(stream)
 
     print("\n=== reasoning_content (reason_content) ===")
     if reasoning_content:
@@ -319,6 +192,7 @@ def summarize(
 
     summary_path = md_path.parent / f"{md_path.stem}_summary.md"
     summary_path.write_text(summary, encoding="utf-8")
+    format_markdown_with_markdownlint(summary_path)
 
     logger.info("总结已保存到: %s", summary_path)
     return summary_path

@@ -2,14 +2,34 @@
 
 import logging
 from pathlib import Path
+import re
 import shutil
 import subprocess
+import tempfile
 
 from playwright.sync_api import sync_playwright
 
 logger = logging.getLogger(__name__)
 
+try:
+    from PIL import Image
+except ImportError:  # pragma: no cover
+    Image = None
+
 GITHUB_CSS_URL = "https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.5.1/github-markdown.min.css"
+TABLE_DELIMITER_CELL_RE = re.compile(r"^:?-{3,}:?$")
+TABLE_DASH_TRANSLATION = str.maketrans(
+    {
+        "－": "-",
+        "—": "-",
+        "–": "-",
+        "−": "-",
+        "﹣": "-",
+        "‒": "-",
+        "：": ":",
+        "\u00A0": " ",
+    }
+)
 
 HTML_TEMPLATE = r"""<!doctype html>
 <html>
@@ -41,8 +61,20 @@ HTML_TEMPLATE = r"""<!doctype html>
     .markdown-body table {{
       width: 100%;
       border-collapse: collapse;
-      display: block;
-      overflow-x: auto;
+      border-spacing: 0;
+      display: table;
+      table-layout: fixed;
+    }}
+    .markdown-body th,
+    .markdown-body td {{
+      border: 1px solid #d0d7de;
+      padding: 6px 10px;
+      vertical-align: top;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+    }}
+    .markdown-body thead th {{
+      background: #f6f8fa;
     }}
   </style>
 </head>
@@ -99,6 +131,8 @@ class MarkdownToPngConverter:
                 - dpr: 设备像素比
                 - css_url: CSS 样式表 URL
                 - keep_html: 是否保留中间 HTML 文件
+                - max_full_page_height: 单次 full_page 截图最大 CSS 高度
+                - tile_height: 分片截图时每片 CSS 高度
 
         Returns:
             输出 PNG 文件路径
@@ -106,8 +140,11 @@ class MarkdownToPngConverter:
         if not input_path.exists():
             raise FileNotFoundError(f"Markdown 文件不存在: {input_path}")
 
+        input_path = input_path.expanduser().resolve()
         if output_path is None:
             output_path = input_path.with_suffix(".png")
+        else:
+            output_path = output_path.expanduser().resolve()
 
         # 提取选项
         width = 1200 if is_table else options.get("width", self.width)
@@ -115,6 +152,8 @@ class MarkdownToPngConverter:
         dpr = options.get("dpr", self.dpr)
         css_url = options.get("css_url", self.css_url)
         keep_html = options.get("keep_html", False)
+        max_full_page_height = options.get("max_full_page_height", 12000)
+        tile_height = options.get("tile_height", 1800)
 
         # 生成中间 HTML
         html_path = output_path.with_suffix(".html")
@@ -138,6 +177,8 @@ class MarkdownToPngConverter:
                 width=width,
                 height=height,
                 dpr=dpr,
+                max_full_page_height=max_full_page_height,
+                tile_height=tile_height,
             )
 
             logger.info("PNG 文件已生成: %s", output_path)
@@ -152,17 +193,53 @@ class MarkdownToPngConverter:
         if shutil.which("pandoc") is None:
             raise RuntimeError("未找到 pandoc，请先安装 pandoc 后再试")
 
+        markdown_content = md_path.read_text(encoding="utf-8")
+        normalized_content = self._normalize_markdown_for_tables(markdown_content)
+
         try:
             proc = subprocess.run(
-                ["pandoc", str(md_path), "-f", "markdown", "-t", "html"],
+                ["pandoc", "-f", "markdown+pipe_tables", "-t", "html"],
                 check=True,
                 capture_output=True,
                 text=True,
+                input=normalized_content,
+                cwd=str(md_path.parent),
             )
             return proc.stdout
         except subprocess.CalledProcessError as exc:
             detail = exc.stderr.strip() or exc.stdout.strip() or str(exc)
             raise RuntimeError(f"pandoc 转换失败: {detail}") from exc
+
+    def _normalize_markdown_for_tables(self, content: str) -> str:
+        """Normalize common full-width table characters before pandoc parsing."""
+        trailing_newline = content.endswith("\n")
+        lines = content.splitlines()
+        normalized_lines: list[str] = []
+
+        for line in lines:
+            normalized = line.replace("｜", "|").replace("\u00A0", " ")
+            if self._looks_like_table_delimiter_line(normalized):
+                normalized = normalized.translate(TABLE_DASH_TRANSLATION)
+            normalized_lines.append(normalized)
+
+        normalized_content = "\n".join(normalized_lines)
+        if trailing_newline:
+            normalized_content += "\n"
+        return normalized_content
+
+    def _looks_like_table_delimiter_line(self, line: str) -> bool:
+        text = line.strip()
+        if "|" not in text:
+            return False
+        if text.startswith("|"):
+            text = text[1:]
+        if text.endswith("|"):
+            text = text[:-1]
+
+        cells = [cell.strip().translate(TABLE_DASH_TRANSLATION) for cell in text.split("|")]
+        if not cells:
+            return False
+        return all(TABLE_DELIMITER_CELL_RE.match(cell) for cell in cells)
 
     def _render_html_to_png(
         self,
@@ -172,6 +249,8 @@ class MarkdownToPngConverter:
         width: int,
         height: int,
         dpr: int,
+        max_full_page_height: int,
+        tile_height: int,
     ) -> None:
         """使用 Playwright 渲染 HTML 为 PNG。"""
         try:
@@ -186,8 +265,87 @@ class MarkdownToPngConverter:
 
                 page = context.new_page()
                 page.goto(html_path.as_uri(), wait_until="networkidle")
-                page.screenshot(path=str(png_path), full_page=True)
+                full_height = int(
+                    page.evaluate("Math.ceil(document.documentElement.scrollHeight)")
+                )
+
+                if full_height <= max_full_page_height or Image is None:
+                    page.screenshot(path=str(png_path), full_page=True)
+                else:
+                    self._capture_tiled_png(
+                        page=page,
+                        output_path=png_path,
+                        viewport_height=height,
+                        dpr=dpr,
+                        full_height=full_height,
+                        tile_height=tile_height,
+                    )
 
                 browser.close()
         except Exception as exc:
             raise RuntimeError(f"Playwright 渲染失败: {exc}") from exc
+
+    def _capture_tiled_png(
+        self,
+        *,
+        page,
+        output_path: Path,
+        viewport_height: int,
+        dpr: int,
+        full_height: int,
+        tile_height: int,
+    ) -> None:
+        """Capture very long pages in tiles and stitch them to avoid blur."""
+        if Image is None:
+            page.screenshot(path=str(output_path), full_page=True)
+            return
+
+        step_height = max(256, min(tile_height, viewport_height))
+        scroll_positions: list[int] = list(range(0, full_height, step_height))
+
+        tile_paths: list[Path] = []
+        with tempfile.TemporaryDirectory(prefix="b2t-png-tiles-") as temp_dir:
+            temp_root = Path(temp_dir)
+            for idx, y in enumerate(scroll_positions):
+                tile_path = temp_root / f"tile-{idx:04d}.png"
+                page.evaluate("(offset) => window.scrollTo(0, offset)", y)
+                page.wait_for_timeout(30)
+                page.screenshot(
+                    path=str(tile_path),
+                    full_page=False,
+                )
+                tile_paths.append(tile_path)
+
+            tile_target_heights: list[int] = []
+            for y in scroll_positions:
+                css_height = min(step_height, full_height - y)
+                pixel_height = max(1, int(round(css_height * dpr)))
+                tile_target_heights.append(pixel_height)
+
+            with Image.open(tile_paths[0]) as first_img:
+                merged_width = first_img.width
+
+            merged_height = 0
+            for tile_path, target_height in zip(tile_paths, tile_target_heights, strict=True):
+                with Image.open(tile_path) as img:
+                    merged_height += min(target_height, img.height)
+
+            merged = Image.new("RGB", (merged_width, merged_height), "white")
+            try:
+                offset_y = 0
+                for tile_path, target_height in zip(
+                    tile_paths, tile_target_heights, strict=True
+                ):
+                    with Image.open(tile_path) as img:
+                        crop_height = min(target_height, img.height)
+                        if crop_height <= 0:
+                            continue
+                        segment = img.crop((0, 0, img.width, crop_height))
+                        try:
+                            merged.paste(segment, (0, offset_y))
+                        finally:
+                            segment.close()
+                        offset_y += crop_height
+                merged.save(output_path)
+            finally:
+                merged.close()

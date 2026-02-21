@@ -9,35 +9,25 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 import questionary
-from openai import OpenAI
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
 from b2t.config import (
     load_config,
+    resolve_summarize_api_base,
     resolve_summarize_model_profile,
     resolve_summary_preset_name,
 )
+from b2t.summarize.litellm_client import (
+    extract_reasoning_text,
+    get_message_field,
+    stream_summary_completion,
+    to_text,
+)
 
-
-def _is_openrouter_endpoint(endpoint: str) -> bool:
-    return "openrouter.ai" in endpoint.lower()
-
-
-def _resolve_openrouter_max_tokens(model: str) -> int | None:
-    normalized = model.strip().lower()
-    if "qwen3-max-thinking" in normalized:
-        return 32768
-    if "qwen3-max" in normalized:
-        return 32768
-    return None
-
-
-def _get_field(data: object, field: str) -> object | None:
-    if isinstance(data, dict):
-        return data.get(field)
-    return getattr(data, field, None)
+RAW_PRESET_NAME = "raw"
+RAW_PRESET_LABEL = "Raw (不套模板)"
 
 
 def _as_int(value: object | None) -> int | None:
@@ -64,43 +54,10 @@ def _pick_token_count(usage: object | None, keys: tuple[str, ...]) -> int | None
     if usage is None:
         return None
     for key in keys:
-        token_count = _as_int(_get_field(usage, key))
+        token_count = _as_int(get_message_field(usage, key))
         if token_count is not None:
             return token_count
     return None
-
-
-def _extract_reasoning_text(delta: object) -> str:
-    direct_reasoning = _get_field(delta, "reasoning_content")
-    if isinstance(direct_reasoning, str) and direct_reasoning:
-        return direct_reasoning
-
-    alias_reasoning = _get_field(delta, "reasoning")
-    if isinstance(alias_reasoning, str) and alias_reasoning:
-        return alias_reasoning
-
-    reasoning_details = _get_field(delta, "reasoning_details")
-    parts: list[str] = []
-    if isinstance(reasoning_details, list):
-        for item in reasoning_details:
-            text = _get_field(item, "text")
-            if isinstance(text, str) and text:
-                if not parts or parts[-1] != text:
-                    parts.append(text)
-                continue
-
-            summary = _get_field(item, "summary")
-            if isinstance(summary, str) and summary:
-                if not parts or parts[-1] != summary:
-                    parts.append(summary)
-                continue
-            if isinstance(summary, list):
-                for summary_item in summary:
-                    if isinstance(summary_item, str) and summary_item:
-                        if not parts or parts[-1] != summary_item:
-                            parts.append(summary_item)
-
-    return "".join(parts)
 
 
 def _find_txt_files() -> list[Path]:
@@ -110,6 +67,22 @@ def _find_txt_files() -> list[Path]:
     txt_files = [f for f in txt_files if f.is_file() and ".venv" not in str(f)]
     txt_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
     return txt_files[:50]
+
+
+def _resolve_preset(
+    *,
+    config,
+    selected_preset_override: str | None,
+) -> tuple[str, str]:
+    if selected_preset_override == RAW_PRESET_NAME:
+        return RAW_PRESET_NAME, RAW_PRESET_LABEL
+
+    selected_preset = resolve_summary_preset_name(
+        summarize=config.summarize,
+        summary_presets=config.summary_presets,
+        override=selected_preset_override,
+    )
+    return selected_preset, config.summary_presets.presets[selected_preset].label
 
 
 def _run_interactive_config(config_path: str | None) -> dict[str, str] | None:
@@ -205,10 +178,16 @@ def _run_interactive_config(config_path: str | None) -> dict[str, str] | None:
         # 4. 选择 preset
         preset_choices = [
             questionary.Choice(
+                title=f"🧪 {RAW_PRESET_LABEL}",
+                value=RAW_PRESET_NAME,
+            ),
+            *[
+            questionary.Choice(
                 title=f"📝 {preset.label}",
                 value=preset_name,
             )
             for preset_name, preset in config.summary_presets.presets.items()
+            ],
         ]
 
         preset = questionary.select(
@@ -253,12 +232,12 @@ def main() -> None:
     parser.add_argument(
         "--summary-profile",
         default=None,
-        help="覆盖 summarize.profile，例如 dashscope/openrouter",
+        help="覆盖 summarize.profile，例如 bailian/openrouter/groq",
     )
     parser.add_argument(
         "--summary-preset",
         default=None,
-        help="覆盖 summarize.preset，例如 timeline_merge/key_points",
+        help="覆盖 summarize.preset，例如 timeline_merge/key_points/raw",
     )
     parser.add_argument(
         "-m",
@@ -309,26 +288,21 @@ def main() -> None:
     config = load_config(args.config)
     selected_profile = selected_profile_override or config.summarize.profile
 
-    selected_preset = resolve_summary_preset_name(
-        summarize=config.summarize,
-        summary_presets=config.summary_presets,
-        override=selected_preset_override,
+    selected_preset, selected_preset_label = _resolve_preset(
+        config=config,
+        selected_preset_override=selected_preset_override,
     )
     model_profile = resolve_summarize_model_profile(
         config.summarize,
         override=selected_profile,
     )
     selected_model = args.model.strip() if args.model else model_profile.model
+    selected_api_base = resolve_summarize_api_base(model_profile)
 
     if not model_profile.api_key:
         raise ValueError(
             f"summarize.profiles.{selected_profile}.api_key 为空，请先在配置文件中设置"
         )
-
-    client = OpenAI(
-        api_key=model_profile.api_key,
-        base_url=model_profile.endpoint,
-    )
 
     # 根据输入来源获取内容
     if input_source_type == "file":
@@ -347,8 +321,11 @@ def main() -> None:
         output_path = Path("terminal_input_answer.md")
         input_display_name = f"终端输入 ({len(raw_content)} 字符)"
 
-    prompt_template = config.summary_presets.presets[selected_preset].prompt_template
-    prompt_text = prompt_template.format(content=raw_content)
+    if selected_preset == RAW_PRESET_NAME:
+        prompt_text = raw_content
+    else:
+        prompt_template = config.summary_presets.presets[selected_preset].prompt_template
+        prompt_text = prompt_template.format(content=raw_content)
 
     # 使用 rich 显示配置信息
     console = Console()
@@ -358,44 +335,22 @@ def main() -> None:
 
     config_table.add_row("输入来源", "📄 文件" if input_source_type == "file" else "⌨️  终端")
     config_table.add_row("Profile", selected_profile)
-    config_table.add_row("Preset", f"{selected_preset} ({config.summary_presets.presets[selected_preset].label})")
+    config_table.add_row("Preset", f"{selected_preset} ({selected_preset_label})")
+    config_table.add_row("Provider", model_profile.provider)
     config_table.add_row("模型", selected_model)
-    config_table.add_row("接口地址", model_profile.endpoint)
-    if _is_openrouter_endpoint(model_profile.endpoint) and model_profile.providers:
+    config_table.add_row("API Base", selected_api_base)
+    if model_profile.provider == "openrouter" and model_profile.providers:
         config_table.add_row("Providers", ', '.join(model_profile.providers))
 
     console.print(config_table)
 
-    messages = [{"role": "user", "content": prompt_text}]
-    is_openrouter = _is_openrouter_endpoint(model_profile.endpoint)
-    extra_body: dict[str, object] = {}
-    if is_openrouter:
-        if config.summarize.enable_thinking:
-            extra_body["reasoning"] = {"enabled": True}
-            # Legacy fallback accepted by OpenRouter.
-            extra_body["include_reasoning"] = True
-        else:
-            extra_body["reasoning"] = {"effort": "none", "exclude": True}
-            extra_body["include_reasoning"] = False
-    else:
-        extra_body["enable_thinking"] = config.summarize.enable_thinking
-
-    if is_openrouter and model_profile.providers:
-        extra_body["provider"] = {"order": list(model_profile.providers)}
-
-    request_kwargs: dict[str, object] = {
-        "model": selected_model,
-        "messages": messages,
-        "extra_body": extra_body,
-        "stream": True,
-        "stream_options": {"include_usage": True},
-    }
-    if is_openrouter:
-        max_tokens = _resolve_openrouter_max_tokens(selected_model)
-        if max_tokens is not None:
-            request_kwargs["max_tokens"] = max_tokens
-
-    completion = client.chat.completions.create(**request_kwargs)
+    completion = stream_summary_completion(
+        prompt=prompt_text,
+        summarize_config=config.summarize,
+        model_profile=model_profile,
+        model_override=selected_model,
+        include_usage=True,
+    )
 
     reasoning_content = ""
     answer_content = ""
@@ -409,32 +364,33 @@ def main() -> None:
     print()
 
     for chunk in completion:
-        chunk_usage = _get_field(chunk, "usage")
+        chunk_usage = get_message_field(chunk, "usage")
         if chunk_usage is not None:
             usage = chunk_usage
 
-        choices = _get_field(chunk, "choices")
+        choices = get_message_field(chunk, "choices")
         if not isinstance(choices, list) or not choices:
             continue
 
-        delta = _get_field(choices[0], "delta")
+        delta = get_message_field(choices[0], "delta")
         if delta is None:
             continue
 
-        reasoning_piece = _extract_reasoning_text(delta)
+        reasoning_piece = extract_reasoning_text(delta)
         if reasoning_piece:
             if not is_answering:
                 print(reasoning_piece, end="", flush=True)
             reasoning_content += reasoning_piece
 
-        if hasattr(delta, "content") and delta.content:
+        content_piece = to_text(get_message_field(delta, "content"))
+        if content_piece:
             if not is_answering:
                 print("\n")
                 console.print(Panel("✨ 完整回复", style="green", expand=False))
                 print()
                 is_answering = True
-            print(delta.content, end="", flush=True)
-            answer_content += delta.content
+            print(content_piece, end="", flush=True)
+            answer_content += content_piece
 
     elapsed = max(time.perf_counter() - start_time, 1e-9)
     output_chars = len(reasoning_content) + len(answer_content)
@@ -453,7 +409,7 @@ def main() -> None:
         input_display_name
     )
     stats_table.add_row("⚙️  配置 Profile", selected_profile)
-    stats_table.add_row("📝 总结 Preset", f"{selected_preset} ({config.summary_presets.presets[selected_preset].label})")
+    stats_table.add_row("📝 总结 Preset", f"{selected_preset} ({selected_preset_label})")
     stats_table.add_row("🤖 模型", selected_model)
     stats_table.add_row("⏱️  总耗时", f"{elapsed:.2f} 秒")
     stats_table.add_row("📄 输出字符数", f"{output_chars:,}")
@@ -532,12 +488,17 @@ def main() -> None:
         f"- 输入信息: {input_display_name}",
         f"- 配置 profile: {selected_profile}",
         f"- 总结 preset: {selected_preset}",
+        f"- provider: {model_profile.provider}",
         f"- 模型: {selected_model}",
-        f"- endpoint: {model_profile.endpoint}",
-        f"- OpenRouter providers: {', '.join(model_profile.providers) if model_profile.providers else '(default)'}",
+        f"- api_base: {selected_api_base}",
         f"- 总耗时: {elapsed:.2f} 秒",
         f"- 输出字符数(思考+回复): {output_chars}",
     ]
+    if model_profile.provider == "openrouter":
+        stats_lines.append(
+            "- OpenRouter providers: "
+            f"{', '.join(model_profile.providers) if model_profile.providers else '(default)'}"
+        )
     if token_speed is not None and completion_tokens:
         stats_lines.append(f"- 输出速度: {token_speed:.2f} token/秒")
         stats_lines.append(f"- 总 Token 数: {completion_tokens}")

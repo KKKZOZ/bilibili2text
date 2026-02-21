@@ -6,8 +6,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 DEFAULT_SUMMARY_PRESETS_FILE = "summary_presets.toml"
-DEFAULT_SUMMARIZE_PROFILE = "dashscope"
 DEFAULT_STT_PROFILE = "qwen"
+_SUPPORTED_SUMMARIZE_PROVIDERS = ("bailian", "openrouter", "groq")
+_SUMMARIZE_PROVIDER_DEFAULT_API_BASE: dict[str, str] = {
+    "bailian": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "openrouter": "https://openrouter.ai/api/v1",
+    "groq": "https://api.groq.com/openai/v1",
+}
 
 
 @dataclass(frozen=True)
@@ -113,35 +118,16 @@ class STTConfig:
 
 @dataclass(frozen=True)
 class SummarizeModelProfile:
+    provider: str
     model: str
-    endpoint: str
     api_key: str
+    api_base: str = ""
     providers: tuple[str, ...] = ()
-
-
-def _default_summarize_profiles() -> dict[str, "SummarizeModelProfile"]:
-    return {
-        "openrouter": SummarizeModelProfile(
-            model="moonshotai/kimi-k2.5",
-            endpoint="https://openrouter.ai/api/v1",
-            api_key="",
-            providers=(),
-        ),
-        "dashscope": SummarizeModelProfile(
-            model="qwen3-max",
-            endpoint="https://dashscope.aliyuncs.com/compatible-mode/v1",
-            api_key="",
-            providers=(),
-        ),
-    }
-
 
 @dataclass(frozen=True)
 class SummarizeConfig:
-    profile: str = DEFAULT_SUMMARIZE_PROFILE
-    profiles: dict[str, SummarizeModelProfile] = field(
-        default_factory=_default_summarize_profiles
-    )
+    profile: str = ""
+    profiles: dict[str, SummarizeModelProfile] = field(default_factory=dict)
     enable_thinking: bool = True
     preset: str | None = None
     presets_file: str = DEFAULT_SUMMARY_PRESETS_FILE
@@ -176,17 +162,38 @@ class AppConfig:
 
 
 def _load_summarize_config(raw_summarize: dict) -> SummarizeConfig:
+    if not isinstance(raw_summarize, dict):
+        raise ValueError("summarize 配置必须是 TOML 表")
+
     summarize = dict(raw_summarize)
-    profile = summarize.get("profile", DEFAULT_SUMMARIZE_PROFILE)
+    allowed_top_level_fields = {
+        "profile",
+        "profiles",
+        "enable_thinking",
+        "preset",
+        "presets_file",
+    }
+    unknown_top_level_fields = sorted(
+        set(summarize.keys()) - allowed_top_level_fields
+    )
+    if unknown_top_level_fields:
+        raise ValueError(
+            "summarize 包含未知字段: "
+            f"{', '.join(unknown_top_level_fields)}"
+        )
+
+    profile = summarize.get("profile")
     if not isinstance(profile, str) or not profile.strip():
-        raise ValueError("summarize.profile 必须是非空字符串")
+        raise ValueError("summarize.profile 必须在配置文件中显式声明为非空字符串")
     profile = profile.strip()
 
-    raw_profiles = summarize.get("profiles", {})
-    if not isinstance(raw_profiles, dict):
-        raise ValueError("summarize.profiles 必须是 TOML 表")
+    raw_profiles = summarize.get("profiles")
+    if not isinstance(raw_profiles, dict) or not raw_profiles:
+        raise ValueError(
+            "summarize.profiles 必须在配置文件中显式声明为非空 TOML 表"
+        )
 
-    profiles = _default_summarize_profiles()
+    profiles: dict[str, SummarizeModelProfile] = {}
     for name, value in raw_profiles.items():
         if not isinstance(name, str) or not name.strip():
             raise ValueError("summarize.profiles 的配置名必须是非空字符串")
@@ -194,52 +201,59 @@ def _load_summarize_config(raw_summarize: dict) -> SummarizeConfig:
             raise ValueError(f"summarize.profiles.{name} 必须是 TOML 表")
 
         key = name.strip()
-        base = profiles.get(key)
+        entry = dict(value)
+        allowed_entry_fields = {
+            "provider",
+            "model",
+            "api_key",
+            "api_base",
+            "providers",
+        }
+        unknown_entry_fields = sorted(set(entry.keys()) - allowed_entry_fields)
+        if unknown_entry_fields:
+            raise ValueError(
+                f"summarize.profiles.{key} 包含未知字段: "
+                f"{', '.join(unknown_entry_fields)}"
+            )
 
-        raw_model = value.get("model")
-        model: str
-        if isinstance(raw_model, str):
-            model = raw_model.strip()
-        elif base is not None:
-            model = base.model
-        else:
+        raw_provider = entry.get("provider")
+        if not isinstance(raw_provider, str) or not raw_provider.strip():
+            raise ValueError(f"summarize.profiles.{key} 缺少 provider")
+        provider = raw_provider.strip().lower()
+        if provider not in _SUPPORTED_SUMMARIZE_PROVIDERS:
+            available = ", ".join(_SUPPORTED_SUMMARIZE_PROVIDERS)
+            raise ValueError(
+                f"summarize.profiles.{key}.provider 仅支持 {available}"
+            )
+
+        raw_model = entry.get("model")
+        if not isinstance(raw_model, str):
             raise ValueError(f"summarize.profiles.{key} 缺少 model")
+        model = raw_model.strip()
         if not model:
             raise ValueError(f"summarize.profiles.{key}.model 必须是非空字符串")
 
-        raw_endpoint = value.get("endpoint")
-        endpoint: str
-        if isinstance(raw_endpoint, str):
-            endpoint = raw_endpoint.strip()
-        elif base is not None:
-            endpoint = base.endpoint
+        raw_api_base = entry.get("api_base")
+        if isinstance(raw_api_base, str):
+            api_base = raw_api_base.strip()
         else:
-            raise ValueError(f"summarize.profiles.{key} 缺少 endpoint")
-        if not endpoint:
-            raise ValueError(
-                f"summarize.profiles.{key}.endpoint 必须是非空字符串"
-            )
+            api_base = ""
+        if not api_base:
+            api_base = _SUMMARIZE_PROVIDER_DEFAULT_API_BASE[provider]
 
-        raw_api_key = value.get("api_key")
-        api_key: str
-        if isinstance(raw_api_key, str):
-            api_key = raw_api_key.strip()
-        elif base is not None:
-            api_key = base.api_key
-        else:
+        raw_api_key = entry.get("api_key")
+        if not isinstance(raw_api_key, str):
             raise ValueError(f"summarize.profiles.{key} 缺少 api_key")
+        api_key = raw_api_key.strip()
 
-        raw_providers = value.get("providers")
-        providers: tuple[str, ...]
-        if raw_providers is None and base is not None:
-            providers = base.providers
-        elif isinstance(raw_providers, str):
-            provider = raw_providers.strip()
-            if not provider:
+        raw_providers = entry.get("providers")
+        if isinstance(raw_providers, str):
+            provider_order = raw_providers.strip()
+            if not provider_order:
                 raise ValueError(
                     f"summarize.profiles.{key}.providers 必须是非空字符串或字符串数组"
                 )
-            providers = (provider,)
+            providers = (provider_order,)
         elif isinstance(raw_providers, list):
             parsed: list[str] = []
             for index, item in enumerate(raw_providers):
@@ -256,10 +270,16 @@ def _load_summarize_config(raw_summarize: dict) -> SummarizeConfig:
                 f"summarize.profiles.{key}.providers 必须是字符串或字符串数组"
             )
 
+        if provider != "openrouter" and providers:
+            raise ValueError(
+                f"summarize.profiles.{key}.providers 仅可用于 provider=openrouter"
+            )
+
         profiles[key] = SummarizeModelProfile(
+            provider=provider,
             model=model,
-            endpoint=endpoint,
             api_key=api_key,
+            api_base=api_base,
             providers=providers,
         )
 
@@ -304,6 +324,13 @@ def resolve_summarize_model_profile(
             f"summarize.profile `{selected_profile}` 不存在，可选值: {available}"
         )
     return profile
+
+
+def resolve_summarize_api_base(profile: SummarizeModelProfile) -> str:
+    api_base = profile.api_base.strip()
+    if api_base:
+        return api_base
+    return _SUMMARIZE_PROVIDER_DEFAULT_API_BASE[profile.provider]
 
 
 def _load_stt_profile(

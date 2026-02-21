@@ -21,7 +21,9 @@
       "Bash(npm run build:*)",
       "Bash(.venv/bin/pip install:*)",
       "Bash(/opt/homebrew/bin/python3 -m pip install:*)",
-      "Bash(sqlite3:*)"
+      "Bash(sqlite3:*)",
+      "Bash(uv run python:*)",
+      "Bash(chmod:*)"
     ]
   }
 }

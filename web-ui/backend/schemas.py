@@ -1,0 +1,132 @@
+"""Pydantic request / response models for the bilibili-to-text API."""
+
+from typing import Literal
+
+from pydantic import BaseModel, Field
+
+
+class ProcessRequest(BaseModel):
+    url: str = Field(..., min_length=1, description="Bilibili 视频 URL")
+    skip_summary: bool = Field(
+        default=False,
+        description="是否跳过总结步骤",
+    )
+    summary_preset: str | None = Field(
+        default=None,
+        description="总结 preset 名称",
+    )
+    summary_profile: str | None = Field(
+        default=None,
+        description="总结模型 profile 名称",
+    )
+
+
+class ProcessStartResponse(BaseModel):
+    job_id: str
+
+
+class DownloadItemResponse(BaseModel):
+    url: str
+    filename: str
+    kind: str
+
+
+class ProcessStatusResponse(BaseModel):
+    job_id: str
+    status: Literal["queued", "running", "succeeded", "failed"]
+    stage: str
+    stage_label: str
+    progress: int = Field(ge=0, le=100)
+    download_url: str
+    filename: str | None = None
+    txt_download_url: str | None = None
+    txt_filename: str | None = None
+    summary_download_url: str | None = None
+    summary_filename: str | None = None
+    summary_txt_download_url: str | None = None
+    summary_txt_filename: str | None = None
+    summary_table_pdf_download_url: str | None = None
+    summary_table_pdf_filename: str | None = None
+    summary_preset: str | None = None
+    summary_profile: str | None = None
+    already_transcribed: bool = False
+    notice: str | None = None
+    all_downloads: list[DownloadItemResponse] = Field(default_factory=list)
+    error: str | None = None
+    logs: list[str] = Field(default_factory=list)
+    stage_durations: dict[str, str] = Field(default_factory=dict)
+    created_at: str
+    updated_at: str
+    author: str | None = None
+    pubdate: str | None = None
+    bvid: str | None = None
+
+
+class SummaryPresetItemResponse(BaseModel):
+    name: str
+    label: str
+
+
+class SummaryPresetListResponse(BaseModel):
+    default_preset: str
+    selected_preset: str
+    presets: list[SummaryPresetItemResponse]
+
+
+class SummaryProfileItemResponse(BaseModel):
+    name: str
+    provider: str
+    model: str
+    api_base: str
+
+
+class SummaryProfileListResponse(BaseModel):
+    default_profile: str
+    selected_profile: str
+    profiles: list[SummaryProfileItemResponse]
+
+
+class HistoryItemResponse(BaseModel):
+    run_id: str
+    bvid: str
+    title: str
+    author: str
+    pubdate: str
+    created_at: str
+    has_summary: bool
+    file_count: int
+
+
+class HistoryListResponse(BaseModel):
+    items: list[HistoryItemResponse]
+    total: int
+    page: int
+    page_size: int
+    has_more: bool
+
+
+class HistoryDetailArtifactResponse(BaseModel):
+    kind: str
+    filename: str
+    download_url: str
+
+
+class HistoryDetailResponse(BaseModel):
+    run_id: str
+    bvid: str
+    title: str
+    author: str
+    pubdate: str
+    created_at: str
+    has_summary: bool
+    artifacts: list[HistoryDetailArtifactResponse]
+
+
+class ConvertRequest(BaseModel):
+    download_id: str = Field(..., description="下载 ID（来自 all_downloads 或 history 详情）")
+    target_format: str = Field(..., description="目标格式：txt, pdf, png, html")
+
+
+class ConvertResponse(BaseModel):
+    download_url: str
+    filename: str

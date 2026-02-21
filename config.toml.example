@@ -55,23 +55,31 @@ groq_overlap = 10
 groq_bitrate = "64k"
 
 [summarize]
-profile = "dashscope"
-# qwen3 走 extra_body.enable_thinking；OpenRouter 走 extra_body.reasoning
+profile = "bailian-main"
+# 默认开启 thinking；OpenRouter 走 extra_body.reasoning，百炼走 extra_body.enable_thinking
 enable_thinking = true
 preset = "timeline_merge"
 presets_file = "summary_presets.toml"
 
-[summarize.profiles.openrouter]
+[summarize.profiles.bailian-main]
+provider = "bailian"
+model = "qwen3-max"
+api_base = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+api_key = "your-dashscope-api-key"
+
+[summarize.profiles.openrouter-main]
+provider = "openrouter"
 model = "moonshotai/kimi-k2.5"
-endpoint = "https://openrouter.ai/api/v1"
+api_base = "https://openrouter.ai/api/v1"
 api_key = "your-openrouter-api-key"
 # 可选：OpenRouter 路由时优先尝试的 provider（1 个或多个）
 providers = ["OpenAI", "Anthropic"]
 
-[summarize.profiles.dashscope]
-model = "qwen3-max"
-endpoint = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-api_key = "your-dashscope-api-key"
+[summarize.profiles.groq-main]
+provider = "groq"
+model = "llama-3.3-70b-versatile"
+api_base = "https://api.groq.com/openai/v1"
+api_key = "your-groq-api-key"
 
 [converter]
 min_length = 60
