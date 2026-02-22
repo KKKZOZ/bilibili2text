@@ -6,14 +6,16 @@ from pathlib import Path
 from typing import Mapping
 from uuid import uuid4
 
-from b2t.config import AppConfig
-from b2t.converter.md_to_txt import convert_md_to_txt
+from b2t.config import (
+    AppConfig,
+    resolve_summarize_model_profile,
+    resolve_summary_preset_name,
+)
 from b2t.history import record_pipeline_run
 from b2t.storage import StorageBackend, StoredArtifact
 from b2t.storage.base import classify_artifact_filename
 from b2t.summarize.llm import (
     export_summary_table_markdown,
-    export_summary_table_pdf,
     summarize,
 )
 
@@ -21,6 +23,34 @@ from backend.downloads import _store_download
 from backend.state import _get_history_db
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_summary_selection(
+    *,
+    config: AppConfig | None,
+    has_summary: bool,
+    summary_preset: str | None,
+    summary_profile: str | None,
+) -> tuple[str | None, str | None]:
+    if not has_summary:
+        return None, None
+
+    cleaned_preset = (summary_preset or "").strip() or None
+    cleaned_profile = (summary_profile or "").strip() or None
+    if config is None:
+        return cleaned_preset, cleaned_profile
+
+    resolved_preset = resolve_summary_preset_name(
+        summarize=config.summarize,
+        summary_presets=config.summary_presets,
+        override=cleaned_preset,
+    )
+    resolved_profile = cleaned_profile or config.summarize.profile.strip()
+    resolve_summarize_model_profile(
+        config.summarize,
+        override=resolved_profile,
+    )
+    return resolved_preset, resolved_profile
 
 
 def _build_success_download_fields(
@@ -188,37 +218,22 @@ def _run_summary_only_from_existing(
             preset=summary_preset,
             profile=summary_profile,
         )
-        summary_text_path = convert_md_to_txt(summary_path)
 
         summary_table_md: Path | None = None
-        summary_table_pdf: Path | None = None
         try:
             summary_table_md = export_summary_table_markdown(summary_path, which="last")
         except Exception as exc:
             logger.warning("总结表格 Markdown 导出失败，已跳过: %s", exc)
-        try:
-            summary_table_pdf = export_summary_table_pdf(summary_path, which="last")
-        except Exception as exc:
-            logger.warning("总结表格 PDF 导出失败，已跳过: %s", exc)
 
         results: dict[str, StoredArtifact] = {}
         results["summary"] = storage_backend.store_file(
             summary_path,
             object_key=f"{run_prefix}/{summary_path.name}",
         )
-        results["summary_text"] = storage_backend.store_file(
-            summary_text_path,
-            object_key=f"{run_prefix}/{summary_text_path.name}",
-        )
         if summary_table_md is not None:
             results["summary_table_md"] = storage_backend.store_file(
                 summary_table_md,
                 object_key=f"{run_prefix}/{summary_table_md.name}",
-            )
-        if summary_table_pdf is not None:
-            results["summary_table_pdf"] = storage_backend.store_file(
-                summary_table_pdf,
-                object_key=f"{run_prefix}/{summary_table_pdf.name}",
             )
 
         # local backend 仅为总结临时拷贝 markdown，避免污染历史文件列表。
@@ -236,6 +251,9 @@ def _record_history(
     bvid: str,
     results: dict[str, StoredArtifact],
     created_at: str | None = None,
+    config: AppConfig | None = None,
+    summary_preset: str | None = None,
+    summary_profile: str | None = None,
 ) -> None:
     """Record a completed transcription run to the history DB."""
     try:
@@ -249,6 +267,17 @@ def _record_history(
         metadata = results.get("_metadata")
         author = metadata.author if metadata else ""
         pubdate = metadata.pubdate if metadata else ""
+        has_summary = "summary" in {
+            key: value
+            for key, value in results.items()
+            if not key.startswith("_")
+        }
+        resolved_preset, resolved_profile = _resolve_summary_selection(
+            config=config,
+            has_summary=has_summary,
+            summary_preset=summary_preset,
+            summary_profile=summary_profile,
+        )
 
         record_pipeline_run(
             db=db,
@@ -257,6 +286,9 @@ def _record_history(
             author=author,
             pubdate=pubdate,
             created_at=created_at,
+            summary_preset=resolved_preset,
+            summary_profile=resolved_profile,
+            merge_existing_artifacts=True,
         )
     except Exception as exc:
         logger.warning("记录历史转录失败: %s", exc)

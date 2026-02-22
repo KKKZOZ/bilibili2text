@@ -34,6 +34,7 @@ class DownloadItemResponse(BaseModel):
 class ProcessStatusResponse(BaseModel):
     job_id: str
     status: Literal["queued", "running", "succeeded", "failed"]
+    skip_summary: bool = False
     stage: str
     stage_label: str
     progress: int = Field(ge=0, le=100)
@@ -109,6 +110,8 @@ class HistoryDetailArtifactResponse(BaseModel):
     kind: str
     filename: str
     download_url: str
+    summary_preset: str = ""
+    summary_profile: str = ""
 
 
 class HistoryDetailResponse(BaseModel):
@@ -120,6 +123,17 @@ class HistoryDetailResponse(BaseModel):
     created_at: str
     has_summary: bool
     artifacts: list[HistoryDetailArtifactResponse]
+
+
+class HistoryRegenerateSummaryRequest(BaseModel):
+    summary_preset: str | None = Field(
+        default=None,
+        description="总结 preset 名称，为空时使用后端默认",
+    )
+    summary_profile: str | None = Field(
+        default=None,
+        description="总结模型 profile 名称，为空时使用后端默认",
+    )
 
 
 class ConvertRequest(BaseModel):

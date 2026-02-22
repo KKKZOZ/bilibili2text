@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref } from 'vue';
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { History, Sparkles } from 'lucide-vue-next';
 import ProcessView from './components/ProcessView.vue';
 import HistoryView from './components/HistoryView.vue';
@@ -17,6 +17,13 @@ const summaryPresetError = ref('');
 const summaryProfileError = ref('');
 const isLoadingSummaryPresets = ref(false);
 const isLoadingSummaryProfiles = ref(false);
+const tabBarRef = ref(null);
+const processTabRef = ref(null);
+const historyTabRef = ref(null);
+const tabIndicatorStyle = ref({
+  width: '0px',
+  transform: 'translateX(0px)',
+});
 
 const parseJsonSafely = async (resp, fallbackMessage) => {
   const raw = await resp.text();
@@ -119,8 +126,36 @@ const loadSummaryProfiles = async () => {
   }
 };
 
+const updateTabIndicator = () => {
+  const bar = tabBarRef.value;
+  const activeButton = currentView.value === 'process' ? processTabRef.value : historyTabRef.value;
+  if (!bar || !activeButton) {
+    return;
+  }
+
+  const barRect = bar.getBoundingClientRect();
+  const buttonRect = activeButton.getBoundingClientRect();
+  const offsetX = buttonRect.left - barRect.left;
+
+  tabIndicatorStyle.value = {
+    width: `${buttonRect.width}px`,
+    transform: `translateX(${offsetX}px)`,
+  };
+};
+
 onMounted(() => {
+  void nextTick(updateTabIndicator);
+  window.addEventListener('resize', updateTabIndicator);
   void Promise.all([loadSummaryProfiles(), loadSummaryPresets()]);
+});
+
+watch(currentView, async () => {
+  await nextTick();
+  updateTabIndicator();
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', updateTabIndicator);
 });
 </script>
 
@@ -130,12 +165,23 @@ onMounted(() => {
     <div class="ambient ambient-right"></div>
 
     <!-- Tab bar -->
-    <nav class="tab-bar">
-      <button :class="{ active: currentView === 'process' }" @click="currentView = 'process'">
+    <nav ref="tabBarRef" class="tab-bar">
+      <span class="tab-indicator" :style="tabIndicatorStyle" aria-hidden="true"></span>
+      <button
+        ref="processTabRef"
+        class="tab-button"
+        :class="{ active: currentView === 'process' }"
+        @click="currentView = 'process'"
+      >
         <Sparkles :size="16" />
         <span>新建转录</span>
       </button>
-      <button :class="{ active: currentView === 'history' }" @click="currentView = 'history'">
+      <button
+        ref="historyTabRef"
+        class="tab-button"
+        :class="{ active: currentView === 'history' }"
+        @click="currentView = 'history'"
+      >
         <History :size="16" />
         <span>历史记录</span>
       </button>
@@ -165,6 +211,8 @@ onMounted(() => {
       :summary-presets="summaryPresets"
       :summary-default-preset="summaryDefaultPreset"
       :selected-summary-preset="selectedSummaryPreset"
+      :summary-profiles="summaryProfiles"
+      :selected-summary-profile="selectedSummaryProfile"
     />
   </main>
 </template>

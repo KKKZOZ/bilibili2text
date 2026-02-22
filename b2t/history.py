@@ -35,7 +35,9 @@ CREATE TABLE IF NOT EXISTS transcription_artifacts (
     kind          TEXT    NOT NULL,
     filename      TEXT    NOT NULL,
     storage_key   TEXT    NOT NULL,
-    backend       TEXT    NOT NULL
+    backend       TEXT    NOT NULL,
+    summary_preset  TEXT  NOT NULL DEFAULT '',
+    summary_profile TEXT  NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_artifacts_run_id ON transcription_artifacts(run_id);
@@ -64,6 +66,8 @@ class HistoryArtifact:
     filename: str
     storage_key: str
     backend: str
+    summary_preset: str = ""
+    summary_profile: str = ""
 
 
 @dataclass(frozen=True)
@@ -119,6 +123,21 @@ class HistoryDB:
     @staticmethod
     def _ensure_schema(conn: sqlite3.Connection) -> None:
         conn.executescript(_SCHEMA_SQL)
+        # Backward-compatible migration for existing DB files.
+        existing_columns = {
+            str(row["name"])
+            for row in conn.execute("PRAGMA table_info(transcription_artifacts)")
+        }
+        if "summary_preset" not in existing_columns:
+            conn.execute(
+                "ALTER TABLE transcription_artifacts "
+                "ADD COLUMN summary_preset TEXT NOT NULL DEFAULT ''"
+            )
+        if "summary_profile" not in existing_columns:
+            conn.execute(
+                "ALTER TABLE transcription_artifacts "
+                "ADD COLUMN summary_profile TEXT NOT NULL DEFAULT ''"
+            )
 
     def record_run(
         self,
@@ -139,6 +158,20 @@ class HistoryDB:
         artifact_list = artifacts or []
         conn = self._conn()
         with conn:
+            existing_artifact_meta = {
+                str(row["storage_key"]): (
+                    str(row["summary_preset"] or ""),
+                    str(row["summary_profile"] or ""),
+                )
+                for row in conn.execute(
+                    """\
+                    SELECT storage_key, summary_preset, summary_profile
+                    FROM transcription_artifacts
+                    WHERE run_id = ?
+                    """,
+                    (run_id,),
+                ).fetchall()
+            }
             conn.execute(
                 """\
                 INSERT INTO transcription_runs
@@ -171,11 +204,33 @@ class HistoryDB:
             conn.executemany(
                 """\
                 INSERT INTO transcription_artifacts
-                    (run_id, kind, filename, storage_key, backend)
-                VALUES (?, ?, ?, ?, ?)
+                    (
+                        run_id,
+                        kind,
+                        filename,
+                        storage_key,
+                        backend,
+                        summary_preset,
+                        summary_profile
+                    )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
-                    (run_id, a.kind, a.filename, a.storage_key, a.backend)
+                    (
+                        run_id,
+                        a.kind,
+                        a.filename,
+                        a.storage_key,
+                        a.backend,
+                        (
+                            a.summary_preset.strip()
+                            or existing_artifact_meta.get(a.storage_key, ("", ""))[0]
+                        ),
+                        (
+                            a.summary_profile.strip()
+                            or existing_artifact_meta.get(a.storage_key, ("", ""))[1]
+                        ),
+                    )
                     for a in artifact_list
                 ],
             )
@@ -187,16 +242,16 @@ class HistoryDB:
         page_size: int = 20,
         search: str = "",
     ) -> HistoryPage:
-        """Paginated listing with optional search on title/bvid."""
+        """Paginated listing with optional search on title/bvid/author."""
         conn = self._conn()
 
         where = ""
         params: list[str] = []
         query = search.strip()
         if query:
-            where = "WHERE title LIKE ? OR bvid LIKE ?"
+            where = "WHERE title LIKE ? OR bvid LIKE ? OR author LIKE ?"
             like = f"%{query}%"
-            params = [like, like]
+            params = [like, like, like]
 
         row = conn.execute(
             f"SELECT COUNT(*) AS cnt FROM transcription_runs {where}",
@@ -254,9 +309,10 @@ class HistoryDB:
 
         artifact_rows = conn.execute(
             """\
-            SELECT kind, filename, storage_key, backend
+            SELECT kind, filename, storage_key, backend, summary_preset, summary_profile
             FROM transcription_artifacts
             WHERE run_id = ?
+            ORDER BY id ASC
             """,
             (run_id,),
         ).fetchall()
@@ -267,6 +323,8 @@ class HistoryDB:
                 filename=r["filename"],
                 storage_key=r["storage_key"],
                 backend=r["backend"],
+                summary_preset=r["summary_preset"],
+                summary_profile=r["summary_profile"],
             )
             for r in artifact_rows
         ]
@@ -289,7 +347,7 @@ class HistoryDB:
         # Get artifacts before deleting
         artifact_rows = conn.execute(
             """\
-            SELECT kind, filename, storage_key, backend
+            SELECT kind, filename, storage_key, backend, summary_preset, summary_profile
             FROM transcription_artifacts
             WHERE run_id = ?
             """,
@@ -302,6 +360,8 @@ class HistoryDB:
                 filename=r["filename"],
                 storage_key=r["storage_key"],
                 backend=r["backend"],
+                summary_preset=r["summary_preset"],
+                summary_profile=r["summary_profile"],
             )
             for r in artifact_rows
         ]
@@ -358,16 +418,31 @@ def infer_title(filename: str, *, bvid: str) -> str:
 
 def build_history_artifacts(
     results: Mapping[str, StoredArtifact],
+    *,
+    summary_preset: str | None = None,
+    summary_profile: str | None = None,
 ) -> list[HistoryArtifact]:
     """Convert stored artifacts to history rows."""
+    summary_kinds = {
+        "summary",
+        "summary_text",
+        "summary_table_md",
+        "summary_table_pdf",
+    }
+    cleaned_preset = (summary_preset or "").strip()
+    cleaned_profile = (summary_profile or "").strip()
+
     return [
         HistoryArtifact(
-            kind=classify_artifact_filename(artifact.filename) or "file",
+            kind=kind,
             filename=artifact.filename,
             storage_key=artifact.storage_key,
             backend=artifact.backend,
+            summary_preset=cleaned_preset if kind in summary_kinds else "",
+            summary_profile=cleaned_profile if kind in summary_kinds else "",
         )
         for artifact in results.values()
+        for kind in [classify_artifact_filename(artifact.filename) or "file"]
     ]
 
 
@@ -379,6 +454,9 @@ def record_pipeline_run(
     author: str = "",
     pubdate: str = "",
     created_at: str | None = None,
+    summary_preset: str | None = None,
+    summary_profile: str | None = None,
+    merge_existing_artifacts: bool = False,
 ) -> str | None:
     """Persist one pipeline run to history DB and return run_id.
 
@@ -404,6 +482,30 @@ def record_pipeline_run(
 
     run_id = infer_run_id(markdown.storage_key, bvid=bvid)
     title = infer_title(markdown.filename, bvid=bvid)
+    artifacts = build_history_artifacts(
+        file_results,
+        summary_preset=summary_preset,
+        summary_profile=summary_profile,
+    )
+    if merge_existing_artifacts:
+        existing = db.get_run_detail(run_id)
+        if existing is not None:
+            merged_artifacts: list[HistoryArtifact] = list(existing.artifacts)
+            merged_artifacts.extend(artifacts)
+            deduped_artifacts: list[HistoryArtifact] = []
+            seen_storage_keys: set[str] = set()
+            for artifact in merged_artifacts:
+                if artifact.storage_key in seen_storage_keys:
+                    continue
+                seen_storage_keys.add(artifact.storage_key)
+                deduped_artifacts.append(artifact)
+            artifacts = deduped_artifacts
+    has_summary = any(
+        artifact.kind
+        in {"summary", "summary_text", "summary_table_md", "summary_table_pdf"}
+        for artifact in artifacts
+    )
+
     db.record_run(
         run_id=run_id,
         bvid=bvid,
@@ -411,8 +513,8 @@ def record_pipeline_run(
         author=author,
         pubdate=pubdate,
         created_at=created_at,
-        has_summary="summary" in file_results,
-        artifacts=build_history_artifacts(file_results),
+        has_summary=has_summary,
+        artifacts=artifacts,
     )
     return run_id
 

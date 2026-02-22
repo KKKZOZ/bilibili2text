@@ -98,6 +98,44 @@ const job = ref({
 
 let pollTimer = null;
 const maxPollErrors = 3;
+const ACTIVE_JOB_STORAGE_KEY = 'b2t.active-job-id';
+
+const readPersistedJobId = () => {
+  if (typeof window === 'undefined') {
+    return '';
+  }
+
+  try {
+    return window.localStorage.getItem(ACTIVE_JOB_STORAGE_KEY)?.trim() || '';
+  } catch {
+    return '';
+  }
+};
+
+const persistActiveJobId = (id) => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    if (!id) {
+      window.localStorage.removeItem(ACTIVE_JOB_STORAGE_KEY);
+      return;
+    }
+    window.localStorage.setItem(ACTIVE_JOB_STORAGE_KEY, id);
+  } catch {
+    // ignore storage errors (private mode / quota / permission)
+  }
+};
+
+const setActiveJobId = (id) => {
+  jobId.value = id;
+  persistActiveJobId(id);
+};
+
+const clearActiveJobId = () => {
+  setActiveJobId('');
+};
 
 const parseJsonSafely = async (resp, fallbackMessage) => {
   const raw = await resp.text();
@@ -147,6 +185,7 @@ const allDownloadRows = computed(() => {
       job.value.summary_preset ||
       inferSummaryPresetFromFilename(item.filename) ||
       props.selectedSummaryPreset,
+    summaryProfile: job.value.summary_profile || props.selectedSummaryProfile,
   }));
 });
 
@@ -167,6 +206,7 @@ const syncLogScroll = () => {
 const resetJob = () => {
   job.value = {
     status: 'idle',
+    skip_summary: false,
     stage: 'queued',
     stage_label: '等待开始',
     progress: 0,
@@ -207,6 +247,10 @@ const pollStatus = async () => {
     const data = await parseJsonSafely(resp, '获取任务进度失败');
 
     if (!resp.ok) {
+      if (resp.status === 404) {
+        clearActiveJobId();
+        stopPolling();
+      }
       throw new Error(pickApiError(resp, data, '获取任务进度失败'));
     }
     if (!data || typeof data !== 'object') {
@@ -215,6 +259,7 @@ const pollStatus = async () => {
 
     const previousLogCount = Array.isArray(job.value.logs) ? job.value.logs.length : 0;
     job.value = data;
+    currentSkipSummary.value = Boolean(data.skip_summary);
     pollErrorCount.value = 0;
     error.value = '';
     const currentLogCount = Array.isArray(data.logs) ? data.logs.length : 0;
@@ -224,8 +269,10 @@ const pollStatus = async () => {
 
     if (data.status === 'failed') {
       error.value = data.error || '处理失败';
+      clearActiveJobId();
       stopPolling();
     } else if (data.status === 'succeeded') {
+      clearActiveJobId();
       stopPolling();
     }
   } catch (err) {
@@ -251,6 +298,7 @@ const submit = async () => {
   isStarting.value = true;
   error.value = '';
   stopPolling();
+  clearActiveJobId();
   resetJob();
 
   try {
@@ -289,7 +337,7 @@ const submit = async () => {
       throw new Error('提交任务失败（服务未返回有效 job_id）');
     }
 
-    jobId.value = data.job_id;
+    setActiveJobId(data.job_id);
     pollTimer = setInterval(pollStatus, 1200);
     await pollStatus();
   } catch (err) {
@@ -298,6 +346,20 @@ const submit = async () => {
     isStarting.value = false;
   }
 };
+
+onMounted(async () => {
+  const persistedJobId = readPersistedJobId();
+  if (!persistedJobId) {
+    return;
+  }
+
+  setActiveJobId(persistedJobId);
+  pollErrorCount.value = 0;
+  await pollStatus();
+  if (jobId.value && (job.value.status === 'queued' || job.value.status === 'running')) {
+    pollTimer = setInterval(pollStatus, 1200);
+  }
+});
 
 onBeforeUnmount(() => {
   stopPolling();
@@ -355,80 +417,90 @@ onBeforeUnmount(() => {
             <span class="switch-label">启用 LLM 整理总结</span>
           </label>
 
-          <div v-if="enableSummary" class="summary-preset">
-            <label for="summary-profile-select">总结模型配置</label>
-            <select
-              id="summary-profile-select"
-              :value="selectedSummaryProfile"
-              class="preset-select"
-              :disabled="isLoadingSummaryProfiles || summaryProfiles.length === 0"
-              @change="emit('update:selectedSummaryProfile', $event.target.value)"
-            >
-              <option v-if="isLoadingSummaryProfiles" value="">
-                正在加载模型配置...
-              </option>
-              <option v-else-if="summaryProfiles.length === 0" value="">
-                未获取到模型配置（将使用后端默认）
-              </option>
-              <option
-                v-for="profile in summaryProfiles"
-                :key="profile.name"
-                :value="profile.name"
-              >
-                {{ profile.name }} ({{ profile.model }})
-              </option>
-            </select>
-            <p v-if="summaryProfileError" class="preset-hint preset-hint-error">
-              {{ summaryProfileError }}
-              <button
-                class="preset-retry"
-                type="button"
-                @click="emit('loadSummaryProfiles')"
-              >
-                重试
-              </button>
-            </p>
-            <p v-else-if="summaryProfiles.length === 0" class="preset-hint">
-              暂未连接到后端模型配置接口，提交时会使用服务端默认模型。
-            </p>
-          </div>
+          <div v-if="enableSummary" class="process-summary-config">
+            <div class="process-summary-head">
+              <p class="process-summary-kicker">Summary Config</p>
+              <h3>总结参数</h3>
+              <p>选择模型配置与总结模板，生成更符合用途的总结内容。</p>
+            </div>
 
-          <div v-if="enableSummary" class="summary-preset">
-            <label for="summary-preset-select">总结 preset</label>
-            <select
-              id="summary-preset-select"
-              :value="selectedSummaryPreset"
-              class="preset-select"
-              :disabled="isLoadingSummaryPresets || summaryPresets.length === 0"
-              @change="emit('update:selectedSummaryPreset', $event.target.value)"
-            >
-              <option v-if="isLoadingSummaryPresets" value="">
-                正在加载 preset...
-              </option>
-              <option v-else-if="summaryPresets.length === 0" value="">
-                未获取到 preset（将使用后端默认）
-              </option>
-              <option
-                v-for="preset in summaryPresets"
-                :key="preset.name"
-                :value="preset.name"
-              >
-                {{ preset.label }}
-              </option>
-            </select>
-            <p v-if="summaryPresetError" class="preset-hint preset-hint-error">
-              {{ summaryPresetError }}
-              <button
-                class="preset-retry"
-                type="button"
-                @click="emit('loadSummaryPresets')"
-              >
-                重试
-              </button>
-            </p>
-            <p v-else-if="summaryPresets.length === 0" class="preset-hint">
-              暂未连接到后端 preset 接口，提交时会使用服务端默认 preset。
-            </p>
+            <div class="process-summary-grid">
+              <div class="summary-preset process-summary-field">
+                <label for="summary-profile-select">模型配置</label>
+                <select
+                  id="summary-profile-select"
+                  :value="selectedSummaryProfile"
+                  class="preset-select process-preset-select"
+                  :disabled="isLoadingSummaryProfiles || summaryProfiles.length === 0"
+                  @change="emit('update:selectedSummaryProfile', $event.target.value)"
+                >
+                  <option v-if="isLoadingSummaryProfiles" value="">
+                    正在加载模型配置...
+                  </option>
+                  <option v-else-if="summaryProfiles.length === 0" value="">
+                    未获取到模型配置（将使用后端默认）
+                  </option>
+                  <option
+                    v-for="profile in summaryProfiles"
+                    :key="profile.name"
+                    :value="profile.name"
+                  >
+                    {{ profile.name }} ({{ profile.model }})
+                  </option>
+                </select>
+                <p v-if="summaryProfileError" class="preset-hint preset-hint-error">
+                  {{ summaryProfileError }}
+                  <button
+                    class="preset-retry"
+                    type="button"
+                    @click="emit('loadSummaryProfiles')"
+                  >
+                    重试
+                  </button>
+                </p>
+                <p v-else-if="summaryProfiles.length === 0" class="preset-hint">
+                  暂未连接到后端模型配置接口，提交时会使用服务端默认模型。
+                </p>
+              </div>
+
+              <div class="summary-preset process-summary-field">
+                <label for="summary-preset-select">总结模板</label>
+                <select
+                  id="summary-preset-select"
+                  :value="selectedSummaryPreset"
+                  class="preset-select process-preset-select"
+                  :disabled="isLoadingSummaryPresets || summaryPresets.length === 0"
+                  @change="emit('update:selectedSummaryPreset', $event.target.value)"
+                >
+                  <option v-if="isLoadingSummaryPresets" value="">
+                    正在加载模板...
+                  </option>
+                  <option v-else-if="summaryPresets.length === 0" value="">
+                    未获取到模板（将使用后端默认）
+                  </option>
+                  <option
+                    v-for="preset in summaryPresets"
+                    :key="preset.name"
+                    :value="preset.name"
+                  >
+                    {{ preset.label }}
+                  </option>
+                </select>
+                <p v-if="summaryPresetError" class="preset-hint preset-hint-error">
+                  {{ summaryPresetError }}
+                  <button
+                    class="preset-retry"
+                    type="button"
+                    @click="emit('loadSummaryPresets')"
+                  >
+                    重试
+                  </button>
+                </p>
+                <p v-else-if="summaryPresets.length === 0" class="preset-hint">
+                  暂未连接到后端模板接口，提交时会使用服务端默认模板。
+                </p>
+              </div>
+            </div>
           </div>
 
           <button class="submit" type="submit" :disabled="isStarting || isRunning">
@@ -477,6 +549,8 @@ onBeforeUnmount(() => {
               :summary-presets="summaryPresets"
               :summary-default-preset="summaryDefaultPreset"
               :selected-summary-preset="selectedSummaryPreset"
+              :summary-profiles="summaryProfiles"
+              :selected-summary-profile="selectedSummaryProfile"
             />
           </template>
           <p v-else class="download-placeholder">任务完成后在这里展示可下载文件。</p>

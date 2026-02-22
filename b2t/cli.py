@@ -434,6 +434,8 @@ def _run_pipeline_with_args(args: CLIArgs, console: Console) -> int:
             results=results,
             author=author,
             pubdate=pubdate,
+            summary_preset=args.summary_preset,
+            summary_profile=args.summary_profile,
         )
     except Exception as exc:  # noqa: BLE001
         logging.warning("记录历史转录失败: %s", exc)

@@ -104,7 +104,11 @@ def _run_job(
                         job_id,
                         f"{datetime.now().strftime(JOB_LOG_DATE_FORMAT)} [INFO] b2t.pipeline: {_redact_text(notice)}",
                     )
-                    _record_history(bvid=bvid, results=existing_results)
+                    _record_history(
+                        bvid=bvid,
+                        results=existing_results,
+                        config=config,
+                    )
                     return
             else:
                 _update_job(
@@ -179,7 +183,13 @@ def _run_job(
                     job_id,
                     f"{datetime.now().strftime(JOB_LOG_DATE_FORMAT)} [INFO] b2t.pipeline: {_redact_text(notice)}",
                 )
-                _record_history(bvid=bvid, results=combined_results)
+                _record_history(
+                    bvid=bvid,
+                    results=combined_results,
+                    config=config,
+                    summary_preset=summary_preset,
+                    summary_profile=summary_profile,
+                )
                 return
 
     log_handler = _JobLogHandler(job_id=job_id, thread_id=get_ident())
@@ -282,7 +292,13 @@ def _run_job(
             **metadata_fields,
         )
         if bvid is not None:
-            _record_history(bvid=bvid, results=results)
+            _record_history(
+                bvid=bvid,
+                results=results,
+                config=config,
+                summary_preset=summary_preset,
+                summary_profile=summary_profile,
+            )
     finally:
         root_logger.removeHandler(log_handler)
         log_handler.close()

@@ -1,11 +1,16 @@
 """Markdown 转 PNG（通过 Pandoc + Playwright）"""
 
+import hashlib
 import logging
 from pathlib import Path
+import queue
 import re
 import shutil
 import subprocess
 import tempfile
+import threading
+from urllib.error import URLError
+from urllib.request import urlopen
 
 from playwright.sync_api import sync_playwright
 
@@ -17,6 +22,8 @@ except ImportError:  # pragma: no cover
     Image = None
 
 GITHUB_CSS_URL = "https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.5.1/github-markdown.min.css"
+LOCAL_CSS_CACHE_DIR = Path(tempfile.gettempdir()) / "b2t-assets"
+LOCAL_CSS_FALLBACK_NAME = "github-markdown-fallback.css"
 TABLE_DELIMITER_CELL_RE = re.compile(r"^:?-{3,}:?$")
 TABLE_DASH_TRANSLATION = str.maketrans(
     {
@@ -86,6 +93,149 @@ HTML_TEMPLATE = r"""<!doctype html>
 </html>
 """
 
+FALLBACK_MARKDOWN_CSS = """
+.markdown-body {
+  color: #24292f;
+  background-color: #ffffff;
+}
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  margin-top: 24px;
+  margin-bottom: 12px;
+  line-height: 1.25;
+}
+.markdown-body p,
+.markdown-body ul,
+.markdown-body ol,
+.markdown-body blockquote {
+  margin-top: 0;
+  margin-bottom: 14px;
+}
+.markdown-body code {
+  background: rgba(175, 184, 193, 0.2);
+  border-radius: 6px;
+  padding: 0.15em 0.35em;
+}
+.markdown-body pre {
+  background: #f6f8fa;
+  padding: 14px;
+  border-radius: 8px;
+  overflow: auto;
+}
+.markdown-body pre code {
+  background: transparent;
+  padding: 0;
+}
+.markdown-body a {
+  color: #0969da;
+  text-decoration: none;
+}
+.markdown-body a:hover {
+  text-decoration: underline;
+}
+.markdown-body hr {
+  border: 0;
+  border-top: 1px solid #d0d7de;
+  margin: 24px 0;
+}
+"""
+
+
+class _BrowserTask:
+    def __init__(self, fn) -> None:
+        self.fn = fn
+        self.done = threading.Event()
+        self.error: Exception | None = None
+
+
+class _ChromiumWorker:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._queue: queue.Queue[_BrowserTask | None] = queue.Queue()
+        self._thread: threading.Thread | None = None
+        self._ready = threading.Event()
+        self._startup_error: Exception | None = None
+
+    def start(self) -> None:
+        with self._lock:
+            if self._thread is not None and self._thread.is_alive():
+                return
+            self._ready.clear()
+            self._startup_error = None
+            self._thread = threading.Thread(
+                target=self._run,
+                name="b2t-chromium-worker",
+                daemon=True,
+            )
+            self._thread.start()
+        self._ready.wait()
+        if self._startup_error is not None:
+            raise RuntimeError(
+                f"启动 Chromium 后台实例失败: {self._startup_error}"
+            ) from self._startup_error
+
+    def stop(self) -> None:
+        with self._lock:
+            thread = self._thread
+            if thread is None:
+                return
+            self._queue.put(None)
+        thread.join(timeout=10)
+        with self._lock:
+            self._thread = None
+            self._ready.clear()
+
+    def submit(self, fn) -> None:
+        self.start()
+        task = _BrowserTask(fn)
+        self._queue.put(task)
+        task.done.wait()
+        if task.error is not None:
+            raise RuntimeError(f"Chromium 渲染任务失败: {task.error}") from task.error
+
+    def _run(self) -> None:
+        browser = None
+        try:
+            with sync_playwright() as p:
+                browser = p.chromium.launch()
+                self._ready.set()
+
+                while True:
+                    task = self._queue.get()
+                    if task is None:
+                        break
+                    try:
+                        task.fn(browser)
+                    except Exception as exc:  # noqa: BLE001
+                        task.error = exc
+                    finally:
+                        task.done.set()
+        except Exception as exc:  # noqa: BLE001
+            self._startup_error = exc
+            self._ready.set()
+            while True:
+                try:
+                    task = self._queue.get_nowait()
+                except queue.Empty:
+                    break
+                if task is None:
+                    continue
+                task.error = exc
+                task.done.set()
+        finally:
+            if browser is not None:
+                try:
+                    browser.close()
+                except Exception:  # noqa: BLE001
+                    pass
+
+
+_CHROMIUM_WORKER = _ChromiumWorker()
+
 
 class MarkdownToPngConverter:
     """Markdown 转 PNG 转换器（生成移动端长截图）。"""
@@ -154,16 +304,14 @@ class MarkdownToPngConverter:
         keep_html = options.get("keep_html", False)
         max_full_page_height = options.get("max_full_page_height", 12000)
         tile_height = options.get("tile_height", 1800)
+        reuse_browser = options.get("reuse_browser", True)
 
         # 生成中间 HTML
         html_path = output_path.with_suffix(".html")
         body_html = self._run_pandoc(input_path)
 
-        # 处理 CSS href
-        css_href = css_url
-        css_path = Path(css_url)
-        if css_path.exists():
-            css_href = css_path.resolve().as_uri()
+        # 处理 CSS href（优先本地缓存，避免每次访问外网）
+        css_href = self._resolve_css_href(css_url)
 
         # 生成完整 HTML
         full_html = HTML_TEMPLATE.format(css_href=css_href, body_html=body_html)
@@ -179,6 +327,7 @@ class MarkdownToPngConverter:
                 dpr=dpr,
                 max_full_page_height=max_full_page_height,
                 tile_height=tile_height,
+                reuse_browser=reuse_browser,
             )
 
             logger.info("PNG 文件已生成: %s", output_path)
@@ -241,6 +390,87 @@ class MarkdownToPngConverter:
             return False
         return all(TABLE_DELIMITER_CELL_RE.match(cell) for cell in cells)
 
+    def _resolve_css_href(self, css_url: str) -> str:
+        requested = (css_url or "").strip()
+        if requested:
+            candidate = Path(requested)
+            if candidate.exists():
+                return candidate.resolve().as_uri()
+            if requested.startswith(("http://", "https://")):
+                cached = self._download_css_to_cache(requested)
+                if cached is not None:
+                    return cached.resolve().as_uri()
+                logger.warning("远程 CSS 不可用，已回退到内置本地样式")
+                return self._ensure_fallback_css().resolve().as_uri()
+            return requested
+        return self._ensure_fallback_css().resolve().as_uri()
+
+    def _download_css_to_cache(self, css_url: str) -> Path | None:
+        LOCAL_CSS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        digest = hashlib.sha256(css_url.encode("utf-8")).hexdigest()[:16]
+        target_path = LOCAL_CSS_CACHE_DIR / f"github-markdown-{digest}.css"
+        if target_path.exists() and target_path.stat().st_size > 0:
+            return target_path
+
+        try:
+            with urlopen(css_url, timeout=8) as response:
+                css_content = response.read()
+            if not css_content:
+                raise ValueError("CSS 文件内容为空")
+            temp_path = target_path.with_suffix(".tmp")
+            temp_path.write_bytes(css_content)
+            temp_path.replace(target_path)
+            return target_path
+        except (URLError, TimeoutError, ValueError, OSError) as exc:
+            logger.warning("下载 Markdown CSS 失败: %s", exc)
+            return None
+
+    def _ensure_fallback_css(self) -> Path:
+        LOCAL_CSS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        fallback_path = LOCAL_CSS_CACHE_DIR / LOCAL_CSS_FALLBACK_NAME
+        if not fallback_path.exists() or fallback_path.stat().st_size == 0:
+            fallback_path.write_text(FALLBACK_MARKDOWN_CSS, encoding="utf-8")
+        return fallback_path
+
+    def _render_with_browser(
+        self,
+        browser,
+        *,
+        html_path: Path,
+        png_path: Path,
+        width: int,
+        height: int,
+        dpr: int,
+        max_full_page_height: int,
+        tile_height: int,
+    ) -> None:
+        context = browser.new_context(
+            viewport={"width": width, "height": height},
+            device_scale_factor=dpr,
+            is_mobile=True,
+            has_touch=True,
+        )
+        try:
+            page = context.new_page()
+            page.goto(html_path.as_uri(), wait_until="domcontentloaded")
+            full_height = int(
+                page.evaluate("Math.ceil(document.documentElement.scrollHeight)")
+            )
+
+            if full_height <= max_full_page_height or Image is None:
+                page.screenshot(path=str(png_path), full_page=True)
+            else:
+                self._capture_tiled_png(
+                    page=page,
+                    output_path=png_path,
+                    viewport_height=height,
+                    dpr=dpr,
+                    full_height=full_height,
+                    tile_height=tile_height,
+                )
+        finally:
+            context.close()
+
     def _render_html_to_png(
         self,
         html_path: Path,
@@ -251,37 +481,40 @@ class MarkdownToPngConverter:
         dpr: int,
         max_full_page_height: int,
         tile_height: int,
+        reuse_browser: bool,
     ) -> None:
         """使用 Playwright 渲染 HTML 为 PNG。"""
         try:
-            with sync_playwright() as p:
-                browser = p.chromium.launch()
-                context = browser.new_context(
-                    viewport={"width": width, "height": height},
-                    device_scale_factor=dpr,
-                    is_mobile=True,
-                    has_touch=True,
-                )
-
-                page = context.new_page()
-                page.goto(html_path.as_uri(), wait_until="networkidle")
-                full_height = int(
-                    page.evaluate("Math.ceil(document.documentElement.scrollHeight)")
-                )
-
-                if full_height <= max_full_page_height or Image is None:
-                    page.screenshot(path=str(png_path), full_page=True)
-                else:
-                    self._capture_tiled_png(
-                        page=page,
-                        output_path=png_path,
-                        viewport_height=height,
+            if reuse_browser:
+                _CHROMIUM_WORKER.submit(
+                    lambda browser: self._render_with_browser(
+                        browser,
+                        html_path=html_path,
+                        png_path=png_path,
+                        width=width,
+                        height=height,
                         dpr=dpr,
-                        full_height=full_height,
+                        max_full_page_height=max_full_page_height,
                         tile_height=tile_height,
                     )
+                )
+                return
 
-                browser.close()
+            with sync_playwright() as p:
+                browser = p.chromium.launch()
+                try:
+                    self._render_with_browser(
+                        browser,
+                        html_path=html_path,
+                        png_path=png_path,
+                        width=width,
+                        height=height,
+                        dpr=dpr,
+                        max_full_page_height=max_full_page_height,
+                        tile_height=tile_height,
+                    )
+                finally:
+                    browser.close()
         except Exception as exc:
             raise RuntimeError(f"Playwright 渲染失败: {exc}") from exc
 
@@ -349,3 +582,18 @@ class MarkdownToPngConverter:
                 merged.save(output_path)
             finally:
                 merged.close()
+
+
+def warmup_png_renderer() -> None:
+    """预热 PNG 渲染器（启动并常驻一个 Chromium 实例）。"""
+    # 预下载 CSS 到本地缓存，避免首次转换等待外网。
+    try:
+        MarkdownToPngConverter()._resolve_css_href(GITHUB_CSS_URL)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("预热本地 CSS 缓存失败: %s", exc)
+    _CHROMIUM_WORKER.start()
+
+
+def shutdown_png_renderer() -> None:
+    """关闭常驻 PNG 渲染器。"""
+    _CHROMIUM_WORKER.stop()

@@ -27,6 +27,14 @@ const props = defineProps({
     type: String,
     required: true,
   },
+  summaryProfiles: {
+    type: Array,
+    required: true,
+  },
+  selectedSummaryProfile: {
+    type: String,
+    required: true,
+  },
 });
 
 const historyItems = ref([]);
@@ -42,11 +50,19 @@ const historyDetailLoading = ref(false);
 const showHistoryDetail = ref(false);
 const deleteConfirmRunId = ref(null);
 const deleteLoading = ref(false);
+const regenerateLoading = ref(false);
+const regenerateError = ref('');
+const regenerateSuccess = ref('');
+const selectedHistorySummaryPreset = ref('');
+const selectedHistorySummaryProfile = ref('');
 
 let searchTimer = null;
 
 const historyTotalPages = computed(() =>
   Math.max(1, Math.ceil(historyTotal.value / historyPageSize.value))
+);
+const showHistorySkeleton = computed(
+  () => historyLoading.value && historyItems.value.length === 0
 );
 
 const historyDetailDownloadRows = computed(() => {
@@ -59,6 +75,8 @@ const historyDetailDownloadRows = computed(() => {
     key: `${artifact.download_url}-${artifact.filename}-${index}`,
     url: artifact.download_url,
     filename: artifact.filename,
+    presetName: artifact.summary_preset || '',
+    summaryProfile: artifact.summary_profile || '',
   }));
 });
 
@@ -93,6 +111,11 @@ const loadHistoryDetail = async (runId) => {
   historyDetailLoading.value = true;
   showHistoryDetail.value = true;
   historyDetail.value = null;
+  regenerateError.value = '';
+  regenerateSuccess.value = '';
+  selectedHistorySummaryPreset.value =
+    props.selectedSummaryPreset || props.summaryDefaultPreset || '';
+  selectedHistorySummaryProfile.value = props.selectedSummaryProfile || '';
   try {
     const resp = await fetch(`/api/history/${encodeURIComponent(runId)}`);
     const data = await resp.json();
@@ -105,6 +128,45 @@ const loadHistoryDetail = async (runId) => {
     showHistoryDetail.value = false;
   } finally {
     historyDetailLoading.value = false;
+  }
+};
+
+const regenerateSummary = async () => {
+  const runId = historyDetail.value?.run_id;
+  if (!runId) {
+    return;
+  }
+
+  regenerateLoading.value = true;
+  regenerateError.value = '';
+  regenerateSuccess.value = '';
+  try {
+    const resp = await fetch(
+      `/api/history/${encodeURIComponent(runId)}/regenerate-summary`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          summary_preset: selectedHistorySummaryPreset.value || null,
+          summary_profile: selectedHistorySummaryProfile.value || null,
+        }),
+      }
+    );
+    const data = await resp.json();
+    if (!resp.ok) {
+      throw new Error(data.detail || '重新生成总结失败');
+    }
+
+    historyDetail.value = data;
+    regenerateSuccess.value = '总结重新生成完成，文件已持久化到存储后端。';
+    await loadHistory();
+  } catch (err) {
+    regenerateError.value =
+      err instanceof Error ? err.message : '重新生成总结失败';
+  } finally {
+    regenerateLoading.value = false;
   }
 };
 
@@ -163,6 +225,13 @@ const deleteHistory = async (runId) => {
   }
 };
 
+const onHistoryArtifactDeleted = (detail) => {
+  historyDetail.value = detail;
+  regenerateError.value = '';
+  regenerateSuccess.value = '文件已删除。';
+  loadHistory();
+};
+
 defineExpose({
   loadHistory,
 });
@@ -183,9 +252,12 @@ onMounted(() => {
         </button>
       </header>
 
-      <div v-if="historyDetailLoading" class="history-status">
-        <LoaderCircle :size="16" class="spin" />
-        <span>加载详情...</span>
+      <div v-if="historyDetailLoading" class="history-detail-skeleton">
+        <div class="history-skeleton-line skeleton-title"></div>
+        <div class="history-skeleton-line skeleton-meta"></div>
+        <div class="history-skeleton-line skeleton-meta short"></div>
+        <div class="history-skeleton-block"></div>
+        <div class="history-skeleton-block compact"></div>
       </div>
 
       <template v-else-if="historyDetail">
@@ -227,14 +299,86 @@ onMounted(() => {
           </div>
         </div>
 
+        <div class="history-regenerate">
+          <div class="history-regenerate-head">
+            <p class="history-regenerate-kicker">重新生成配置</p>
+            <h3>总结参数</h3>
+            <p>可切换模型配置与 preset，对同一条历史转录重新生成总结。</p>
+          </div>
+
+          <div class="history-regenerate-grid">
+            <div class="summary-preset history-summary-preset">
+              <label for="history-summary-profile-select">模型配置</label>
+              <select
+                id="history-summary-profile-select"
+                v-model="selectedHistorySummaryProfile"
+                class="preset-select history-preset-select"
+                :disabled="regenerateLoading || summaryProfiles.length === 0"
+              >
+                <option v-if="summaryProfiles.length === 0" value="">
+                  未获取到模型配置（将使用后端默认）
+                </option>
+                <option
+                  v-for="profile in summaryProfiles"
+                  :key="profile.name"
+                  :value="profile.name"
+                >
+                  {{ profile.name }} ({{ profile.model }})
+                </option>
+              </select>
+            </div>
+
+            <div class="summary-preset history-summary-preset">
+              <label for="history-summary-preset-select">总结模板</label>
+              <select
+                id="history-summary-preset-select"
+                v-model="selectedHistorySummaryPreset"
+                class="preset-select history-preset-select"
+                :disabled="regenerateLoading || summaryPresets.length === 0"
+              >
+                <option v-if="summaryPresets.length === 0" value="">
+                  未获取到 preset（将使用后端默认）
+                </option>
+                <option
+                  v-for="preset in summaryPresets"
+                  :key="preset.name"
+                  :value="preset.name"
+                >
+                  {{ preset.label }}
+                </option>
+              </select>
+            </div>
+          </div>
+
+          <button
+            class="submit history-regenerate-button"
+            type="button"
+            :disabled="regenerateLoading"
+            @click="regenerateSummary"
+          >
+            <LoaderCircle v-if="regenerateLoading" :size="16" class="spin" />
+            <span>{{ regenerateLoading ? '生成中...' : '用当前配置重新生成总结' }}</span>
+          </button>
+          <p v-if="regenerateError" class="inline-error">
+            <AlertCircle :size="16" />
+            <span>{{ regenerateError }}</span>
+          </p>
+          <p v-if="regenerateSuccess" class="preset-hint">{{ regenerateSuccess }}</p>
+        </div>
+
         <FileList
+          class="detail-download-list"
           :items="historyDetailDownloadRows"
           :summary-presets="summaryPresets"
           :summary-default-preset="summaryDefaultPreset"
-          :selected-summary-preset="selectedSummaryPreset"
+          :selected-summary-preset="selectedHistorySummaryPreset"
+          :summary-profiles="summaryProfiles"
+          :selected-summary-profile="selectedHistorySummaryProfile"
           :bvid="historyDetail.bvid"
+          :history-run-id="historyDetail.run_id"
           title="文件列表"
-          :filter-kinds="['markdown', 'summary', 'summary_no_table', 'summary_table_md', 'summary_table_pdf', 'text', 'summary_text', 'json', 'audio']"
+          :filter-kinds="['markdown', 'summary', 'summary_no_table', 'summary_table_md', 'text', 'json', 'audio']"
+          @artifact-deleted="onHistoryArtifactDeleted"
         />
       </template>
     </article>
@@ -248,15 +392,21 @@ onMounted(() => {
           <input
             v-model="historySearch"
             type="text"
-            placeholder="搜索标题或 BV 号..."
+            placeholder="搜索标题、BV 号或 UP 主..."
             @input="onSearchInput"
           />
         </div>
       </header>
 
-      <div v-if="historyLoading" class="history-status">
-        <LoaderCircle :size="16" class="spin" />
-        <span>加载中...</span>
+      <div v-if="showHistorySkeleton" class="history-list-skeleton" aria-hidden="true">
+        <div v-for="idx in 6" :key="idx" class="history-skeleton-item">
+          <div class="history-skeleton-main">
+            <div class="history-skeleton-line skeleton-title"></div>
+            <div class="history-skeleton-line skeleton-bvid"></div>
+            <div class="history-skeleton-line skeleton-meta"></div>
+          </div>
+          <div class="history-skeleton-action"></div>
+        </div>
       </div>
       <p v-else-if="historyError" class="inline-error">
         <AlertCircle :size="16" />

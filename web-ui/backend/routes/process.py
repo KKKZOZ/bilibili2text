@@ -80,6 +80,7 @@ def process_status(job_id: str) -> ProcessStatusResponse:
     return ProcessStatusResponse(
         job_id=str(job["job_id"]),
         status=str(job["status"]),
+        skip_summary=bool(job.get("skip_summary")),
         stage=str(job["stage"]),
         stage_label=str(job["stage_label"]),
         progress=int(job["progress"]),
