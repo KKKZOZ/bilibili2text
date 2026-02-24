@@ -3,13 +3,14 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import {
   AlertCircle,
   CheckCircle2,
+  FileAudio2,
   Link2,
   LoaderCircle,
   Sparkles,
 } from 'lucide-vue-next';
 import ProgressPanel from './ProgressPanel.vue';
 import FileList from './FileList.vue';
-import { buildArtifactDisplayName, inferSummaryPresetFromFilename } from '../utils/fileUtils';
+import { inferSummaryPresetFromFilename } from '../utils/fileUtils';
 
 const props = defineProps({
   summaryPresets: {
@@ -59,6 +60,9 @@ const emit = defineEmits([
 
 const url = ref('');
 const error = ref('');
+const inputMode = ref('url');
+const uploadedAudioFile = ref(null);
+const uploadFileInput = ref(null);
 const enableSummary = ref(true);
 const currentSkipSummary = ref(false);
 const isStarting = ref(false);
@@ -99,6 +103,8 @@ const job = ref({
 let pollTimer = null;
 const maxPollErrors = 3;
 const ACTIVE_JOB_STORAGE_KEY = 'b2t.active-job-id';
+const uploadAccept = '.aac,.flac,.m4a,.mp3,.ogg,.opus,.wav,.webm';
+const uploadFilenamePattern = /^(BV[0-9A-Za-z]{10})_.+\.(aac|flac|m4a|mp3|ogg|opus|wav|webm)$/i;
 
 const readPersistedJobId = () => {
   if (typeof window === 'undefined') {
@@ -171,6 +177,7 @@ const shouldSkipSummary = computed(() => {
   }
   return currentSkipSummary.value;
 });
+const isUploadMode = computed(() => inputMode.value === 'upload');
 
 const allDownloadRows = computed(() => {
   const downloads = Array.isArray(job.value.all_downloads)
@@ -236,6 +243,31 @@ const resetJob = () => {
   };
 };
 
+const setInputMode = (mode) => {
+  inputMode.value = mode;
+  error.value = '';
+};
+
+const onUploadFileChange = (event) => {
+  const target = event.target;
+  if (!target || !target.files || target.files.length === 0) {
+    uploadedAudioFile.value = null;
+    return;
+  }
+  uploadedAudioFile.value = target.files[0];
+};
+
+const validateUploadedAudio = (file) => {
+  if (!file) {
+    return '请先选择音频文件';
+  }
+  const normalizedName = String(file.name || '').trim();
+  if (!uploadFilenamePattern.test(normalizedName)) {
+    return '上传文件名必须符合 `BV号_视频标题.xxx`，例如 `BV1R9i4BoE7H_视频标题.m4a`';
+  }
+  return '';
+};
+
 const pollStatus = async () => {
   if (!jobId.value || isPolling.value) {
     return;
@@ -290,11 +322,6 @@ const pollStatus = async () => {
 };
 
 const submit = async () => {
-  if (!url.value.trim()) {
-    error.value = '请输入 bilibili 视频 URL';
-    return;
-  }
-
   isStarting.value = true;
   error.value = '';
   stopPolling();
@@ -306,24 +333,49 @@ const submit = async () => {
     currentSkipSummary.value = skipSummary;
     pollErrorCount.value = 0;
 
-    const resp = await fetch('/api/process', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        url: url.value.trim(),
-        skip_summary: skipSummary,
-        summary_preset:
-          skipSummary || !props.selectedSummaryPreset
-            ? null
-            : props.selectedSummaryPreset,
-        summary_profile:
-          skipSummary || !props.selectedSummaryProfile
-            ? null
-            : props.selectedSummaryProfile,
-      }),
-    });
+    let resp;
+    if (isUploadMode.value) {
+      const validationMessage = validateUploadedAudio(uploadedAudioFile.value);
+      if (validationMessage) {
+        throw new Error(validationMessage);
+      }
+      const formData = new FormData();
+      formData.append('file', uploadedAudioFile.value);
+      formData.append('skip_summary', String(skipSummary));
+      if (!skipSummary && props.selectedSummaryPreset) {
+        formData.append('summary_preset', props.selectedSummaryPreset);
+      }
+      if (!skipSummary && props.selectedSummaryProfile) {
+        formData.append('summary_profile', props.selectedSummaryProfile);
+      }
+      resp = await fetch('/api/process/upload', {
+        method: 'POST',
+        body: formData,
+      });
+    } else {
+      if (!url.value.trim()) {
+        throw new Error('请输入 bilibili 视频 URL 或 BV 号');
+      }
+      resp = await fetch('/api/process', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          url: url.value.trim(),
+          skip_summary: skipSummary,
+          summary_preset:
+            skipSummary || !props.selectedSummaryPreset
+              ? null
+              : props.selectedSummaryPreset,
+          summary_profile:
+            skipSummary || !props.selectedSummaryProfile
+              ? null
+              : props.selectedSummaryProfile,
+        }),
+      });
+    }
+
     const data = await parseJsonSafely(resp, '提交任务失败');
     if (!resp.ok) {
       throw new Error(pickApiError(resp, data, '提交任务失败'));
@@ -376,7 +428,7 @@ onBeforeUnmount(() => {
             <span>AI Workflow</span>
           </div>
           <h1>bilibili-to-text</h1>
-          <p>输入 B 站视频链接，自动生成转录后的文本内容和大模型总结。</p>
+          <p>输入 B 站视频链接，或上传符合命名规范的音频文件，自动生成转录内容和大模型总结。</p>
           <div class="hero-meta">
             <span class="hero-pill">
               {{ isRunning ? '处理中' : '准备就绪' }}
@@ -388,26 +440,70 @@ onBeforeUnmount(() => {
         </header>
 
         <form class="form" @submit.prevent="submit">
-          <label for="video-url">视频 URL 或 BV 号</label>
-          <div class="input-row">
-            <Link2 :size="18" />
-            <input
-              id="video-url"
-              v-model="url"
-              type="text"
-              placeholder="https://www.bilibili.com/video/BV..."
-            />
-          </div>
-          <p class="input-example">
-            示例 URL:
-            <a
-              href="https://www.bilibili.com/video/BV1R9i4BoE7H"
-              target="_blank"
-              rel="noopener noreferrer"
+          <div class="input-mode-tabs">
+            <button
+              type="button"
+              class="input-mode-button"
+              :class="{ active: !isUploadMode }"
+              :disabled="isStarting || isRunning"
+              @click="setInputMode('url')"
             >
-              https://www.bilibili.com/video/BV1R9i4BoE7H
-            </a>
-          </p>
+              <Link2 :size="15" />
+              <span>链接 / BV</span>
+            </button>
+            <button
+              type="button"
+              class="input-mode-button"
+              :class="{ active: isUploadMode }"
+              :disabled="isStarting || isRunning"
+              @click="setInputMode('upload')"
+            >
+              <FileAudio2 :size="15" />
+              <span>上传音频</span>
+            </button>
+          </div>
+
+          <template v-if="!isUploadMode">
+            <label for="video-url">视频 URL 或 BV 号</label>
+            <div class="input-row">
+              <Link2 :size="18" />
+              <input
+                id="video-url"
+                v-model="url"
+                type="text"
+                placeholder="https://www.bilibili.com/video/BV..."
+              />
+            </div>
+            <p class="input-example">
+              示例 URL:
+              <a
+                href="https://www.bilibili.com/video/BV1R9i4BoE7H"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                https://www.bilibili.com/video/BV1R9i4BoE7H
+              </a>
+            </p>
+          </template>
+
+          <template v-else>
+            <label for="audio-file">音频文件（必需包含 BV 号）</label>
+            <div class="upload-row">
+              <input
+                id="audio-file"
+                ref="uploadFileInput"
+                type="file"
+                :accept="uploadAccept"
+                @change="onUploadFileChange"
+              />
+            </div>
+            <p class="input-example">
+              文件名必须符合
+              <code>BV号_视频标题.xxx</code>
+              ，例如
+              <code>BV1R9i4BoE7H_视频标题.m4a</code>
+            </p>
+          </template>
 
           <label class="switch" for="enable-summary">
             <input id="enable-summary" v-model="enableSummary" type="checkbox" />
@@ -576,3 +672,452 @@ onBeforeUnmount(() => {
     </section>
   </div>
 </template>
+
+<style scoped>
+/* ─── Layouts ────────────────────────────────────────────────── */
+
+.layout {
+  position: relative;
+  z-index: 2;
+  max-width: 1160px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1.12fr) minmax(0, 0.88fr);
+  gap: 20px;
+}
+
+.download-layout,
+.log-layout {
+  position: relative;
+  z-index: 2;
+  max-width: 1160px;
+  margin: 20px auto 0;
+}
+
+/* ─── Panel variants ─────────────────────────────────────────── */
+
+.panel-main {
+  padding: 32px;
+}
+
+.panel-download {
+  padding: 22px;
+  animation-delay: 0.12s;
+}
+
+.panel-log {
+  padding: 22px;
+  animation-delay: 0.16s;
+}
+
+/* ─── Header ─────────────────────────────────────────────────── */
+
+.header h1 {
+  margin: 14px 0 8px;
+  font-size: clamp(1.72rem, 2.7vw, 2.36rem);
+  line-height: 1.02;
+  letter-spacing: -0.03em;
+}
+
+.header p {
+  margin: 0;
+  max-width: 48ch;
+  color: var(--text-soft);
+  line-height: 1.6;
+}
+
+/* ─── Badge ──────────────────────────────────────────────────── */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 11px;
+  border-radius: 999px;
+  border: 1px solid #a7f3d0;
+  background: linear-gradient(140deg, #f0fdfa, #ecfeff);
+  color: #0f766e;
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.11em;
+}
+
+/* ─── Hero pills ─────────────────────────────────────────────── */
+
+.hero-meta {
+  margin-top: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.hero-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid #99f6e4;
+  background: #ecfeff;
+  color: #0f766e;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.hero-pill-soft {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+  color: #475569;
+}
+
+/* ─── Form ───────────────────────────────────────────────────── */
+
+.form {
+  margin-top: 24px;
+  display: grid;
+  gap: 13px;
+}
+
+.form label {
+  font-size: 0.86rem;
+  color: var(--text-soft);
+  font-weight: 600;
+}
+
+.input-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 14px;
+  padding: 0 13px;
+  min-height: 48px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+.input-row:focus-within {
+  border-color: #22d3ee;
+  box-shadow: 0 0 0 4px rgba(34, 211, 238, 0.16);
+  background: #ffffff;
+}
+
+.input-row svg {
+  color: #64748b;
+  flex-shrink: 0;
+}
+
+.input-row input {
+  width: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-main);
+  height: 46px;
+  font-size: 0.95rem;
+}
+
+.input-example {
+  margin: -2px 0 3px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.input-example a {
+  color: var(--brand-strong);
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.input-example a:hover {
+  text-decoration: underline;
+}
+
+.input-mode-tabs {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 4px;
+  background: rgba(248, 250, 252, 0.9);
+  gap: 4px;
+}
+
+.input-mode-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 11px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #475569;
+  font-size: 0.84rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.input-mode-button.active {
+  background: linear-gradient(135deg, #0ea5e9, #14b8a6);
+  color: #ffffff;
+}
+
+.input-mode-button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.upload-row {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  min-height: 48px;
+  padding: 8px 13px;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.upload-row input[type='file'] {
+  width: 100%;
+  color: var(--text-soft);
+  font-size: 0.9rem;
+}
+
+/* ─── Toggle switch ──────────────────────────────────────────── */
+
+.switch {
+  margin-top: 3px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.switch input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.switch-track {
+  width: 44px;
+  height: 24px;
+  border-radius: 999px;
+  border: 1px solid #cbd5e1;
+  background: #e2e8f0;
+  padding: 2px;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.switch-thumb {
+  display: block;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 2px 5px rgba(15, 23, 42, 0.22);
+  transform: translateX(0);
+  transition: transform 0.2s ease;
+}
+
+.switch input:checked + .switch-track {
+  border-color: #14b8a6;
+  background: linear-gradient(135deg, #14b8a6, #0ea5e9);
+}
+
+.switch input:checked + .switch-track .switch-thumb {
+  transform: translateX(19px);
+}
+
+.switch input:focus-visible + .switch-track {
+  box-shadow: 0 0 0 4px rgba(20, 184, 166, 0.2);
+}
+
+.switch-label {
+  color: var(--text-soft);
+  font-size: 0.9rem;
+}
+
+/* ─── Summary config ─────────────────────────────────────────── */
+
+.process-summary-config {
+  padding: 14px;
+  border: 1px solid rgba(14, 165, 233, 0.16);
+  border-radius: 14px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fdff 100%);
+  display: grid;
+  gap: 12px;
+}
+
+.process-summary-head {
+  display: grid;
+  gap: 4px;
+}
+
+.process-summary-kicker {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #0284c7;
+}
+
+.process-summary-head h3 {
+  margin: 0;
+  font-size: 1.06rem;
+  color: #0f172a;
+}
+
+.process-summary-head p {
+  margin: 0;
+  font-size: 0.84rem;
+  line-height: 1.5;
+  color: #475569;
+}
+
+.process-summary-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.process-summary-field {
+  gap: 6px;
+}
+
+.process-summary-field label {
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: #334155;
+}
+
+.process-preset-select {
+  min-height: 46px;
+  border-color: #cbd5e1;
+  background: linear-gradient(145deg, #ffffff, #f8fafc);
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.04);
+}
+
+.preset-select.process-preset-select:hover:not(:disabled) {
+  border-color: #93c5fd;
+  box-shadow: 0 6px 16px rgba(59, 130, 246, 0.08);
+}
+
+.preset-select.process-preset-select:focus {
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.18);
+}
+
+/* ─── Download card ──────────────────────────────────────────── */
+
+.download-card {
+  margin-top: 20px;
+  border-radius: 18px;
+  border: 1px solid #99f6e4;
+  background: linear-gradient(145deg, #f0fdfa, #ecfeff);
+  padding: 14px;
+  display: block;
+}
+
+.cache-hit-note {
+  margin: 0 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #166534;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.download-placeholder {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+/* ─── Log ────────────────────────────────────────────────────── */
+
+.log-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.log-header h2 {
+  margin: 0;
+  font-size: 1.07rem;
+}
+
+.log-header p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.log-view {
+  margin-top: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(100, 116, 139, 0.3);
+  background: linear-gradient(180deg, #f8fafc, #f1f5f9);
+  padding: 12px 14px;
+  height: 270px;
+  overflow: auto;
+  font-family: "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+
+.log-line {
+  margin: 0 0 6px;
+  color: #475569;
+  font-size: 0.8rem;
+  line-height: 1.48;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.log-line:last-child {
+  margin-bottom: 0;
+}
+
+.log-empty {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 0.85rem;
+}
+
+/* ─── Responsive ─────────────────────────────────────────────── */
+
+@media (max-width: 980px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+
+  .panel-main,
+  .panel-download,
+  .panel-log {
+    padding: 20px;
+  }
+
+  .log-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .process-summary-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .header h1 {
+    font-size: 1.62rem;
+  }
+}
+</style>

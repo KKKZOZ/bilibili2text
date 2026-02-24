@@ -56,6 +56,8 @@ def run_pipeline(
     url: str,
     config: AppConfig,
     *,
+    audio_path: Path | str | None = None,
+    input_bvid: str | None = None,
     skip_summary: bool = False,
     summary_preset: str | None = None,
     summary_profile: str | None = None,
@@ -64,11 +66,13 @@ def run_pipeline(
 ) -> dict[str, StoredArtifact]:
     """执行完整的转录流程
 
-    流程：下载音频文件 → 转录 → 总结
+    流程：获取音频文件（下载或本地上传）→ 转录 → 总结
 
     Args:
-        url: Bilibili 视频 URL
+        url: Bilibili 视频 URL（audio_path 为空时必填）
         config: 应用配置
+        audio_path: 本地音频路径（传入时将跳过下载步骤）
+        input_bvid: 可选 BV 号，优先于从 URL/文件名提取
         skip_summary: 是否跳过 LLM 总结
         summary_preset: 总结 preset 名称，为 None 时使用配置默认值
         summary_profile: 总结模型 profile 名称，为 None 时使用配置默认值
@@ -102,16 +106,32 @@ def run_pipeline(
             progress_callback(stage, label, progress)
 
     try:
-        # 1. 下载音频并获取元信息
-        emit_progress("downloading", "下载视频音频", 10)
-        logger.info("=== 下载音频 ===")
-        audio_file, metadata = download_audio(
-            url, temp_download_dir, config.download.audio_quality
+        normalized_audio_path = (
+            Path(audio_path).expanduser().resolve() if audio_path is not None else None
         )
-        bvid = extract_bvid(url) or extract_bvid(audio_file.name)
+        use_local_audio = normalized_audio_path is not None
+        if use_local_audio:
+            if not normalized_audio_path.is_file():
+                raise FileNotFoundError(f"上传音频文件不存在: {normalized_audio_path}")
+            emit_progress("downloading", "处理上传音频", 10)
+            logger.info("=== 处理上传音频 ===")
+            audio_file = normalized_audio_path
+            metadata = None
+            bvid = input_bvid or extract_bvid(audio_file.name)
+        else:
+            if not url.strip():
+                raise ValueError("URL 不能为空")
+            emit_progress("downloading", "下载视频音频", 10)
+            logger.info("=== 下载音频 ===")
+            audio_file, metadata = download_audio(
+                url, temp_download_dir, config.download.audio_quality
+            )
+            bvid = input_bvid or extract_bvid(url) or extract_bvid(audio_file.name)
+
         if bvid is None:
             raise ValueError(
-                "无法从输入链接中提取 BV 号，无法按 BV 前缀命名输出文件"
+                "无法提取 BV 号。请使用包含 BV 号的 URL，"
+                "或上传形如 `BV号_视频标题.xxx` 的音频文件。"
             )
 
         # 记录元信息
@@ -126,7 +146,10 @@ def run_pipeline(
         # 移动音频到工作目录
         audio_filename = _ensure_bvid_prefixed_name(audio_file.name, bvid)
         new_audio_path = work_dir / audio_filename
-        shutil.move(str(audio_file), new_audio_path)
+        if use_local_audio:
+            shutil.copy2(str(audio_file), new_audio_path)
+        else:
+            shutil.move(str(audio_file), new_audio_path)
         local_results["audio"] = new_audio_path
         logger.info("工作目录: %s", work_dir)
 

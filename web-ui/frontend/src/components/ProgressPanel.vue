@@ -121,3 +121,215 @@ const stageStatus = (stageKey) => {
     </ul>
   </article>
 </template>
+
+<style scoped>
+/* ─── Panel variant ──────────────────────────────────────────── */
+
+.panel-progress {
+  padding: 24px;
+  animation-delay: 0.08s;
+}
+
+/* ─── Progress header ────────────────────────────────────────── */
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.progress-header h2 {
+  margin: 0;
+  font-size: 1.07rem;
+}
+
+.progress-header p {
+  margin: 6px 0 0;
+  color: var(--text-soft);
+  min-height: 1.4em;
+}
+
+/* ─── State badge ────────────────────────────────────────────── */
+
+.progress-state {
+  margin-top: 1px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 25px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border: 1px solid #cbd5e1;
+  color: #334155;
+  background: #f8fafc;
+}
+
+.progress-state.state-running,
+.progress-state.state-queued {
+  border-color: #67e8f9;
+  color: #155e75;
+  background: #ecfeff;
+}
+
+.progress-state.state-succeeded {
+  border-color: #86efac;
+  color: #166534;
+  background: #f0fdf4;
+}
+
+.progress-state.state-failed {
+  border-color: #fecaca;
+  color: #991b1b;
+  background: #fef2f2;
+}
+
+/* ─── Progress bar ───────────────────────────────────────────── */
+
+.progress-wrap {
+  margin-top: 16px;
+  display: grid;
+  gap: 8px;
+}
+
+.progress-bar {
+  height: 12px;
+  width: 100%;
+  border-radius: 999px;
+  background: #dbe4ef;
+  overflow: hidden;
+}
+
+.progress-bar span {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #0d9488, #06b6d4);
+  transition: width 0.35s ease;
+}
+
+.progress-wrap strong {
+  color: #0f766e;
+  font-size: 0.92rem;
+}
+
+/* ─── Stage list ─────────────────────────────────────────────── */
+
+.stage-list {
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 9px;
+}
+
+.stage-list li {
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  border-radius: 12px;
+  padding: 10px 12px;
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  gap: 10px;
+  align-items: center;
+  color: var(--text-soft);
+  background: rgba(255, 255, 255, 0.84);
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #cbd5e1;
+}
+
+.stage-name {
+  font-size: 0.89rem;
+}
+
+.stage-duration {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.stage-list li svg {
+  color: #94a3b8;
+}
+
+.stage-list .stage-done {
+  border-color: #bbf7d0;
+  color: #166534;
+  background: #f0fdf4;
+}
+
+.stage-list .stage-done .dot {
+  background: #22c55e;
+}
+
+.stage-list .stage-done svg {
+  color: #22c55e;
+}
+
+.stage-list .stage-active {
+  border-color: #7dd3fc;
+  color: #0c4a6e;
+  background: #ecfeff;
+}
+
+.stage-list .stage-active .dot {
+  background: #0ea5e9;
+}
+
+.stage-list .stage-active svg {
+  color: #0ea5e9;
+}
+
+.stage-list .stage-error {
+  border-color: #fecaca;
+  color: #991b1b;
+  background: #fef2f2;
+}
+
+.stage-list .stage-error .dot {
+  background: #ef4444;
+}
+
+.stage-list .stage-error svg {
+  color: #ef4444;
+}
+
+.stage-list .stage-skipped {
+  opacity: 0.62;
+}
+
+.meta-tag {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+/* ─── Responsive ─────────────────────────────────────────────── */
+
+@media (max-width: 980px) {
+  .panel-progress {
+    padding: 20px;
+  }
+}
+
+@media (max-width: 640px) {
+  .progress-header {
+    flex-direction: column;
+  }
+
+  .stage-list li {
+    grid-template-columns: auto 1fr auto;
+  }
+
+  .stage-duration {
+    grid-column: 2 / 3;
+  }
+}
+</style>

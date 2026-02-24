@@ -12,6 +12,7 @@ dependencies = [
     "litellm>=1.74.9",
     "minio>=7.2.12",
     "openai>=2.17.0",
+    "python-multipart>=0.0.20",
     "pydub>=0.25.1",
     "questionary>=2.0.0",
     "rich>=13.7.1",

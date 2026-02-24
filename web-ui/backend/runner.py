@@ -1,6 +1,8 @@
 """Background job execution: the ``_run_job`` orchestrator."""
 
 import logging
+from pathlib import Path
+import shutil
 from datetime import datetime
 from threading import get_ident
 
@@ -25,14 +27,32 @@ from backend.state import _get_app_config, _get_storage_backend
 logger = logging.getLogger(__name__)
 
 
+def _cleanup_upload_temp_dir(temp_dir: Path | None) -> None:
+    if temp_dir is None:
+        return
+    shutil.rmtree(temp_dir, ignore_errors=True)
+
+
 def _run_job(
     job_id: str,
     *,
-    url: str,
+    url: str | None,
+    input_audio_path: str | None = None,
+    input_bvid: str | None = None,
     skip_summary: bool,
     summary_preset: str | None,
     summary_profile: str | None,
 ) -> None:
+    normalized_url = (url or "").strip()
+    normalized_audio_path = (input_audio_path or "").strip()
+    bvid = (input_bvid or "").strip() or None
+    if bvid is None and normalized_url:
+        bvid = extract_bvid(normalized_url)
+
+    upload_temp_dir: Path | None = None
+    if normalized_audio_path:
+        upload_temp_dir = Path(normalized_audio_path).expanduser().resolve().parent
+
     try:
         config = _get_app_config()
         storage_backend = _get_storage_backend()
@@ -50,6 +70,7 @@ def _run_job(
             job_id,
             f"{datetime.now().strftime(JOB_LOG_DATE_FORMAT)} [ERROR] b2t.pipeline: {_redact_text(error_message)}",
         )
+        _cleanup_upload_temp_dir(upload_temp_dir)
         return
     except Exception as exc:
         error_message = str(exc) or "初始化配置或存储后端失败"
@@ -65,9 +86,9 @@ def _run_job(
             job_id,
             f"{datetime.now().strftime(JOB_LOG_DATE_FORMAT)} [ERROR] b2t.pipeline: {_redact_text(error_message)}",
         )
+        _cleanup_upload_temp_dir(upload_temp_dir)
         return
 
-    bvid = extract_bvid(url)
     if bvid is not None:
         try:
             existing_results = storage_backend.find_existing_transcription(bvid)
@@ -109,6 +130,7 @@ def _run_job(
                         results=existing_results,
                         config=config,
                     )
+                    _cleanup_upload_temp_dir(upload_temp_dir)
                     return
             else:
                 _update_job(
@@ -139,6 +161,7 @@ def _run_job(
                         job_id,
                         f"{datetime.now().strftime(JOB_LOG_DATE_FORMAT)} [ERROR] b2t.pipeline: {_redact_text(str(exc))}",
                     )
+                    _cleanup_upload_temp_dir(upload_temp_dir)
                     return
 
                 combined_results = dict(existing_results)
@@ -157,6 +180,7 @@ def _run_job(
                         job_id,
                         f"{datetime.now().strftime(JOB_LOG_DATE_FORMAT)} [ERROR] b2t.pipeline: {_redact_text(str(exc))}",
                     )
+                    _cleanup_upload_temp_dir(upload_temp_dir)
                     return
 
                 all_artifacts = _collect_all_artifacts_for_bvid(
@@ -190,6 +214,7 @@ def _run_job(
                     summary_preset=summary_preset,
                     summary_profile=summary_profile,
                 )
+                _cleanup_upload_temp_dir(upload_temp_dir)
                 return
 
     log_handler = _JobLogHandler(job_id=job_id, thread_id=get_ident())
@@ -206,20 +231,38 @@ def _run_job(
 
     try:
         try:
-            results = run_pipeline(
-                url,
-                config,
-                skip_summary=skip_summary,
-                summary_preset=summary_preset,
-                summary_profile=summary_profile,
-                progress_callback=lambda stage, label, progress: _update_job(
-                    job_id,
-                    status="running",
-                    stage=stage,
-                    stage_label=label,
-                    progress=progress,
-                ),
-            )
+            if normalized_audio_path:
+                results = run_pipeline(
+                    "",
+                    config,
+                    audio_path=normalized_audio_path,
+                    input_bvid=bvid,
+                    skip_summary=skip_summary,
+                    summary_preset=summary_preset,
+                    summary_profile=summary_profile,
+                    progress_callback=lambda stage, label, progress: _update_job(
+                        job_id,
+                        status="running",
+                        stage=stage,
+                        stage_label=label,
+                        progress=progress,
+                    ),
+                )
+            else:
+                results = run_pipeline(
+                    normalized_url,
+                    config,
+                    skip_summary=skip_summary,
+                    summary_preset=summary_preset,
+                    summary_profile=summary_profile,
+                    progress_callback=lambda stage, label, progress: _update_job(
+                        job_id,
+                        status="running",
+                        stage=stage,
+                        stage_label=label,
+                        progress=progress,
+                    ),
+                )
         except Exception as exc:
             _update_job(
                 job_id,
@@ -302,3 +345,4 @@ def _run_job(
     finally:
         root_logger.removeHandler(log_handler)
         log_handler.close()
+        _cleanup_upload_temp_dir(upload_temp_dir)

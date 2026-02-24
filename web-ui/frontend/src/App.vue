@@ -216,3 +216,133 @@ onBeforeUnmount(() => {
     />
   </main>
 </template>
+
+<style scoped>
+/* ─── Shell & Ambient ────────────────────────────────────────── */
+
+.shell {
+  position: relative;
+  min-height: 100vh;
+  padding: clamp(16px, 3vw, 36px);
+  overflow: hidden;
+}
+
+.ambient {
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(65px);
+  opacity: 0.52;
+  pointer-events: none;
+  animation: float 12s ease-in-out infinite;
+}
+
+.ambient-left {
+  width: 360px;
+  height: 360px;
+  left: -130px;
+  top: -110px;
+  background: #7dd3fc;
+}
+
+.ambient-right {
+  width: 420px;
+  height: 420px;
+  right: -180px;
+  bottom: -150px;
+  background: #99f6e4;
+  animation-delay: 0.8s;
+}
+
+/* ─── Tab bar ────────────────────────────────────────────────── */
+
+.tab-bar {
+  position: relative;
+  z-index: 2;
+  max-width: 1160px;
+  margin: 0 auto 20px;
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 16px;
+  border: 1px solid var(--panel-border);
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
+  isolation: isolate;
+}
+
+.tab-indicator {
+  position: absolute;
+  top: 4px;
+  left: 0;
+  bottom: 4px;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+  pointer-events: none;
+  transition: transform 0.34s cubic-bezier(0.22, 1, 0.36, 1), width 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+  z-index: 0;
+}
+
+.tab-button {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 18px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.24s ease, transform 0.2s ease;
+}
+
+.tab-button:hover {
+  color: var(--text-soft);
+}
+
+.tab-button:active {
+  transform: translateY(1px);
+}
+
+.tab-button.active {
+  color: #0f766e;
+}
+
+.tab-button svg {
+  transition: transform 0.26s ease;
+}
+
+.tab-button.active svg {
+  transform: scale(1.04);
+}
+
+.tab-button:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px rgba(15, 118, 110, 0.28);
+}
+
+/* ─── Responsive ─────────────────────────────────────────────── */
+
+@media (max-width: 640px) {
+  .ambient {
+    display: none;
+  }
+
+  .tab-bar {
+    width: 100%;
+  }
+
+  .tab-button {
+    flex: 1;
+    justify-content: center;
+    padding: 9px 12px;
+    font-size: 0.84rem;
+  }
+}
+</style>
