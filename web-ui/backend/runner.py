@@ -22,7 +22,7 @@ from backend.services import (
     _record_history,
     _run_summary_only_from_existing,
 )
-from backend.state import _get_app_config, _get_storage_backend
+from backend.state import _get_app_config, _get_storage_backend, _get_stt_storage_backend
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +56,7 @@ def _run_job(
     try:
         config = _get_app_config()
         storage_backend = _get_storage_backend()
+        stt_storage_backend = _get_stt_storage_backend()
     except FileNotFoundError as exc:
         error_message = str(exc) or "配置文件或总结 preset 配置文件不存在"
         _update_job(
@@ -240,6 +241,8 @@ def _run_job(
                     skip_summary=skip_summary,
                     summary_preset=summary_preset,
                     summary_profile=summary_profile,
+                    storage_backend=storage_backend,
+                    stt_storage_backend=stt_storage_backend,
                     progress_callback=lambda stage, label, progress: _update_job(
                         job_id,
                         status="running",
@@ -255,6 +258,8 @@ def _run_job(
                     skip_summary=skip_summary,
                     summary_preset=summary_preset,
                     summary_profile=summary_profile,
+                    storage_backend=storage_backend,
+                    stt_storage_backend=stt_storage_backend,
                     progress_callback=lambda stage, label, progress: _update_job(
                         job_id,
                         status="running",

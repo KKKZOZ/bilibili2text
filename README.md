@@ -15,3 +15,9 @@ CLI 与 Web UI 统一读取项目根目录配置：
 
 - `config.toml`（参考 `config.toml.example`）
 - `summary_presets.toml`（参考 `summary_presets.toml.example`）
+
+
+### 环境配置
+
+- pandoc
+- playwright install chromium

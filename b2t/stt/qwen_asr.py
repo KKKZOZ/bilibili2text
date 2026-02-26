@@ -1,6 +1,7 @@
 """Qwen3-ASR-Flash 语音转文字"""
 
 import logging
+import time
 from pathlib import Path
 
 import dashscope
@@ -40,7 +41,12 @@ class QwenSTTProvider(STTProvider):
                 "请将当前 stt.profile 对应的 storage_profile（或 storage.backend）设置为 minio 或 alicloud。"
             )
 
+        file_size_mb = audio_path.stat().st_size / 1024 / 1024
+        logger.info("正在上传音频至存储后端: %s (%.1f MB)", audio_path.name, file_size_mb)
+        t0 = time.perf_counter()
         with self._storage_backend.temporary_public_url(audio_path) as audio_url:
+            upload_elapsed = time.perf_counter() - t0
+            logger.info("音频已上传，耗时 %.1f 秒，正在提交 Dashscope 转录任务", upload_elapsed)
             emit("transcribing", "语音转录", 50)
             response = self._submit_task(audio_url)
 
@@ -63,6 +69,7 @@ class QwenSTTProvider(STTProvider):
         dashscope.base_http_api_url = self._stt_config.qwen_base_url
         dashscope.api_key = self._stt_config.qwen_api_key
 
+        logger.info("正在调用 Dashscope API: %s", self._stt_config.qwen_base_url)
         task_response = QwenTranscription.async_call(
             model=self._stt_config.qwen_model,
             file_url=audio_url,

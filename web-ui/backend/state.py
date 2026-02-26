@@ -24,7 +24,7 @@ _ROOT_CONFIG_PATH = _PROJECT_ROOT / "config.toml"
 # ---------------------------------------------------------------------------
 from b2t.config import AppConfig, load_config  # noqa: E402
 from b2t.history import HistoryDB  # noqa: E402
-from b2t.storage import StorageBackend, StoredArtifact, create_storage_backend  # noqa: E402
+from b2t.storage import StorageBackend, StoredArtifact, create_storage_backend, create_stt_storage_backend  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -65,6 +65,7 @@ _job_lock = Lock()
 _job_limit = 200
 
 _storage_backend: StorageBackend | None = None
+_stt_storage_backend: StorageBackend | None = None
 _history_db: HistoryDB | None = None
 
 try:
@@ -93,6 +94,15 @@ def _get_storage_backend() -> StorageBackend:
 
     _storage_backend = create_storage_backend(_get_app_config())
     return _storage_backend
+
+
+def _get_stt_storage_backend() -> StorageBackend:
+    global _stt_storage_backend
+    if _stt_storage_backend is not None:
+        return _stt_storage_backend
+
+    _stt_storage_backend = create_stt_storage_backend(_get_app_config())
+    return _stt_storage_backend
 
 
 def _get_history_db() -> HistoryDB:

@@ -63,6 +63,8 @@ def run_pipeline(
     summary_profile: str | None = None,
     output_dir: Path | str | None = None,
     progress_callback: Callable[[str, str, int], None] | None = None,
+    storage_backend: "StorageBackend | None" = None,
+    stt_storage_backend: "StorageBackend | None" = None,
 ) -> dict[str, StoredArtifact]:
     """执行完整的转录流程
 
@@ -89,8 +91,10 @@ def run_pipeline(
     """
     results: dict[str, StoredArtifact] = {}
     local_results: dict[str, Path] = {}
-    storage_backend = create_storage_backend(config)
-    stt_storage_backend = create_stt_storage_backend(config)
+    if storage_backend is None:
+        storage_backend = create_storage_backend(config)
+    if stt_storage_backend is None:
+        stt_storage_backend = create_stt_storage_backend(config)
 
     if storage_backend.persist_local_outputs:
         transcribe_root = Path(output_dir or config.download.output_dir)

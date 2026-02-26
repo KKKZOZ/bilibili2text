@@ -23,7 +23,11 @@
       "Bash(/opt/homebrew/bin/python3 -m pip install:*)",
       "Bash(sqlite3:*)",
       "Bash(uv run python:*)",
-      "Bash(chmod:*)"
+      "Bash(chmod:*)",
+      "Bash(source:*)",
+      "Bash(grep:*)",
+      "Bash(grep Version:*)",
+      "Bash(timeout 5 bash:*)"
     ]
   }
 }

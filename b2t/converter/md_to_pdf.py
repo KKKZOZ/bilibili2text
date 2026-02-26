@@ -42,7 +42,7 @@ HTML_TEMPLATE = r"""<!doctype html>
       width: 100%;
       max-width: 100%;
       margin: 0 auto;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            font-family: "Noto Sans CJK SC", "Noto Sans SC", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
       font-size: 15px;
       line-height: 1.65;
       color: #24292f;

@@ -1,6 +1,13 @@
 """LiteLLM summarize client helpers."""
 
+import os
 from typing import Any
+
+# 禁止 litellm 在每次调用时从 raw.githubusercontent.com 拉取最新模型定价数据（在网络受限环境下
+# 这个请求会阻塞 30 秒以上才超时）；改用包内自带的本地定价文件。
+# 同时关闭 litellm 默认开启的遥测上报，避免额外出站请求。
+os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "true")
+os.environ.setdefault("LITELLM_TELEMETRY", "false")
 
 from litellm import completion
 

@@ -26,6 +26,8 @@ db_data/*
 *.png
 *.html
 
+*license
+
 # Frontend
 web-ui/frontend/node_modules/
 web-ui/frontend/dist/
