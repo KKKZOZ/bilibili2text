@@ -60,9 +60,15 @@ to-mp3 file:
 # Usage:
 #   just web on
 #   just web off
-web action:
+#   just web on open-public
+web action mode='default':
     @cd "{{invocation_directory()}}"; \
     action="{{action}}"; \
+    mode="{{mode}}"; \
+    if [[ "$mode" != "default" && "$mode" != "open-public" ]]; then \
+      echo "Unknown mode: $mode. Use: default|open-public" >&2; \
+      exit 1; \
+    fi; \
     frontend_port=6010; \
     backend_port=8000; \
     frontend_pid="$(lsof -tiTCP:${frontend_port} -sTCP:LISTEN || true)"; \
@@ -70,16 +76,16 @@ web action:
     case "$action" in \
       on) \
         if [[ -n "$frontend_pid" && -n "$backend_pid" ]]; then \
-          echo "web is running (frontend:${frontend_port} backend:${backend_port})"; \
+          echo "web is running (frontend:${frontend_port} backend:${backend_port}, mode:${mode})"; \
           exit 0; \
         fi; \
         mkdir -p web-ui/logs; \
         if [[ -z "$backend_pid" ]]; then \
-          echo "Starting backend on :${backend_port} ..."; \
+          echo "Starting backend on :${backend_port} (mode:${mode}) ..."; \
           if [[ -x ".venv/bin/uvicorn" ]]; then \
-            nohup env PYTHONPATH="$PWD" .venv/bin/uvicorn backend.main:app --app-dir web-ui --host 0.0.0.0 --port "${backend_port}" > web-ui/logs/backend.log 2>&1 & \
+            nohup env PYTHONPATH="$PWD" B2T_WEB_UI_MODE="$mode" .venv/bin/uvicorn backend.main:app --app-dir web-ui --host 0.0.0.0 --port "${backend_port}" > web-ui/logs/backend.log 2>&1 & \
           elif command -v uv >/dev/null 2>&1; then \
-            nohup env PYTHONPATH="$PWD" uv run uvicorn backend.main:app --app-dir web-ui --host 0.0.0.0 --port "${backend_port}" > web-ui/logs/backend.log 2>&1 & \
+            nohup env PYTHONPATH="$PWD" B2T_WEB_UI_MODE="$mode" uv run uvicorn backend.main:app --app-dir web-ui --host 0.0.0.0 --port "${backend_port}" > web-ui/logs/backend.log 2>&1 & \
           else \
             echo "Cannot find uvicorn: need .venv/bin/uvicorn or uv in PATH" >&2; \
             exit 1; \
@@ -88,8 +94,8 @@ web action:
           echo "Backend already running on :${backend_port} (pid: ${backend_pid})"; \
         fi; \
         if [[ -z "$frontend_pid" ]]; then \
-          echo "Starting frontend on :${frontend_port} ..."; \
-          nohup bash -lc 'cd web-ui/frontend && bun run dev' > web-ui/logs/frontend.log 2>&1 & \
+          echo "Starting frontend on :${frontend_port} (mode:${mode}) ..."; \
+          nohup bash -lc 'cd web-ui/frontend && VITE_B2T_WEB_UI_MODE='"'"'"$mode"'"'"' bun run dev' > web-ui/logs/frontend.log 2>&1 & \
         else \
           echo "Frontend already running on :${frontend_port} (pid: ${frontend_pid})"; \
         fi; \
@@ -102,7 +108,7 @@ web action:
           sleep 1; \
         done; \
         if [[ -n "$frontend_pid" && -n "$backend_pid" ]]; then \
-          echo "web started (frontend:${frontend_port} backend:${backend_port})"; \
+          echo "web started (frontend:${frontend_port} backend:${backend_port}, mode:${mode})"; \
         else \
           echo "web start failed, check web-ui/logs/frontend.log and web-ui/logs/backend.log" >&2; \
           exit 1; \
@@ -142,3 +148,11 @@ web action:
         exit 1 \
         ;; \
     esac
+
+# Start or stop web in open-public mode.
+# Usage:
+#   just web-open-public on
+#   just web-open-public off
+web-open-public action:
+    @cd "{{invocation_directory()}}"; \
+    just web "{{action}}" open-public

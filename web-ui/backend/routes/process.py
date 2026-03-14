@@ -16,6 +16,7 @@ from backend.schemas import (
     ProcessStartResponse,
     ProcessStatusResponse,
 )
+from backend.state import _get_runtime_app_config, _is_upload_enabled
 
 router = APIRouter()
 _UPLOAD_BVID_NAME_PATTERN = re.compile(r"^(BV[0-9A-Za-z]{10})_(.+)$", re.IGNORECASE)
@@ -73,8 +74,26 @@ def _validate_upload_filename(filename: str) -> tuple[str, str]:
     return safe_name, bvid
 
 
+def _ensure_runtime_ready() -> None:
+    try:
+        _get_runtime_app_config(require_public_api_key=True)
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=str(exc) or "配置文件或总结 preset 配置文件不存在",
+        ) from None
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"初始化配置失败: {exc}",
+        ) from exc
+
+
 @router.post("/api/process", response_model=ProcessStartResponse)
 def process_video(payload: ProcessRequest) -> ProcessStartResponse:
+    _ensure_runtime_ready()
     if not payload.url.strip():
         raise HTTPException(status_code=400, detail="URL 不能为空")
 
@@ -108,6 +127,13 @@ def process_uploaded_audio(
     summary_preset: str | None = Form(default=None),
     summary_profile: str | None = Form(default=None),
 ) -> ProcessStartResponse:
+    if not _is_upload_enabled():
+        raise HTTPException(
+            status_code=403,
+            detail="open-public 模式不允许直接上传音频文件，请改为输入视频 URL 或 BV 号",
+        )
+    _ensure_runtime_ready()
+
     safe_filename, bvid = _validate_upload_filename(file.filename or "")
     cleaned_summary_preset = _clean_optional_text(summary_preset)
     cleaned_summary_profile = _clean_optional_text(summary_profile)

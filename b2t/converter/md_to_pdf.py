@@ -21,7 +21,7 @@ TABLE_DASH_TRANSLATION = str.maketrans(
         "﹣": "-",
         "‒": "-",
         "：": ":",
-        "\u00A0": " ",
+        "\u00a0": " ",
     }
 )
 
@@ -150,7 +150,7 @@ class MarkdownToPdfConverter:
         normalized_lines: list[str] = []
 
         for line in lines:
-            normalized = line.replace("｜", "|").replace("\u00A0", " ")
+            normalized = line.replace("｜", "|").replace("\u00a0", " ")
             if self._looks_like_table_delimiter_line(normalized):
                 normalized = normalized.translate(TABLE_DASH_TRANSLATION)
             normalized_lines.append(normalized)
@@ -168,7 +168,9 @@ class MarkdownToPdfConverter:
             text = text[1:]
         if text.endswith("|"):
             text = text[:-1]
-        cells = [cell.strip().translate(TABLE_DASH_TRANSLATION) for cell in text.split("|")]
+        cells = [
+            cell.strip().translate(TABLE_DASH_TRANSLATION) for cell in text.split("|")
+        ]
         if not cells:
             return False
         return all(TABLE_DELIMITER_CELL_RE.match(cell) for cell in cells)

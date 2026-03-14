@@ -31,3 +31,5 @@ db_data/*
 # Frontend
 web-ui/frontend/node_modules/
 web-ui/frontend/dist/
+
+doubao-test/*

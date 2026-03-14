@@ -29,9 +29,17 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /app
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends nginx ffmpeg gettext-base pandoc \
+    && apt-get install -y --no-install-recommends \
+        nginx \
+        ffmpeg \
+        gettext-base \
+        pandoc \
+        fontconfig \
+        fonts-noto-cjk \
+        fonts-wqy-zenhei \
     && rm -rf /var/lib/apt/lists/* \
-    && rm -f /etc/nginx/sites-enabled/default /etc/nginx/conf.d/default.conf
+    && rm -f /etc/nginx/sites-enabled/default /etc/nginx/conf.d/default.conf \
+    && fc-cache -f
 
 COPY --from=backend-builder /opt/venv /opt/venv
 COPY --from=frontend-builder /app/web-ui/frontend/dist /usr/share/nginx/html

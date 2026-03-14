@@ -35,6 +35,10 @@ const props = defineProps({
     type: String,
     required: true,
   },
+  allowDelete: {
+    type: Boolean,
+    default: true,
+  },
 });
 
 const historyItems = ref([]);
@@ -193,6 +197,9 @@ const historyNextPage = () => {
 };
 
 const confirmDelete = (runId) => {
+  if (!props.allowDelete) {
+    return;
+  }
   deleteConfirmRunId.value = runId;
 };
 
@@ -201,6 +208,9 @@ const cancelDelete = () => {
 };
 
 const deleteHistory = async (runId) => {
+  if (!props.allowDelete) {
+    return;
+  }
   deleteLoading.value = true;
   try {
     const resp = await fetch(`/api/history/${encodeURIComponent(runId)}`, {
@@ -289,6 +299,7 @@ onMounted(() => {
               </div>
             </div>
             <button
+              v-if="allowDelete"
               class="delete-button"
               @click="confirmDelete(historyDetail.run_id)"
               :disabled="deleteLoading"
@@ -376,6 +387,7 @@ onMounted(() => {
           :selected-summary-profile="selectedHistorySummaryProfile"
           :bvid="historyDetail.bvid"
           :history-run-id="historyDetail.run_id"
+          :allow-delete="allowDelete"
           title="文件列表"
           :filter-kinds="['markdown', 'summary', 'summary_no_table', 'summary_table_md', 'text', 'json', 'audio']"
           @artifact-deleted="onHistoryArtifactDeleted"
@@ -453,6 +465,7 @@ onMounted(() => {
             </div>
           </div>
           <button
+            v-if="allowDelete"
             class="history-item-delete"
             @click.stop="confirmDelete(item.run_id)"
             :disabled="deleteLoading"
@@ -472,7 +485,7 @@ onMounted(() => {
     </article>
 
     <!-- Delete Confirmation Modal -->
-    <div v-if="deleteConfirmRunId" class="modal-overlay" @click="cancelDelete">
+    <div v-if="allowDelete && deleteConfirmRunId" class="modal-overlay" @click="cancelDelete">
       <div class="modal-content" @click.stop>
         <h3>确认删除</h3>
         <p>确定要删除这条历史记录吗？此操作将删除所有相关文件，且无法恢复。</p>

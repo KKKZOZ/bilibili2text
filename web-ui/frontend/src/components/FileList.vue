@@ -61,6 +61,10 @@ const props = defineProps({
       'summary_table_pdf',
     ],
   },
+  allowDelete: {
+    type: Boolean,
+    default: true,
+  },
 });
 
 const emit = defineEmits(['artifactDeleted']);
@@ -410,6 +414,9 @@ const isConvertButtonLoading = (item, targetFormat) => {
 };
 
 const canDeleteMarkdownArtifact = (item) => {
+  if (!props.allowDelete) {
+    return false;
+  }
   if (!props.historyRunId) {
     return false;
   }
@@ -636,7 +643,11 @@ const handleDeleteArtifact = async () => {
       </ul>
     </div>
 
-    <div v-if="deleteConfirmItem" class="modal-overlay" @click="cancelDeleteArtifact">
+    <div
+      v-if="allowDelete && deleteConfirmItem"
+      class="modal-overlay"
+      @click="cancelDeleteArtifact"
+    >
       <div class="modal-content" @click.stop>
         <h3>确认删除总结</h3>
         <p>此操作会一次性删除以下 3 项，并且无法恢复：</p>

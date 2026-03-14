@@ -87,6 +87,24 @@ class SummaryProfileListResponse(BaseModel):
     profiles: list[SummaryProfileItemResponse]
 
 
+class RuntimeFeaturesResponse(BaseModel):
+    mode: Literal["default", "open-public"]
+    allow_upload_audio: bool
+    allow_delete: bool
+    requires_user_api_key: bool
+    api_key_configured: bool
+
+
+class OpenPublicApiKeyStatusResponse(BaseModel):
+    provider: Literal["alibaba"] = "alibaba"
+    configured: bool
+    masked_key: str | None = None
+
+
+class OpenPublicApiKeyUpdateRequest(BaseModel):
+    api_key: str = Field(..., min_length=1, description="阿里云 DashScope API Key")
+
+
 class HistoryItemResponse(BaseModel):
     run_id: str
     bvid: str

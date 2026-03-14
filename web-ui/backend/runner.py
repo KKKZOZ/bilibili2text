@@ -22,7 +22,11 @@ from backend.services import (
     _record_history,
     _run_summary_only_from_existing,
 )
-from backend.state import _get_app_config, _get_storage_backend, _get_stt_storage_backend
+from backend.state import (
+    _get_app_config,
+    _get_storage_backend,
+    _get_stt_storage_backend,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +58,7 @@ def _run_job(
         upload_temp_dir = Path(normalized_audio_path).expanduser().resolve().parent
 
     try:
-        config = _get_app_config()
+        config = _get_runtime_app_config(require_public_api_key=True)
         storage_backend = _get_storage_backend()
         stt_storage_backend = _get_stt_storage_backend()
     except FileNotFoundError as exc:
@@ -189,9 +193,7 @@ def _run_job(
                     bvid,
                     combined_results,
                 )
-                notice = (
-                    f"检测到 {bvid} 已经转录过，已复用历史转录并完成新的总结。"
-                )
+                notice = f"检测到 {bvid} 已经转录过，已复用历史转录并完成新的总结。"
                 _update_job(
                     job_id,
                     status="succeeded",

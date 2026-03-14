@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import {
   AlertCircle,
   CheckCircle2,
@@ -48,6 +48,18 @@ const props = defineProps({
   isLoadingSummaryProfiles: {
     type: Boolean,
     default: false,
+  },
+  allowUpload: {
+    type: Boolean,
+    default: true,
+  },
+  requiresApiKey: {
+    type: Boolean,
+    default: false,
+  },
+  apiKeyConfigured: {
+    type: Boolean,
+    default: true,
   },
 });
 
@@ -177,7 +189,22 @@ const shouldSkipSummary = computed(() => {
   }
   return currentSkipSummary.value;
 });
-const isUploadMode = computed(() => inputMode.value === 'upload');
+const isUploadMode = computed(() => props.allowUpload && inputMode.value === 'upload');
+
+watch(
+  () => props.allowUpload,
+  (allowUpload) => {
+    if (allowUpload || inputMode.value !== 'upload') {
+      return;
+    }
+    inputMode.value = 'url';
+    uploadedAudioFile.value = null;
+    if (uploadFileInput.value) {
+      uploadFileInput.value.value = '';
+    }
+  },
+  { immediate: true }
+);
 
 const allDownloadRows = computed(() => {
   const downloads = Array.isArray(job.value.all_downloads)
@@ -244,6 +271,9 @@ const resetJob = () => {
 };
 
 const setInputMode = (mode) => {
+  if (mode === 'upload' && !props.allowUpload) {
+    return;
+  }
   inputMode.value = mode;
   error.value = '';
 };
@@ -329,12 +359,19 @@ const submit = async () => {
   resetJob();
 
   try {
+    if (props.requiresApiKey && !props.apiKeyConfigured) {
+      throw new Error('请先在「API Key」页面配置阿里云 DashScope API Key');
+    }
+
     const skipSummary = !enableSummary.value;
     currentSkipSummary.value = skipSummary;
     pollErrorCount.value = 0;
 
     let resp;
     if (isUploadMode.value) {
+      if (!props.allowUpload) {
+        throw new Error('当前模式不允许上传音频，请改为输入视频 URL 或 BV 号');
+      }
       const validationMessage = validateUploadedAudio(uploadedAudioFile.value);
       if (validationMessage) {
         throw new Error(validationMessage);
@@ -428,7 +465,13 @@ onBeforeUnmount(() => {
             <span>AI Workflow</span>
           </div>
           <h1>bilibili-to-text</h1>
-          <p>输入 B 站视频链接，或上传符合命名规范的音频文件，自动生成转录内容和大模型总结。</p>
+          <p>
+            {{
+              allowUpload
+                ? '输入 B 站视频链接，或上传符合命名规范的音频文件，自动生成转录内容和大模型总结。'
+                : '输入 B 站视频链接，自动生成转录内容和大模型总结。'
+            }}
+          </p>
           <div class="hero-meta">
             <span class="hero-pill">
               {{ isRunning ? '处理中' : '准备就绪' }}
@@ -452,6 +495,7 @@ onBeforeUnmount(() => {
               <span>链接 / BV</span>
             </button>
             <button
+              v-if="allowUpload"
               type="button"
               class="input-mode-button"
               :class="{ active: isUploadMode }"

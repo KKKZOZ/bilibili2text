@@ -52,6 +52,33 @@ uv run uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
 - `GET /api/summarize-profiles`：获取可用总结模型配置
 - `GET /api/download/{download_id}`：下载生成文件（Markdown / TXT）
 
+### 2.1 一键启动（推荐）
+
+在项目根目录可直接使用：
+
+```bash
+just web on
+```
+
+`open-public` 模式启动：
+
+```bash
+just web-open-public on
+```
+
+或：
+
+```bash
+just web on open-public
+```
+
+`open-public` 模式特性：
+
+- 不允许上传音频文件（仅支持 URL / BV 号）
+- 不允许删除历史记录或历史文件
+- 新增 `API Key` 页面，必须先设置用户自己的阿里云 DashScope API Key
+- 转录与总结都只使用用户设置的 API Key，不使用项目本地配置中的 key
+
 ### 3. 启动前端（Vue + Bun）
 
 在 `web-ui/frontend` 目录下执行：
@@ -62,6 +89,18 @@ bun run dev
 ```
 
 默认访问：`http://127.0.0.1:6010`
+
+如果后端不是默认的 `8000` 端口，可以在启动前端时显式指定：
+
+```bash
+bun run dev --backend-port 8001
+```
+
+也支持环境变量：
+
+```bash
+B2T_BACKEND_PORT=8001 bun run dev
+```
 
 ### 4. 使用流程
 

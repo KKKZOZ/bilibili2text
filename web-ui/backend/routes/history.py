@@ -21,9 +21,10 @@ from backend.schemas import (
 from backend.state import (
     _download_index,
     _download_lock,
-    _get_app_config,
     _get_history_db,
+    _get_runtime_app_config,
     _get_storage_backend,
+    _is_delete_enabled,
 )
 
 router = APIRouter()
@@ -169,13 +170,15 @@ def regenerate_history_summary(
         raise HTTPException(status_code=404, detail="转录记录不存在")
 
     try:
-        config = _get_app_config()
+        config = _get_runtime_app_config(require_public_api_key=True)
         storage_backend = _get_storage_backend()
     except FileNotFoundError as exc:
         raise HTTPException(
             status_code=503,
             detail=str(exc) or "配置文件或总结 preset 配置文件不存在",
         ) from None
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
     except Exception as exc:
         raise HTTPException(
             status_code=503,
@@ -267,6 +270,11 @@ def regenerate_history_summary(
     response_model=HistoryDetailResponse,
 )
 def delete_history_artifact(run_id: str, download_id: str) -> HistoryDetailResponse:
+    if not _is_delete_enabled():
+        raise HTTPException(
+            status_code=403,
+            detail="open-public 模式不允许删除文件",
+        )
     try:
         db = _get_history_db()
     except Exception as exc:
@@ -351,6 +359,11 @@ def delete_history_artifact(run_id: str, download_id: str) -> HistoryDetailRespo
 @router.delete("/api/history/{run_id}")
 def delete_history(run_id: str) -> dict[str, str]:
     """Delete a history record and its associated files."""
+    if not _is_delete_enabled():
+        raise HTTPException(
+            status_code=403,
+            detail="open-public 模式不允许删除历史记录",
+        )
     try:
         db = _get_history_db()
     except Exception as exc:

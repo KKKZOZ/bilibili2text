@@ -1,11 +1,12 @@
 <script setup>
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { History, Sparkles } from 'lucide-vue-next';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { History, KeyRound, Sparkles } from 'lucide-vue-next';
 import ProcessView from './components/ProcessView.vue';
 import HistoryView from './components/HistoryView.vue';
+import PublicApiKeyView from './components/PublicApiKeyView.vue';
 
 // ─── View switching ──────────────────────────────────────────────
-const currentView = ref('process'); // "process" | "history"
+const currentView = ref('process'); // "process" | "history" | "settings"
 
 // ─── Summary configuration state ─────────────────────────────────
 const summaryPresets = ref([]);
@@ -20,10 +21,20 @@ const isLoadingSummaryProfiles = ref(false);
 const tabBarRef = ref(null);
 const processTabRef = ref(null);
 const historyTabRef = ref(null);
+const settingsTabRef = ref(null);
 const tabIndicatorStyle = ref({
   width: '0px',
   transform: 'translateX(0px)',
 });
+const runtimeFeatures = ref({
+  mode: 'default',
+  allow_upload_audio: true,
+  allow_delete: true,
+  requires_user_api_key: false,
+  api_key_configured: true,
+});
+
+const isOpenPublic = computed(() => runtimeFeatures.value.mode === 'open-public');
 
 const parseJsonSafely = async (resp, fallbackMessage) => {
   const raw = await resp.text();
@@ -47,6 +58,37 @@ const pickApiError = (resp, data, fallbackMessage) => {
     return data.detail;
   }
   return `${fallbackMessage}（HTTP ${resp.status}）`;
+};
+
+const loadRuntimeFeatures = async () => {
+  try {
+    const resp = await fetch('/api/runtime');
+    const data = await parseJsonSafely(resp, '获取运行时配置失败');
+
+    if (!resp.ok) {
+      throw new Error(pickApiError(resp, data, '获取运行时配置失败'));
+    }
+    if (!data || typeof data !== 'object') {
+      throw new Error('获取运行时配置失败（服务返回空响应）');
+    }
+
+    runtimeFeatures.value = {
+      mode: data.mode === 'open-public' ? 'open-public' : 'default',
+      allow_upload_audio: Boolean(data.allow_upload_audio),
+      allow_delete: Boolean(data.allow_delete),
+      requires_user_api_key: Boolean(data.requires_user_api_key),
+      api_key_configured: Boolean(data.api_key_configured),
+    };
+  } catch (err) {
+    console.error(err);
+    runtimeFeatures.value = {
+      mode: 'default',
+      allow_upload_audio: true,
+      allow_delete: true,
+      requires_user_api_key: false,
+      api_key_configured: true,
+    };
+  }
 };
 
 const loadSummaryPresets = async () => {
@@ -126,9 +168,19 @@ const loadSummaryProfiles = async () => {
   }
 };
 
+const getActiveTabButton = () => {
+  if (currentView.value === 'history') {
+    return historyTabRef.value;
+  }
+  if (currentView.value === 'settings') {
+    return settingsTabRef.value || processTabRef.value;
+  }
+  return processTabRef.value;
+};
+
 const updateTabIndicator = () => {
   const bar = tabBarRef.value;
-  const activeButton = currentView.value === 'process' ? processTabRef.value : historyTabRef.value;
+  const activeButton = getActiveTabButton();
   if (!bar || !activeButton) {
     return;
   }
@@ -143,13 +195,32 @@ const updateTabIndicator = () => {
   };
 };
 
+const onApiKeyUpdated = async () => {
+  await loadRuntimeFeatures();
+  await loadSummaryProfiles();
+};
+
 onMounted(() => {
   void nextTick(updateTabIndicator);
   window.addEventListener('resize', updateTabIndicator);
-  void Promise.all([loadSummaryProfiles(), loadSummaryPresets()]);
+  void (async () => {
+    await loadRuntimeFeatures();
+    await Promise.all([loadSummaryProfiles(), loadSummaryPresets()]);
+    await nextTick();
+    updateTabIndicator();
+  })();
 });
 
 watch(currentView, async () => {
+  await nextTick();
+  updateTabIndicator();
+});
+
+watch(isOpenPublic, async (openPublic) => {
+  if (!openPublic && currentView.value === 'settings') {
+    currentView.value = 'process';
+    return;
+  }
   await nextTick();
   updateTabIndicator();
 });
@@ -185,6 +256,16 @@ onBeforeUnmount(() => {
         <History :size="16" />
         <span>历史记录</span>
       </button>
+      <button
+        v-if="isOpenPublic"
+        ref="settingsTabRef"
+        class="tab-button"
+        :class="{ active: currentView === 'settings' }"
+        @click="currentView = 'settings'"
+      >
+        <KeyRound :size="16" />
+        <span>API Key</span>
+      </button>
     </nav>
 
     <!-- Process View -->
@@ -199,6 +280,9 @@ onBeforeUnmount(() => {
       :summary-profile-error="summaryProfileError"
       :is-loading-summary-presets="isLoadingSummaryPresets"
       :is-loading-summary-profiles="isLoadingSummaryProfiles"
+      :allow-upload="runtimeFeatures.allow_upload_audio"
+      :requires-api-key="runtimeFeatures.requires_user_api_key"
+      :api-key-configured="runtimeFeatures.api_key_configured"
       @update:selected-summary-preset="selectedSummaryPreset = $event"
       @update:selected-summary-profile="selectedSummaryProfile = $event"
       @load-summary-presets="loadSummaryPresets"
@@ -213,6 +297,12 @@ onBeforeUnmount(() => {
       :selected-summary-preset="selectedSummaryPreset"
       :summary-profiles="summaryProfiles"
       :selected-summary-profile="selectedSummaryProfile"
+      :allow-delete="runtimeFeatures.allow_delete"
+    />
+
+    <PublicApiKeyView
+      v-if="currentView === 'settings' && isOpenPublic"
+      @api-key-updated="onApiKeyUpdated"
     />
   </main>
 </template>
