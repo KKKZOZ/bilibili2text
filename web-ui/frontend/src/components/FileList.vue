@@ -228,8 +228,10 @@ const displayItems = computed(() => {
   const summaryRowsBySignature = new Map();
 
   // Phase 1: build summary roots and synthetic summary_no_table rows.
+  let summaryIndex = 0;
   filteredItems.forEach((item, index) => {
     if (item.kind === 'summary') {
+      const currentSummaryIndex = summaryIndex++;
       const summaryId = extractDownloadId(item.url) || `summary-${index}`;
       const signature = `${(item.presetName || '').trim()}::${(item.summaryProfile || '').trim()}`;
       const familyKey = resolveSummaryFamilyKey(item, 'summary');
@@ -237,11 +239,12 @@ const displayItems = computed(() => {
         summaryRowId: summaryId,
         summarySignature: signature,
         summaryFamilyKey: familyKey,
+        order: kindBaseOrder['summary'] + currentSummaryIndex,
       });
       rows.push(summaryRow);
 
       if (familyKey) {
-        summaryRowsByFamily.set(familyKey, summaryRow);
+        summaryRowsByFamily.set(`${familyKey}::${signature}`, summaryRow);
       }
       const bucket = summaryRowsBySignature.get(signature) || [];
       bucket.push(summaryRow);
@@ -273,7 +276,8 @@ const displayItems = computed(() => {
     if (item.kind === 'summary_table_md' || item.kind === 'summary_table_pdf') {
       const signature = `${(item.presetName || '').trim()}::${(item.summaryProfile || '').trim()}`;
       const familyKey = resolveSummaryFamilyKey(item, item.kind);
-      let parentSummary = familyKey ? summaryRowsByFamily.get(familyKey) || null : null;
+      const compositeKey = familyKey ? `${familyKey}::${signature}` : '';
+      let parentSummary = compositeKey ? summaryRowsByFamily.get(compositeKey) || null : null;
       if (!parentSummary) {
         const sameSignature = summaryRowsBySignature.get(signature) || [];
         parentSummary = sameSignature.length > 0 ? sameSignature[sameSignature.length - 1] : null;
