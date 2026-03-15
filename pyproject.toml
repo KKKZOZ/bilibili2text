@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "alibabacloud-oss-v2>=1.2.4",
+    "chromadb>=0.6.0",
     "dashscope>=1.25.12",
     "fastapi>=0.116.1",
     "groq>=1.0.0",

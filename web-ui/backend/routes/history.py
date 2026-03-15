@@ -93,6 +93,7 @@ def _to_history_detail_response(
         created_at=detail.created_at,
         has_summary=detail.has_summary,
         artifacts=artifacts,
+        record_type=getattr(detail, "record_type", "transcription") or "transcription",
     )
 
 
@@ -101,6 +102,7 @@ def list_history(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     search: str = Query(default=""),
+    record_type: str = Query(default=""),
 ) -> HistoryListResponse:
     try:
         db = _get_history_db()
@@ -110,7 +112,7 @@ def list_history(
             detail=f"历史数据库初始化失败: {exc}",
         ) from exc
 
-    result = db.list_runs(page=page, page_size=page_size, search=search)
+    result = db.list_runs(page=page, page_size=page_size, search=search, record_type=record_type)
     return HistoryListResponse(
         items=[
             HistoryItemResponse(
@@ -122,6 +124,7 @@ def list_history(
                 created_at=item.created_at,
                 has_summary=item.has_summary,
                 file_count=item.file_count,
+                record_type=item.record_type,
             )
             for item in result.items
         ],

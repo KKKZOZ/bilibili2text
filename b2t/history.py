@@ -23,7 +23,8 @@ CREATE TABLE IF NOT EXISTS transcription_runs (
     pubdate       TEXT    NOT NULL DEFAULT '',
     created_at    TEXT    NOT NULL,
     has_summary   INTEGER NOT NULL DEFAULT 0,
-    file_count    INTEGER NOT NULL DEFAULT 0
+    file_count    INTEGER NOT NULL DEFAULT 0,
+    record_type   TEXT    NOT NULL DEFAULT 'transcription'
 );
 
 CREATE INDEX IF NOT EXISTS idx_runs_bvid       ON transcription_runs(bvid);
@@ -56,6 +57,7 @@ class HistoryItem:
     created_at: str
     has_summary: bool
     file_count: int
+    record_type: str = "transcription"  # "transcription" | "rag_query"
 
 
 @dataclass(frozen=True)
@@ -82,6 +84,7 @@ class HistoryDetail:
     created_at: str
     has_summary: bool
     artifacts: list[HistoryArtifact]
+    record_type: str = "transcription"
 
 
 @dataclass(frozen=True)
@@ -138,6 +141,15 @@ class HistoryDB:
                 "ALTER TABLE transcription_artifacts "
                 "ADD COLUMN summary_profile TEXT NOT NULL DEFAULT ''"
             )
+        existing_run_columns = {
+            str(row["name"])
+            for row in conn.execute("PRAGMA table_info(transcription_runs)")
+        }
+        if "record_type" not in existing_run_columns:
+            conn.execute(
+                "ALTER TABLE transcription_runs "
+                "ADD COLUMN record_type TEXT NOT NULL DEFAULT 'transcription'"
+            )
 
     def record_run(
         self,
@@ -150,6 +162,7 @@ class HistoryDB:
         created_at: str | None = None,
         has_summary: bool = False,
         artifacts: list[HistoryArtifact] | None = None,
+        record_type: str = "transcription",
     ) -> None:
         """Insert or replace a transcription run and its artifacts."""
         if created_at is None:
@@ -175,8 +188,8 @@ class HistoryDB:
             conn.execute(
                 """\
                 INSERT INTO transcription_runs
-                    (run_id, bvid, title, author, pubdate, created_at, has_summary, file_count)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    (run_id, bvid, title, author, pubdate, created_at, has_summary, file_count, record_type)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(run_id) DO UPDATE SET
                     bvid        = excluded.bvid,
                     title       = excluded.title,
@@ -184,7 +197,8 @@ class HistoryDB:
                     pubdate     = excluded.pubdate,
                     created_at  = excluded.created_at,
                     has_summary = excluded.has_summary,
-                    file_count  = excluded.file_count
+                    file_count  = excluded.file_count,
+                    record_type = excluded.record_type
                 """,
                 (
                     run_id,
@@ -195,6 +209,7 @@ class HistoryDB:
                     created_at,
                     int(has_summary),
                     len(artifact_list),
+                    record_type,
                 ),
             )
             conn.execute(
@@ -241,17 +256,23 @@ class HistoryDB:
         page: int = 1,
         page_size: int = 20,
         search: str = "",
+        record_type: str = "",
     ) -> HistoryPage:
         """Paginated listing with optional search on title/bvid/author."""
         conn = self._conn()
 
-        where = ""
+        conditions: list[str] = []
         params: list[str] = []
         query = search.strip()
         if query:
-            where = "WHERE title LIKE ? OR bvid LIKE ? OR author LIKE ?"
+            conditions.append("(title LIKE ? OR bvid LIKE ? OR author LIKE ?)")
             like = f"%{query}%"
-            params = [like, like, like]
+            params.extend([like, like, like])
+        if record_type.strip():
+            conditions.append("record_type = ?")
+            params.append(record_type.strip())
+
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
 
         row = conn.execute(
             f"SELECT COUNT(*) AS cnt FROM transcription_runs {where}",
@@ -262,7 +283,7 @@ class HistoryDB:
         offset = (max(1, page) - 1) * page_size
         rows = conn.execute(
             f"""\
-            SELECT run_id, bvid, title, author, pubdate, created_at, has_summary, file_count
+            SELECT run_id, bvid, title, author, pubdate, created_at, has_summary, file_count, record_type
             FROM transcription_runs
             {where}
             ORDER BY created_at DESC
@@ -281,6 +302,7 @@ class HistoryDB:
                 created_at=r["created_at"],
                 has_summary=bool(r["has_summary"]),
                 file_count=r["file_count"],
+                record_type=r["record_type"] or "transcription",
             )
             for r in rows
         ]
@@ -298,7 +320,7 @@ class HistoryDB:
         conn = self._conn()
         run_row = conn.execute(
             """\
-            SELECT run_id, bvid, title, author, pubdate, created_at, has_summary
+            SELECT run_id, bvid, title, author, pubdate, created_at, has_summary, record_type
             FROM transcription_runs
             WHERE run_id = ?
             """,
@@ -338,7 +360,42 @@ class HistoryDB:
             created_at=run_row["created_at"],
             has_summary=bool(run_row["has_summary"]),
             artifacts=artifacts,
+            record_type=run_row["record_type"] or "transcription",
         )
+
+    def list_authors(self) -> list[str]:
+        """Return distinct non-empty author names, sorted alphabetically."""
+        conn = self._conn()
+        rows = conn.execute(
+            "SELECT DISTINCT author FROM transcription_runs WHERE author != '' ORDER BY author"
+        ).fetchall()
+        return [str(r["author"]) for r in rows]
+
+    def get_run_ids_for_authors(self, authors: list[str]) -> list[str]:
+        """Return all run_ids whose author is in the given list."""
+        if not authors:
+            return []
+        placeholders = ",".join("?" * len(authors))
+        conn = self._conn()
+        rows = conn.execute(
+            f"SELECT run_id FROM transcription_runs WHERE author IN ({placeholders})",
+            authors,
+        ).fetchall()
+        return [str(r["run_id"]) for r in rows]
+
+    def count_runs(self, *, record_type: str = "") -> int:
+        """Return total run count, optionally filtered by record type."""
+        conn = self._conn()
+        params: list[str] = []
+        where = ""
+        if record_type.strip():
+            where = "WHERE record_type = ?"
+            params.append(record_type.strip())
+        row = conn.execute(
+            f"SELECT COUNT(*) AS cnt FROM transcription_runs {where}",
+            params,
+        ).fetchone()
+        return int(row["cnt"]) if row else 0
 
     def delete_run(self, run_id: str) -> list[HistoryArtifact]:
         """Delete a transcription run and return its artifacts for file cleanup."""
@@ -378,6 +435,29 @@ class HistoryDB:
             )
 
         return artifacts
+
+
+def record_rag_query(
+    *,
+    db: "HistoryDB",
+    question: str,
+    answer_artifact: "HistoryArtifact",
+    created_at: str | None = None,
+) -> str:
+    """Persist a RAG query + answer to the history DB. Returns run_id."""
+    from uuid import uuid4  # noqa: PLC0415
+    run_id = uuid4().hex
+    title = question[:200]
+    db.record_run(
+        run_id=run_id,
+        bvid="",
+        title=title,
+        created_at=created_at,
+        has_summary=False,
+        artifacts=[answer_artifact],
+        record_type="rag_query",
+    )
+    return run_id
 
 
 def infer_run_id(storage_key: str, *, bvid: str) -> str:

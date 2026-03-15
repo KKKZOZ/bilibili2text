@@ -83,12 +83,88 @@ HTML_TEMPLATE = r"""<!doctype html>
     .markdown-body thead th {{
       background: #f6f8fa;
     }}
+
+    @media (max-width: 520px) {{
+      .markdown-body .mobile-table {{
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        margin: 16px 0;
+      }}
+      .markdown-body .mobile-table-row {{
+        display: flex;
+        flex-direction: column;
+        border: 1px solid #d0d7de;
+        border-radius: 12px;
+        overflow: hidden;
+        background: #ffffff;
+      }}
+      .markdown-body .mobile-table-cell {{
+        display: grid;
+        grid-template-columns: 72px minmax(0, 1fr);
+        gap: 8px;
+        border-top: 1px solid #eef2f6;
+        padding: 8px 10px;
+        font-size: 13px;
+        line-height: 1.45;
+      }}
+      .markdown-body .mobile-table-row .mobile-table-cell:first-child {{
+        border-top: 0;
+      }}
+      .markdown-body .mobile-table-label {{
+        font-weight: 700;
+        color: #57606a;
+      }}
+      .markdown-body .mobile-table-value {{
+        min-width: 0;
+        word-break: break-word;
+        overflow-wrap: anywhere;
+      }}
+    }}
   </style>
 </head>
 <body>
   <div class="markdown-body">
   {body_html}
   </div>
+  <script>
+    if (window.matchMedia('(max-width: 520px)').matches) {{
+      document.querySelectorAll('.markdown-body table').forEach((table) => {{
+        const headers = Array.from(table.querySelectorAll('thead th')).map((th) => th.textContent.trim());
+        const rows = Array.from(table.querySelectorAll('tbody tr'));
+        if (headers.length === 0 || rows.length === 0) return;
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'mobile-table';
+
+        rows.forEach((row) => {{
+          const rowEl = document.createElement('div');
+          rowEl.className = 'mobile-table-row';
+
+          Array.from(row.children).forEach((cell, index) => {{
+            const cellEl = document.createElement('div');
+            cellEl.className = 'mobile-table-cell';
+
+            const labelEl = document.createElement('div');
+            labelEl.className = 'mobile-table-label';
+            labelEl.textContent = headers[index] || `列${{index + 1}}`;
+
+            const valueEl = document.createElement('div');
+            valueEl.className = 'mobile-table-value';
+            valueEl.innerHTML = cell.innerHTML;
+
+            cellEl.appendChild(labelEl);
+            cellEl.appendChild(valueEl);
+            rowEl.appendChild(cellEl);
+          }});
+
+          wrapper.appendChild(rowEl);
+        }});
+
+        table.replaceWith(wrapper);
+      }});
+    }}
+  </script>
 </body>
 </html>
 """

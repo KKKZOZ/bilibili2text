@@ -254,13 +254,16 @@ def _record_history(
     config: AppConfig | None = None,
     summary_preset: str | None = None,
     summary_profile: str | None = None,
-) -> None:
-    """Record a completed transcription run to the history DB."""
+) -> str | None:
+    """Record a completed transcription run to the history DB.
+
+    Returns the run_id if successful, None otherwise.
+    """
     try:
         db = _get_history_db()
     except Exception as exc:
         logger.warning("无法初始化历史数据库，跳过记录: %s", exc)
-        return
+        return None
 
     try:
         # 从 results 中提取元信息
@@ -279,7 +282,7 @@ def _record_history(
             summary_profile=summary_profile,
         )
 
-        record_pipeline_run(
+        return record_pipeline_run(
             db=db,
             bvid=bvid,
             results=results,
@@ -292,3 +295,4 @@ def _record_history(
         )
     except Exception as exc:
         logger.warning("记录历史转录失败: %s", exc)
+        return None

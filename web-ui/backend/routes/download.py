@@ -11,7 +11,12 @@ from fastapi.responses import StreamingResponse
 from b2t.converter.converter import ConversionFormat, convert_file
 from b2t.storage.base import classify_artifact_filename
 
-from backend.downloads import _media_type_for_filename, _store_download
+from backend.downloads import (
+    _content_cache,
+    _content_cache_lock,
+    _media_type_for_filename,
+    _store_download,
+)
 from backend.schemas import ConvertRequest, ConvertResponse
 from backend.state import _download_index, _download_lock, _get_storage_backend
 
@@ -20,6 +25,18 @@ router = APIRouter()
 
 @router.get("/api/download/{download_id}")
 def download_markdown(download_id: str) -> StreamingResponse:
+    # Check in-memory content cache first (e.g. RAG answers)
+    with _content_cache_lock:
+        cached = _content_cache.get(download_id)
+    if cached is not None:
+        content, filename = cached
+        quoted_filename = quote(filename)
+        return StreamingResponse(
+            iter([content]),
+            media_type=_media_type_for_filename(filename),
+            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quoted_filename}"},
+        )
+
     with _download_lock:
         artifact = _download_index.get(download_id)
 

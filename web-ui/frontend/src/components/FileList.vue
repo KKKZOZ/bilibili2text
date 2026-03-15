@@ -170,6 +170,7 @@ const displayItems = computed(() => {
     summary_text: 310,
     json: 400,
     audio: 500,
+    rag_answer: 50,
   };
 
   const toDisplayItem = (item, index, overrides = {}) => {
@@ -324,7 +325,8 @@ const canConvert = (kind) => {
     kind === 'markdown' ||
     kind === 'summary' ||
     kind === 'summary_no_table' ||
-    kind === 'summary_table_md'
+    kind === 'summary_table_md' ||
+    kind === 'rag_answer'
   );
 };
 

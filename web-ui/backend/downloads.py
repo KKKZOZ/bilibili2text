@@ -1,11 +1,18 @@
 """Download index management: register artifacts and resolve media types."""
 
+from collections import OrderedDict
 from pathlib import Path
+from threading import Lock
 from uuid import uuid4
 
 from b2t.storage import StoredArtifact
 
 from backend.state import _download_index, _download_lock, _download_limit
+
+# In-memory content cache for ephemeral downloads (e.g. RAG answers before persistence)
+_content_cache: OrderedDict[str, tuple[bytes, str]] = OrderedDict()
+_content_cache_lock = Lock()
+_content_cache_limit = 100
 
 
 def _store_download(artifact: StoredArtifact) -> str:
@@ -16,6 +23,16 @@ def _store_download(artifact: StoredArtifact) -> str:
         while len(_download_index) > _download_limit:
             _download_index.popitem(last=False)
 
+    return download_id
+
+
+def _store_content_download(content: bytes, filename: str) -> str:
+    """Register raw bytes for immediate download. Returns download_id."""
+    download_id = uuid4().hex
+    with _content_cache_lock:
+        _content_cache[download_id] = (content, filename)
+        while len(_content_cache) > _content_cache_limit:
+            _content_cache.popitem(last=False)
     return download_id
 
 

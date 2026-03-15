@@ -81,6 +81,8 @@ _job_limit = 200
 _storage_backend: StorageBackend | None = None
 _stt_storage_backend: StorageBackend | None = None
 _history_db: HistoryDB | None = None
+_rag_store: "RagStore | None" = None
+_rag_store_lock = Lock()
 
 try:
     _app_config: AppConfig | None = load_config(_ROOT_CONFIG_PATH)
@@ -139,6 +141,23 @@ def _get_history_db() -> HistoryDB:
     db_dir = config.download.db_dir
     _history_db = HistoryDB(db_dir)
     return _history_db
+
+
+def _get_rag_store() -> "RagStore":
+    global _rag_store
+    if _rag_store is not None:
+        return _rag_store
+
+    with _rag_store_lock:
+        if _rag_store is not None:
+            return _rag_store
+        from b2t.rag.store import RagStore  # noqa: PLC0415
+        config = _get_app_config()
+        _rag_store = RagStore(
+            chroma_dir=config.rag.chroma_dir,
+            collection_name=config.rag.collection_name,
+        )
+    return _rag_store
 
 
 # ---------------------------------------------------------------------------

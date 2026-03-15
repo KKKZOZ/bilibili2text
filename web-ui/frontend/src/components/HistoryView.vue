@@ -1,8 +1,10 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
+import { BookMarked, ExternalLink } from 'lucide-vue-next';
 import {
   AlertCircle,
   ArrowLeft,
+  Brain,
   CalendarDays,
   Clock,
   FileText,
@@ -13,6 +15,7 @@ import {
 } from 'lucide-vue-next';
 import FileList from './FileList.vue';
 import { bilibiliVideoUrl, formatTime } from '../utils/fileUtils';
+import { extractRagReferenceItems, renderMarkdown } from '../utils/markdown';
 
 const props = defineProps({
   summaryPresets: {
@@ -47,6 +50,7 @@ const historyPage = ref(1);
 const historyPageSize = ref(20);
 const historyHasMore = ref(false);
 const historySearch = ref('');
+const historyRecordType = ref('');  // '' | 'transcription' | 'rag_query'
 const historyLoading = ref(false);
 const historyError = ref('');
 const historyDetail = ref(null);
@@ -59,6 +63,9 @@ const regenerateError = ref('');
 const regenerateSuccess = ref('');
 const selectedHistorySummaryPreset = ref('');
 const selectedHistorySummaryProfile = ref('');
+const ragAnswerMarkdown = ref('');
+const ragAnswerError = ref('');
+const ragAnswerLoading = ref(false);
 
 let searchTimer = null;
 
@@ -84,6 +91,12 @@ const historyDetailDownloadRows = computed(() => {
   }));
 });
 
+const renderedRagAnswer = computed(() =>
+  ragAnswerMarkdown.value ? renderMarkdown(ragAnswerMarkdown.value) : ''
+);
+
+const ragReferenceItems = computed(() => extractRagReferenceItems(ragAnswerMarkdown.value));
+
 const loadHistory = async () => {
   historyLoading.value = true;
   historyError.value = '';
@@ -93,9 +106,8 @@ const loadHistory = async () => {
       page_size: String(historyPageSize.value),
     });
     const q = historySearch.value.trim();
-    if (q) {
-      params.set('search', q);
-    }
+    if (q) params.set('search', q);
+    if (historyRecordType.value) params.set('record_type', historyRecordType.value);
     const resp = await fetch(`/api/history?${params}`);
     const data = await resp.json();
     if (!resp.ok) {
@@ -115,6 +127,8 @@ const loadHistoryDetail = async (runId) => {
   historyDetailLoading.value = true;
   showHistoryDetail.value = true;
   historyDetail.value = null;
+  ragAnswerMarkdown.value = '';
+  ragAnswerError.value = '';
   regenerateError.value = '';
   regenerateSuccess.value = '';
   selectedHistorySummaryPreset.value =
@@ -127,11 +141,32 @@ const loadHistoryDetail = async (runId) => {
       throw new Error(data.detail || '获取详情失败');
     }
     historyDetail.value = data;
+    if (data.record_type === 'rag_query') {
+      await loadRagAnswerMarkdown(data);
+    }
   } catch (err) {
     historyError.value = err instanceof Error ? err.message : '获取详情失败';
     showHistoryDetail.value = false;
   } finally {
     historyDetailLoading.value = false;
+  }
+};
+
+const loadRagAnswerMarkdown = async (detail = historyDetail.value) => {
+  const artifact = detail?.artifacts?.find((item) => item.kind === 'rag_answer');
+  if (!artifact?.download_url) return;
+  ragAnswerLoading.value = true;
+  ragAnswerError.value = '';
+  try {
+    const resp = await fetch(artifact.download_url);
+    if (!resp.ok) {
+      throw new Error(`读取知识库回答失败（HTTP ${resp.status}）`);
+    }
+    ragAnswerMarkdown.value = await resp.text();
+  } catch (err) {
+    ragAnswerError.value = err instanceof Error ? err.message : '读取知识库回答失败';
+  } finally {
+    ragAnswerLoading.value = false;
   }
 };
 
@@ -180,6 +215,12 @@ const onSearchInput = () => {
     historyPage.value = 1;
     loadHistory();
   }, 400);
+};
+
+const setRecordType = (type) => {
+  historyRecordType.value = type;
+  historyPage.value = 1;
+  loadHistory();
 };
 
 const historyPrevPage = () => {
@@ -294,7 +335,7 @@ onMounted(() => {
                 </span>
                 <span class="detail-time">
                   <Clock :size="14" />
-                  转录时间：{{ formatTime(historyDetail.created_at) }}
+                  {{ historyDetail.record_type === 'rag_query' ? '查询时间：' : '转录时间：' }}{{ formatTime(historyDetail.created_at) }}
                 </span>
               </div>
             </div>
@@ -310,7 +351,7 @@ onMounted(() => {
           </div>
         </div>
 
-        <div class="history-regenerate">
+        <div v-if="historyDetail.record_type !== 'rag_query'" class="history-regenerate">
           <div class="history-regenerate-head">
             <p class="history-regenerate-kicker">重新生成配置</p>
             <h3>总结参数</h3>
@@ -377,6 +418,61 @@ onMounted(() => {
           <p v-if="regenerateSuccess" class="preset-hint">{{ regenerateSuccess }}</p>
         </div>
 
+        <div v-if="historyDetail.record_type === 'rag_query'" class="rag-history-preview">
+          <div class="rag-history-preview-head">
+            <div>
+              <p class="history-regenerate-kicker">知识库回答</p>
+              <h3>渲染预览</h3>
+            </div>
+          </div>
+          <div v-if="ragAnswerLoading" class="status-loading">
+            <LoaderCircle :size="14" class="spin" />
+            <span>加载回答中…</span>
+          </div>
+          <p v-else-if="ragAnswerError" class="inline-error">
+            <AlertCircle :size="16" />
+            <span>{{ ragAnswerError }}</span>
+          </p>
+          <article
+            v-else-if="renderedRagAnswer"
+            class="rag-history-markdown"
+            v-html="renderedRagAnswer"
+          />
+
+          <section v-if="ragReferenceItems.length" class="rag-history-sources">
+            <h3 class="rag-history-sources-heading">
+              <BookMarked :size="15" />
+              <span>参考来源</span>
+              <span class="rag-history-sources-count">{{ ragReferenceItems.length }}</span>
+            </h3>
+            <div class="rag-history-sources-grid">
+              <a
+                v-for="item in ragReferenceItems"
+                :id="`source-${item.index}`"
+                :key="`${item.index}-${item.bvid}-${item.title}`"
+                :href="item.bvid ? bilibiliVideoUrl(item.bvid) : undefined"
+                class="rag-history-source-card"
+                :class="{ 'no-link': !item.bvid }"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <div class="rag-history-source-top">
+                  <span class="rag-history-source-index">{{ item.index }}</span>
+                  <div class="rag-history-source-meta">
+                    <span class="rag-history-source-title">{{ item.title || item.bvid || '未知视频' }}</span>
+                    <span v-if="item.bvid" class="rag-history-source-bvid">
+                      {{ item.bvid }}
+                      <ExternalLink :size="11" />
+                    </span>
+                  </div>
+                  <div class="rag-history-source-score">{{ item.score }}%</div>
+                </div>
+                <p class="rag-history-source-excerpt">{{ item.text }}</p>
+              </a>
+            </div>
+          </section>
+        </div>
+
         <FileList
           class="detail-download-list"
           :items="historyDetailDownloadRows"
@@ -389,7 +485,9 @@ onMounted(() => {
           :history-run-id="historyDetail.run_id"
           :allow-delete="allowDelete"
           title="文件列表"
-          :filter-kinds="['markdown', 'summary', 'summary_no_table', 'summary_table_md', 'text', 'json', 'audio']"
+          :filter-kinds="historyDetail.record_type === 'rag_query'
+            ? ['rag_answer']
+            : ['markdown', 'summary', 'summary_no_table', 'summary_table_md', 'text', 'json', 'audio']"
           @artifact-deleted="onHistoryArtifactDeleted"
         />
       </template>
@@ -399,6 +497,29 @@ onMounted(() => {
     <article v-else class="panel panel-history">
       <header class="history-list-header">
         <h2>历史记录</h2>
+        <div class="history-type-tabs">
+          <button
+            class="history-type-tab"
+            :class="{ active: historyRecordType === '' }"
+            @click="setRecordType('')"
+          >全部</button>
+          <button
+            class="history-type-tab"
+            :class="{ active: historyRecordType === 'transcription' }"
+            @click="setRecordType('transcription')"
+          >
+            <FileText :size="13" />
+            转录记录
+          </button>
+          <button
+            class="history-type-tab"
+            :class="{ active: historyRecordType === 'rag_query' }"
+            @click="setRecordType('rag_query')"
+          >
+            <Brain :size="13" />
+            知识库查询
+          </button>
+        </div>
         <div class="history-search-row">
           <Search :size="16" />
           <input
@@ -437,8 +558,16 @@ onMounted(() => {
         >
           <div class="history-item-content" @click="loadHistoryDetail(item.run_id)">
             <div class="history-item-main">
+              <span
+                v-if="item.record_type === 'rag_query'"
+                class="history-record-badge history-record-badge-rag"
+              >
+                <Brain :size="11" />
+                知识库查询
+              </span>
               <span class="history-title">{{ item.title || item.bvid }}</span>
               <a
+                v-if="item.record_type !== 'rag_query' && item.bvid"
                 class="history-bvid"
                 :href="bilibiliVideoUrl(item.bvid)"
                 target="_blank"
@@ -459,7 +588,7 @@ onMounted(() => {
               </span>
               <span class="history-time">
                 <Clock :size="13" />
-                转录时间：{{ formatTime(item.created_at) }}
+                {{ item.record_type === 'rag_query' ? '查询时间：' : '转录时间：' }}{{ formatTime(item.created_at) }}
               </span>
               <span class="history-file-count">{{ item.file_count }} 个文件</span>
             </div>
@@ -528,8 +657,60 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
   flex-wrap: wrap;
+}
+
+.history-type-tabs {
+  display: flex;
+  gap: 4px;
+  background: rgba(148, 163, 184, 0.1);
+  border-radius: 10px;
+  padding: 3px;
+}
+
+.history-type-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted, #64748b);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.history-type-tab:hover {
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--text-soft, #334155);
+}
+
+.history-type-tab.active {
+  background: #fff;
+  color: var(--brand-strong, #0f766e);
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
+}
+
+.history-record-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 5px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.history-record-badge-rag {
+  background: var(--brand-soft, #e6fffb);
+  color: var(--brand-strong, #0f766e);
+  border: 1px solid rgba(13, 148, 136, 0.2);
 }
 
 .history-list-header h2 {
@@ -884,11 +1065,291 @@ onMounted(() => {
   margin-bottom: 20px;
 }
 
+.status-loading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.84rem;
+  color: var(--text-muted, #64748b);
+}
+
 .detail-header-row {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+}
+
+.rag-history-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 22px;
+  padding: 18px 20px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.rag-history-preview-head h3 {
+  margin: 3px 0 0;
+  font-size: 1rem;
+  color: var(--text-main);
+}
+
+.rag-history-markdown {
+  color: var(--text-main, #0f172a);
+  font-size: 0.94rem;
+  line-height: 1.8;
+}
+
+.rag-history-markdown :deep(h1),
+.rag-history-markdown :deep(h2),
+.rag-history-markdown :deep(h3),
+.rag-history-markdown :deep(h4) {
+  margin: 0.9em 0 0.45em;
+  line-height: 1.35;
+  color: var(--text-main, #0f172a);
+}
+
+.rag-history-markdown :deep(h1) {
+  font-size: 1.3rem;
+}
+
+.rag-history-markdown :deep(h2) {
+  font-size: 1.08rem;
+}
+
+.rag-history-markdown :deep(h3) {
+  font-size: 0.98rem;
+}
+
+.rag-history-markdown :deep(p),
+.rag-history-markdown :deep(ol),
+.rag-history-markdown :deep(ul),
+.rag-history-markdown :deep(blockquote),
+.rag-history-markdown :deep(pre) {
+  margin: 0.7em 0;
+}
+
+.rag-history-markdown :deep(ol),
+.rag-history-markdown :deep(ul) {
+  padding-left: 1.4em;
+}
+
+.rag-history-markdown :deep(li + li) {
+  margin-top: 0.3em;
+}
+
+.rag-history-markdown :deep(blockquote) {
+  margin-left: 0;
+  padding: 10px 14px;
+  border-left: 3px solid rgba(13, 148, 136, 0.28);
+  background: rgba(240, 253, 250, 0.8);
+  border-radius: 0 12px 12px 0;
+  color: var(--text-soft, #334155);
+}
+
+.rag-history-markdown :deep(code) {
+  padding: 0.15em 0.4em;
+  border-radius: 6px;
+  background: rgba(148, 163, 184, 0.16);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.88em;
+}
+
+.rag-history-markdown :deep(pre) {
+  overflow: auto;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #0f172a;
+  color: #e2e8f0;
+}
+
+.rag-history-markdown :deep(pre code) {
+  padding: 0;
+  background: transparent;
+  color: inherit;
+}
+
+.rag-history-markdown :deep(a) {
+  color: var(--brand-strong, #0f766e);
+  text-decoration: none;
+}
+
+.rag-history-markdown :deep(a:hover) {
+  text-decoration: underline;
+}
+
+.rag-history-markdown :deep(table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.9em 0;
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+}
+
+.rag-history-markdown :deep(th),
+.rag-history-markdown :deep(td) {
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+  text-align: left;
+  vertical-align: top;
+}
+
+.rag-history-markdown :deep(th) {
+  background: rgba(241, 245, 249, 0.9);
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-soft, #334155);
+}
+
+.rag-history-markdown :deep(td) {
+  font-size: 0.85rem;
+}
+
+.rag-history-markdown :deep(.citation-ref) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  margin: 0 1px;
+  border-radius: 5px;
+  background: var(--brand-soft, #e6fffb);
+  color: var(--brand-strong, #0f766e);
+  font-size: 0.72rem;
+  font-weight: 700;
+  vertical-align: middle;
+}
+
+.rag-history-sources {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.rag-history-sources-heading {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--text-soft, #334155);
+}
+
+.rag-history-sources-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 99px;
+  background: var(--brand-soft, #e6fffb);
+  color: var(--brand-strong, #0f766e);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.rag-history-sources-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.rag-history-source-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid var(--panel-border, rgba(148, 163, 184, 0.28));
+  border-radius: 16px;
+  text-decoration: none;
+  color: inherit;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.rag-history-source-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(13, 148, 136, 0.34);
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.06);
+}
+
+.rag-history-source-card.no-link {
+  cursor: default;
+}
+
+.rag-history-source-card.no-link:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+.rag-history-source-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.rag-history-source-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  background: #0f172a;
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.rag-history-source-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.rag-history-source-title {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--text-main, #0f172a);
+}
+
+.rag-history-source-bvid {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.76rem;
+  color: var(--brand-strong, #0f766e);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.rag-history-source-score {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(13, 148, 136, 0.1);
+  color: var(--brand-strong, #0f766e);
+  font-size: 0.74rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.rag-history-source-excerpt {
+  margin: 0;
+  color: var(--text-soft, #334155);
+  font-size: 0.82rem;
+  line-height: 1.7;
 }
 
 .detail-header-row > :first-child {

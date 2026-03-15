@@ -1,12 +1,13 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { History, KeyRound, Sparkles } from 'lucide-vue-next';
+import { Brain, History, KeyRound, Sparkles } from 'lucide-vue-next';
 import ProcessView from './components/ProcessView.vue';
 import HistoryView from './components/HistoryView.vue';
 import PublicApiKeyView from './components/PublicApiKeyView.vue';
+import RagView from './components/RagView.vue';
 
 // ─── View switching ──────────────────────────────────────────────
-const currentView = ref('process'); // "process" | "history" | "settings"
+const currentView = ref('process'); // "process" | "history" | "rag" | "settings"
 
 // ─── Summary configuration state ─────────────────────────────────
 const summaryPresets = ref([]);
@@ -21,6 +22,7 @@ const isLoadingSummaryProfiles = ref(false);
 const tabBarRef = ref(null);
 const processTabRef = ref(null);
 const historyTabRef = ref(null);
+const ragTabRef = ref(null);
 const settingsTabRef = ref(null);
 const tabIndicatorStyle = ref({
   width: '0px',
@@ -172,6 +174,9 @@ const getActiveTabButton = () => {
   if (currentView.value === 'history') {
     return historyTabRef.value;
   }
+  if (currentView.value === 'rag') {
+    return ragTabRef.value;
+  }
   if (currentView.value === 'settings') {
     return settingsTabRef.value || processTabRef.value;
   }
@@ -257,6 +262,15 @@ onBeforeUnmount(() => {
         <span>历史记录</span>
       </button>
       <button
+        ref="ragTabRef"
+        class="tab-button"
+        :class="{ active: currentView === 'rag' }"
+        @click="currentView = 'rag'"
+      >
+        <Brain :size="16" />
+        <span>知识库</span>
+      </button>
+      <button
         v-if="isOpenPublic"
         ref="settingsTabRef"
         class="tab-button"
@@ -299,6 +313,9 @@ onBeforeUnmount(() => {
       :selected-summary-profile="selectedSummaryProfile"
       :allow-delete="runtimeFeatures.allow_delete"
     />
+
+    <!-- RAG View -->
+    <RagView v-if="currentView === 'rag'" />
 
     <PublicApiKeyView
       v-if="currentView === 'settings' && isOpenPublic"

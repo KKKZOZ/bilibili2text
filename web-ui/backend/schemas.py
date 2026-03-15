@@ -114,6 +114,7 @@ class HistoryItemResponse(BaseModel):
     created_at: str
     has_summary: bool
     file_count: int
+    record_type: str = "transcription"
 
 
 class HistoryListResponse(BaseModel):
@@ -141,6 +142,7 @@ class HistoryDetailResponse(BaseModel):
     created_at: str
     has_summary: bool
     artifacts: list[HistoryDetailArtifactResponse]
+    record_type: str = "transcription"
 
 
 class HistoryRegenerateSummaryRequest(BaseModel):

@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 import shutil
 from datetime import datetime
-from threading import get_ident
+from threading import Thread, get_ident
 
 from b2t.download.yutto_cli import extract_bvid
 from b2t.pipeline import run_pipeline
@@ -24,6 +24,9 @@ from backend.services import (
 )
 from backend.state import (
     _get_app_config,
+    _get_history_db,
+    _get_rag_store,
+    _get_runtime_app_config,
     _get_storage_backend,
     _get_stt_storage_backend,
 )
@@ -35,6 +38,29 @@ def _cleanup_upload_temp_dir(temp_dir: Path | None) -> None:
     if temp_dir is None:
         return
     shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+def _trigger_rag_index(run_id: str | None, config) -> None:
+    """Trigger background RAG indexing for a completed run."""
+    if run_id is None or not config.rag.enabled:
+        return
+
+    def _do_index() -> None:
+        try:
+            from b2t.rag.indexer import index_run  # noqa: PLC0415
+            count = index_run(
+                run_id=run_id,
+                history_db=_get_history_db(),
+                storage_backend=_get_storage_backend(),
+                rag_config=config.rag,
+                store=_get_rag_store(),
+                force=True,
+            )
+            logger.info("RAG 索引完成: run_id=%s, chunks=%d", run_id, count)
+        except Exception as exc:
+            logger.warning("RAG 索引失败（不影响转录结果）: %s", exc)
+
+    Thread(target=_do_index, daemon=True).start()
 
 
 def _run_job(
@@ -130,11 +156,12 @@ def _run_job(
                         job_id,
                         f"{datetime.now().strftime(JOB_LOG_DATE_FORMAT)} [INFO] b2t.pipeline: {_redact_text(notice)}",
                     )
-                    _record_history(
+                    _run_id = _record_history(
                         bvid=bvid,
                         results=existing_results,
                         config=config,
                     )
+                    _trigger_rag_index(_run_id, config)
                     _cleanup_upload_temp_dir(upload_temp_dir)
                     return
             else:
@@ -210,13 +237,14 @@ def _run_job(
                     job_id,
                     f"{datetime.now().strftime(JOB_LOG_DATE_FORMAT)} [INFO] b2t.pipeline: {_redact_text(notice)}",
                 )
-                _record_history(
+                _run_id = _record_history(
                     bvid=bvid,
                     results=combined_results,
                     config=config,
                     summary_preset=summary_preset,
                     summary_profile=summary_profile,
                 )
+                _trigger_rag_index(_run_id, config)
                 _cleanup_upload_temp_dir(upload_temp_dir)
                 return
 
@@ -342,13 +370,14 @@ def _run_job(
             **metadata_fields,
         )
         if bvid is not None:
-            _record_history(
+            _run_id = _record_history(
                 bvid=bvid,
                 results=results,
                 config=config,
                 summary_preset=summary_preset,
                 summary_profile=summary_profile,
             )
+            _trigger_rag_index(_run_id, config)
     finally:
         root_logger.removeHandler(log_handler)
         log_handler.close()

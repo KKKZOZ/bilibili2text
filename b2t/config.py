@@ -152,6 +152,34 @@ class ConverterConfig:
 
 
 @dataclass(frozen=True)
+class RagEmbeddingConfig:
+    provider: str = "bailian"
+    model: str = "text-embedding-v3"
+    api_key: str = ""
+    api_base: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+
+
+@dataclass(frozen=True)
+class RagLLMConfig:
+    provider: str = "bailian"
+    model: str = "qwen3-max"
+    api_key: str = ""
+    api_base: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+
+
+@dataclass(frozen=True)
+class RagConfig:
+    enabled: bool = False
+    collection_name: str = "b2t_rag"
+    chroma_dir: str = "./chroma_data"
+    chunk_size: int = 800
+    chunk_overlap: int = 100
+    top_k: int = 5
+    embedding: RagEmbeddingConfig = field(default_factory=RagEmbeddingConfig)
+    llm: RagLLMConfig = field(default_factory=RagLLMConfig)
+
+
+@dataclass(frozen=True)
 class AppConfig:
     download: DownloadConfig
     storage: StorageConfig
@@ -159,6 +187,7 @@ class AppConfig:
     summarize: SummarizeConfig
     summary_presets: SummaryPresetsConfig
     converter: ConverterConfig
+    rag: RagConfig = field(default_factory=RagConfig)
 
 
 def _load_summarize_config(raw_summarize: dict) -> SummarizeConfig:
@@ -643,6 +672,67 @@ def resolve_summary_preset_name(
     return candidate
 
 
+def _load_rag_config(raw_rag: dict, *, base_dir: Path) -> RagConfig:
+    if not isinstance(raw_rag, dict):
+        raise ValueError("rag 配置必须是 TOML 表")
+
+    enabled = raw_rag.get("enabled", False)
+    if not isinstance(enabled, bool):
+        raise ValueError("rag.enabled 必须是布尔值")
+
+    collection_name = raw_rag.get("collection_name", RagConfig.collection_name)
+    if not isinstance(collection_name, str) or not collection_name.strip():
+        raise ValueError("rag.collection_name 必须是非空字符串")
+
+    chroma_dir_raw = raw_rag.get("chroma_dir", RagConfig.chroma_dir)
+    if not isinstance(chroma_dir_raw, str) or not chroma_dir_raw.strip():
+        raise ValueError("rag.chroma_dir 必须是非空字符串")
+    chroma_dir = str(_resolve_relative_path(chroma_dir_raw, base_dir=base_dir))
+
+    chunk_size = raw_rag.get("chunk_size", RagConfig.chunk_size)
+    if not isinstance(chunk_size, int) or chunk_size <= 0:
+        raise ValueError("rag.chunk_size 必须是正整数")
+
+    chunk_overlap = raw_rag.get("chunk_overlap", RagConfig.chunk_overlap)
+    if not isinstance(chunk_overlap, int) or chunk_overlap < 0:
+        raise ValueError("rag.chunk_overlap 必须是非负整数")
+
+    top_k = raw_rag.get("top_k", RagConfig.top_k)
+    if not isinstance(top_k, int) or top_k <= 0:
+        raise ValueError("rag.top_k 必须是正整数")
+
+    raw_embedding = raw_rag.get("embedding", {})
+    if not isinstance(raw_embedding, dict):
+        raise ValueError("rag.embedding 必须是 TOML 表")
+    embedding = RagEmbeddingConfig(
+        provider=raw_embedding.get("provider", RagEmbeddingConfig.provider),
+        model=raw_embedding.get("model", RagEmbeddingConfig.model),
+        api_key=raw_embedding.get("api_key", RagEmbeddingConfig.api_key),
+        api_base=raw_embedding.get("api_base", RagEmbeddingConfig.api_base),
+    )
+
+    raw_llm = raw_rag.get("llm", {})
+    if not isinstance(raw_llm, dict):
+        raise ValueError("rag.llm 必须是 TOML 表")
+    llm = RagLLMConfig(
+        provider=raw_llm.get("provider", RagLLMConfig.provider),
+        model=raw_llm.get("model", RagLLMConfig.model),
+        api_key=raw_llm.get("api_key", RagLLMConfig.api_key),
+        api_base=raw_llm.get("api_base", RagLLMConfig.api_base),
+    )
+
+    return RagConfig(
+        enabled=enabled,
+        collection_name=collection_name.strip(),
+        chroma_dir=chroma_dir,
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        top_k=top_k,
+        embedding=embedding,
+        llm=llm,
+    )
+
+
 def load_config(path: str | Path | None = None) -> AppConfig:
     """加载 TOML 配置文件
 
@@ -726,6 +816,11 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     )
     download_dict["db_dir"] = str(db_dir)
 
+    rag_config = _load_rag_config(
+        raw.get("rag", {}),
+        base_dir=config_path.parent.resolve(),
+    )
+
     return AppConfig(
         download=DownloadConfig(**download_dict),
         storage=storage_config,
@@ -733,4 +828,5 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         summarize=summarize_config,
         summary_presets=summary_presets,
         converter=ConverterConfig(**raw.get("converter", {})),
+        rag=rag_config,
     )
