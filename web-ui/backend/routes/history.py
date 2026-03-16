@@ -43,11 +43,18 @@ def _summary_family_storage_keys(detail, summary_artifact) -> set[str]:
     expected_filenames = {
         summary_artifact.filename,
         f"{summary_stem}.txt",
+        f"{summary_stem}_fancy.html",
         f"{summary_stem}_table.md",
         f"{summary_stem}_table.pdf",
     }
     parent_key = _storage_parent_key(summary_artifact.storage_key)
-    summary_kinds = {"summary", "summary_text", "summary_table_md", "summary_table_pdf"}
+    summary_kinds = {
+        "summary",
+        "summary_text",
+        "summary_fancy_html",
+        "summary_table_md",
+        "summary_table_pdf",
+    }
 
     related: set[str] = set()
     for artifact in detail.artifacts:
@@ -94,6 +101,8 @@ def _to_history_detail_response(
         has_summary=detail.has_summary,
         artifacts=artifacts,
         record_type=getattr(detail, "record_type", "transcription") or "transcription",
+        fancy_html_status=getattr(detail, "fancy_html_status", "idle") or "idle",
+        fancy_html_error=(getattr(detail, "fancy_html_error", "") or ""),
     )
 
 
@@ -302,13 +311,16 @@ def delete_history_artifact(run_id: str, download_id: str) -> HistoryDetailRespo
     if target_artifact is None:
         raise HTTPException(status_code=404, detail="文件不属于该历史记录")
 
-    # 仅允许删除总结 Markdown，表格与无表格视图均视为总结派生产物。
-    if target_artifact.kind != "summary":
-        raise HTTPException(status_code=400, detail="仅支持删除总结 Markdown 文件")
+    # 允许删除总结 Markdown（会级联删除派生文件）或单独删除 fancy HTML。
+    if target_artifact.kind not in ("summary", "summary_fancy_html"):
+        raise HTTPException(status_code=400, detail="仅支持删除总结 Markdown 或 Fancy HTML 文件")
 
-    storage_keys_to_delete = _summary_family_storage_keys(detail, target_artifact)
-    if not storage_keys_to_delete:
+    if target_artifact.kind == "summary_fancy_html":
         storage_keys_to_delete = {target_artifact.storage_key}
+    else:
+        storage_keys_to_delete = _summary_family_storage_keys(detail, target_artifact)
+        if not storage_keys_to_delete:
+            storage_keys_to_delete = {target_artifact.storage_key}
 
     storage_backend = _get_storage_backend()
     failed_files: list[str] = []
@@ -339,7 +351,14 @@ def delete_history_artifact(run_id: str, download_id: str) -> HistoryDetailRespo
         item for item in detail.artifacts if item.storage_key not in storage_keys_to_delete
     ]
     has_summary = any(
-        item.kind in {"summary", "summary_text", "summary_table_md", "summary_table_pdf"}
+        item.kind
+        in {
+            "summary",
+            "summary_text",
+            "summary_fancy_html",
+            "summary_table_md",
+            "summary_table_pdf",
+        }
         for item in remained_artifacts
     )
     db.record_run(
@@ -351,6 +370,7 @@ def delete_history_artifact(run_id: str, download_id: str) -> HistoryDetailRespo
         created_at=detail.created_at,
         has_summary=has_summary,
         artifacts=remained_artifacts,
+        record_type=detail.record_type,
     )
 
     updated = db.get_run_detail(run_id)

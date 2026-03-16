@@ -1,11 +1,13 @@
-"""Qwen3-ASR-Flash 语音转文字"""
+"""DashScope 语音转文字（Qwen/FileTrans 与 FunASR）"""
 
 import logging
 import time
 from pathlib import Path
+from typing import Any
 
 import dashscope
 import requests
+from dashscope.audio.asr import Transcription
 from dashscope.audio.qwen_asr import QwenTranscription
 
 from b2t.config import STTConfig
@@ -13,6 +15,16 @@ from b2t.storage.base import StorageBackend
 from b2t.stt.base import ProgressCallback, STTProvider
 
 logger = logging.getLogger(__name__)
+
+
+def _is_fun_asr_model(model: str) -> bool:
+    return model.strip().lower() == "fun-asr"
+
+
+def _safe_get(data: Any, key: str) -> Any:
+    if isinstance(data, dict):
+        return data.get(key)
+    return data.__dict__.get(key) if hasattr(data, "__dict__") else None
 
 
 class QwenSTTProvider(STTProvider):
@@ -50,11 +62,12 @@ class QwenSTTProvider(STTProvider):
             emit("transcribing", "语音转录", 50)
             response = self._submit_task(audio_url)
 
-            if response.output.task_status != "SUCCEEDED":
-                raise RuntimeError(f"转录失败，状态: {response.output.task_status}")
+            task_status = self._extract_task_status(response)
+            if task_status != "SUCCEEDED":
+                raise RuntimeError(f"转录失败，状态: {task_status}")
 
             emit("transcribing", "语音转录", 65)
-            transcription_url = response.output.result["transcription_url"]
+            transcription_url = self._extract_transcription_url(response)
             self._download_result(transcription_url, json_path)
 
         return json_path
@@ -70,18 +83,66 @@ class QwenSTTProvider(STTProvider):
         dashscope.api_key = self._stt_config.qwen_api_key
 
         logger.info("正在调用 Dashscope API: %s", self._stt_config.qwen_base_url)
-        task_response = QwenTranscription.async_call(
-            model=self._stt_config.qwen_model,
-            file_url=audio_url,
-            language=self._stt_config.language,
-            enable_itn=True,
-            enable_words=True,
-        )
+        model = self._stt_config.qwen_model.strip()
+        if _is_fun_asr_model(model):
+            task_response = Transcription.async_call(
+                model=model,
+                file_urls=[audio_url],
+                language_hints=[self._stt_config.language],
+            )
+            wait_fn = Transcription.wait
+        else:
+            task_response = QwenTranscription.async_call(
+                model=model,
+                file_url=audio_url,
+                language=self._stt_config.language,
+                enable_itn=True,
+                enable_words=True,
+            )
+            wait_fn = QwenTranscription.wait
 
         logger.info("任务已提交，task_id: %s", task_response.output.task_id)
         logger.info("等待转录完成...")
 
-        return QwenTranscription.wait(task=task_response.output.task_id)
+        return wait_fn(task=task_response.output.task_id)
+
+    def _extract_task_status(self, response: Any) -> str:
+        output = response.output
+
+        task_status = _safe_get(output, "task_status")
+        if isinstance(task_status, str) and task_status:
+            return task_status
+
+        if isinstance(output, dict):
+            results = output.get("results")
+            if isinstance(results, list) and results:
+                first = results[0]
+                if isinstance(first, dict):
+                    subtask_status = first.get("subtask_status")
+                    if isinstance(subtask_status, str) and subtask_status:
+                        return subtask_status
+
+        return ""
+
+    def _extract_transcription_url(self, response: Any) -> str:
+        output = response.output
+
+        result = _safe_get(output, "result")
+        if isinstance(result, dict):
+            transcription_url = result.get("transcription_url")
+            if isinstance(transcription_url, str) and transcription_url:
+                return transcription_url
+
+        results = _safe_get(output, "results")
+        if isinstance(results, list):
+            for item in results:
+                if not isinstance(item, dict):
+                    continue
+                transcription_url = item.get("transcription_url")
+                if isinstance(transcription_url, str) and transcription_url:
+                    return transcription_url
+
+        raise RuntimeError("转录成功，但未返回 transcription_url")
 
     def _download_result(self, url: str, output_path: Path | str) -> Path:
         """下载转录结果 JSON 文件。"""

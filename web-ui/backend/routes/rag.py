@@ -6,6 +6,8 @@ import asyncio
 import json
 import logging
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -33,10 +35,15 @@ router = APIRouter(prefix="/api/rag", tags=["rag"])
 logger = logging.getLogger(__name__)
 
 _executor = ThreadPoolExecutor(max_workers=2)
+_SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 
 
 def _escape_markdown_table_cell(value: str) -> str:
     return value.replace("|", "\\|").replace("\n", "<br />").strip()
+
+
+def _shanghai_now() -> datetime:
+    return datetime.now(tz=_SHANGHAI_TZ)
 
 
 def _require_rag_enabled() -> None:
@@ -138,22 +145,13 @@ async def rag_query_stream(question: str, filter_authors: str = "", llm_profile:
             )
             prompt = _ANSWER_PROMPT_TEMPLATE.format(chunks=chunks_str, question=question)
 
-            # Resolve LLM: use selected summarize profile if provided, else rag.llm
+            from b2t.config import resolve_rag_llm_profile, resolve_summarize_api_base  # noqa: PLC0415
             from b2t.summarize.litellm_client import _to_litellm_model_name  # noqa: PLC0415
-            from b2t.config import resolve_summarize_api_base  # noqa: PLC0415
 
-            selected_profile = llm_profile.strip()
-            if selected_profile and selected_profile in config.summarize.profiles:
-                profile = config.summarize.profiles[selected_profile]
-                llm_model = _to_litellm_model_name(profile.model, profile.provider)
-                llm_api_key = profile.api_key or None
-                llm_api_base = resolve_summarize_api_base(profile) or None
-            else:
-                llm_cfg = config.rag.llm
-                provider = llm_cfg.provider.strip().lower()
-                llm_model = _to_litellm_model_name(llm_cfg.model, provider)
-                llm_api_key = llm_cfg.api_key.strip() or None
-                llm_api_base = llm_cfg.api_base.strip() or None
+            profile = resolve_rag_llm_profile(config, override=llm_profile.strip())
+            llm_model = _to_litellm_model_name(profile.model, profile.provider)
+            llm_api_key = profile.api_key or None
+            llm_api_base = resolve_summarize_api_base(profile) or None
 
             def _call_llm():
                 resp = litellm.completion(
@@ -167,8 +165,8 @@ async def rag_query_stream(question: str, filter_authors: str = "", llm_profile:
             answer = await asyncio.to_thread(_call_llm)
 
             # Build markdown content for download / history
-            from datetime import datetime  # noqa: PLC0415
-            now_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+            query_time = _shanghai_now()
+            now_str = query_time.strftime("%Y%m%d_%H%M%S")
             safe_q = "".join(c if c.isalnum() or c in "-_" else "_" for c in question[:40])
             answer_filename = f"rag_{now_str}_{safe_q}.md"
 
@@ -192,7 +190,7 @@ async def rag_query_stream(question: str, filter_authors: str = "", llm_profile:
             answer_md = (
                 f"# 知识库查询\n\n"
                 f"**问题：** {question}\n\n"
-                f"**查询时间：** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+                f"**查询时间：** {query_time.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
                 f"## AI 回答\n\n{answer}\n\n"
                 f"## 参考来源\n\n{sources_md}\n"
             )
@@ -265,7 +263,7 @@ def rag_query(request: RagQueryRequest) -> RagQueryResponse:
         from b2t.rag.retriever import retrieve_and_answer
         result = retrieve_and_answer(
             request.question,
-            rag_config=config.rag,
+            config=config,
             store=store,
         )
     except Exception as exc:

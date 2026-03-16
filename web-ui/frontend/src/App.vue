@@ -1,13 +1,10 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { Brain, History, KeyRound, Sparkles } from 'lucide-vue-next';
-import ProcessView from './components/ProcessView.vue';
-import HistoryView from './components/HistoryView.vue';
-import PublicApiKeyView from './components/PublicApiKeyView.vue';
-import RagView from './components/RagView.vue';
 
-// ─── View switching ──────────────────────────────────────────────
-const currentView = ref('process'); // "process" | "history" | "rag" | "settings"
+const route = useRoute();
+const router = useRouter();
 
 // ─── Summary configuration state ─────────────────────────────────
 const summaryPresets = ref([]);
@@ -20,10 +17,6 @@ const summaryProfileError = ref('');
 const isLoadingSummaryPresets = ref(false);
 const isLoadingSummaryProfiles = ref(false);
 const tabBarRef = ref(null);
-const processTabRef = ref(null);
-const historyTabRef = ref(null);
-const ragTabRef = ref(null);
-const settingsTabRef = ref(null);
 const tabIndicatorStyle = ref({
   width: '0px',
   transform: 'translateX(0px)',
@@ -37,6 +30,16 @@ const runtimeFeatures = ref({
 });
 
 const isOpenPublic = computed(() => runtimeFeatures.value.mode === 'open-public');
+
+// Active tab detection
+const currentView = computed(() => {
+  const path = route.path;
+  if (path.startsWith('/process')) return 'process';
+  if (path.startsWith('/history')) return 'history';
+  if (path.startsWith('/rag')) return 'rag';
+  if (path.startsWith('/settings')) return 'settings';
+  return 'process';
+});
 
 const parseJsonSafely = async (resp, fallbackMessage) => {
   const raw = await resp.text();
@@ -170,22 +173,15 @@ const loadSummaryProfiles = async () => {
   }
 };
 
-const getActiveTabButton = () => {
-  if (currentView.value === 'history') {
-    return historyTabRef.value;
-  }
-  if (currentView.value === 'rag') {
-    return ragTabRef.value;
-  }
-  if (currentView.value === 'settings') {
-    return settingsTabRef.value || processTabRef.value;
-  }
-  return processTabRef.value;
+// Tab bar indicator animation
+const tabRefs = ref({});
+const setTabRef = (view, el) => {
+  if (el) tabRefs.value[view] = el;
 };
 
 const updateTabIndicator = () => {
   const bar = tabBarRef.value;
-  const activeButton = getActiveTabButton();
+  const activeButton = tabRefs.value[currentView.value];
   if (!bar || !activeButton) {
     return;
   }
@@ -205,6 +201,10 @@ const onApiKeyUpdated = async () => {
   await loadSummaryProfiles();
 };
 
+const navigateTo = (path) => {
+  router.push(path);
+};
+
 onMounted(() => {
   void nextTick(updateTabIndicator);
   window.addEventListener('resize', updateTabIndicator);
@@ -222,8 +222,8 @@ watch(currentView, async () => {
 });
 
 watch(isOpenPublic, async (openPublic) => {
-  if (!openPublic && currentView.value === 'settings') {
-    currentView.value = 'process';
+  if (!openPublic && route.path === '/settings') {
+    router.push('/process');
     return;
   }
   await nextTick();
@@ -244,83 +244,70 @@ onBeforeUnmount(() => {
     <nav ref="tabBarRef" class="tab-bar">
       <span class="tab-indicator" :style="tabIndicatorStyle" aria-hidden="true"></span>
       <button
-        ref="processTabRef"
+        :ref="(el) => setTabRef('process', el)"
         class="tab-button"
         :class="{ active: currentView === 'process' }"
-        @click="currentView = 'process'"
+        @click="navigateTo('/process')"
       >
         <Sparkles :size="16" />
         <span>新建转录</span>
       </button>
       <button
-        ref="historyTabRef"
+        :ref="(el) => setTabRef('history', el)"
         class="tab-button"
         :class="{ active: currentView === 'history' }"
-        @click="currentView = 'history'"
+        @click="navigateTo('/history')"
       >
         <History :size="16" />
         <span>历史记录</span>
       </button>
       <button
-        ref="ragTabRef"
+        :ref="(el) => setTabRef('rag', el)"
         class="tab-button"
         :class="{ active: currentView === 'rag' }"
-        @click="currentView = 'rag'"
+        @click="navigateTo('/rag')"
       >
         <Brain :size="16" />
         <span>知识库</span>
       </button>
       <button
         v-if="isOpenPublic"
-        ref="settingsTabRef"
+        :ref="(el) => setTabRef('settings', el)"
         class="tab-button"
         :class="{ active: currentView === 'settings' }"
-        @click="currentView = 'settings'"
+        @click="navigateTo('/settings')"
       >
         <KeyRound :size="16" />
         <span>API Key</span>
       </button>
     </nav>
 
-    <!-- Process View -->
-    <ProcessView
-      v-if="currentView === 'process'"
-      :summary-presets="summaryPresets"
-      :summary-default-preset="summaryDefaultPreset"
-      :selected-summary-preset="selectedSummaryPreset"
-      :summary-profiles="summaryProfiles"
-      :selected-summary-profile="selectedSummaryProfile"
-      :summary-preset-error="summaryPresetError"
-      :summary-profile-error="summaryProfileError"
-      :is-loading-summary-presets="isLoadingSummaryPresets"
-      :is-loading-summary-profiles="isLoadingSummaryProfiles"
-      :allow-upload="runtimeFeatures.allow_upload_audio"
-      :requires-api-key="runtimeFeatures.requires_user_api_key"
-      :api-key-configured="runtimeFeatures.api_key_configured"
-      @update:selected-summary-preset="selectedSummaryPreset = $event"
-      @update:selected-summary-profile="selectedSummaryProfile = $event"
-      @load-summary-presets="loadSummaryPresets"
-      @load-summary-profiles="loadSummaryProfiles"
-    />
-
-    <!-- History View -->
-    <HistoryView
-      v-if="currentView === 'history'"
-      :summary-presets="summaryPresets"
-      :summary-default-preset="summaryDefaultPreset"
-      :selected-summary-preset="selectedSummaryPreset"
-      :summary-profiles="summaryProfiles"
-      :selected-summary-profile="selectedSummaryProfile"
-      :allow-delete="runtimeFeatures.allow_delete"
-    />
-
-    <!-- RAG View -->
-    <RagView v-if="currentView === 'rag'" />
-
-    <PublicApiKeyView
-      v-if="currentView === 'settings' && isOpenPublic"
-      @api-key-updated="onApiKeyUpdated"
-    />
+    <!-- Routed views -->
+    <RouterView
+      v-slot="{ Component }"
+    >
+      <component
+        :is="Component"
+        :summary-presets="summaryPresets"
+        :summary-default-preset="summaryDefaultPreset"
+        :selected-summary-preset="selectedSummaryPreset"
+        :summary-profiles="summaryProfiles"
+        :selected-summary-profile="selectedSummaryProfile"
+        :summary-preset-error="summaryPresetError"
+        :summary-profile-error="summaryProfileError"
+        :is-loading-summary-presets="isLoadingSummaryPresets"
+        :is-loading-summary-profiles="isLoadingSummaryProfiles"
+        :allow-upload="runtimeFeatures.allow_upload_audio"
+        :requires-api-key="runtimeFeatures.requires_user_api_key"
+        :api-key-configured="runtimeFeatures.api_key_configured"
+        :allow-delete="runtimeFeatures.allow_delete"
+        @update:selected-summary-preset="selectedSummaryPreset = $event"
+        @update:selected-summary-profile="selectedSummaryProfile = $event"
+        @load-summary-presets="loadSummaryPresets"
+        @load-summary-profiles="loadSummaryProfiles"
+        @api-key-updated="onApiKeyUpdated"
+      />
+    </RouterView>
   </main>
 </template>
 

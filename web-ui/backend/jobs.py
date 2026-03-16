@@ -77,6 +77,7 @@ def _create_job(
     skip_summary: bool,
     summary_preset: str | None,
     summary_profile: str | None,
+    auto_generate_fancy_html: bool,
 ) -> dict[str, JobValue]:
     now = _utc_iso()
     job_id = uuid4().hex
@@ -105,6 +106,11 @@ def _create_job(
         "skip_summary": skip_summary,
         "summary_preset": summary_preset,
         "summary_profile": summary_profile,
+        "auto_generate_fancy_html": auto_generate_fancy_html,
+        "fancy_html_status": (
+            "pending" if auto_generate_fancy_html and not skip_summary else "idle"
+        ),
+        "fancy_html_error": None,
         "logs": [],
         "stage_started_monotonic": time.monotonic(),
         "stage_durations_seconds": {key: 0 for key in STAGE_KEYS},
@@ -137,12 +143,16 @@ def _update_job(
     summary_txt_filename: str | None = None,
     summary_table_pdf_download_url: str | None = None,
     summary_table_pdf_filename: str | None = None,
+    auto_generate_fancy_html: bool | None = None,
+    fancy_html_status: str | None = None,
+    fancy_html_error: str | None = None,
     already_transcribed: bool | None = None,
     notice: str | None = None,
     all_downloads: list[dict[str, str]] | None = None,
     author: str | None = None,
     pubdate: str | None = None,
     bvid: str | None = None,
+    title: str | None = None,
 ) -> None:
     with _job_lock:
         job = _job_index.get(job_id)
@@ -180,6 +190,10 @@ def _update_job(
         if stage is not None and stage in STAGE_KEYS:
             seen[stage] = True
 
+        # Don't overwrite a cancelled job
+        if str(job.get("status")) == "cancelled":
+            return
+
         if status is not None:
             job["status"] = status
         if stage is not None:
@@ -210,6 +224,12 @@ def _update_job(
             job["summary_table_pdf_download_url"] = summary_table_pdf_download_url
         if summary_table_pdf_filename is not None:
             job["summary_table_pdf_filename"] = summary_table_pdf_filename
+        if auto_generate_fancy_html is not None:
+            job["auto_generate_fancy_html"] = auto_generate_fancy_html
+        if fancy_html_status is not None:
+            job["fancy_html_status"] = fancy_html_status
+        if fancy_html_error is not None:
+            job["fancy_html_error"] = fancy_html_error
         if already_transcribed is not None:
             job["already_transcribed"] = already_transcribed
         if notice is not None:
@@ -222,6 +242,8 @@ def _update_job(
             job["pubdate"] = pubdate
         if bvid is not None:
             job["bvid"] = bvid
+        if title is not None:
+            job["title"] = title
 
         job["updated_at"] = _utc_iso()
 
@@ -230,6 +252,8 @@ def _append_job_log(job_id: str, line: str) -> None:
     with _job_lock:
         job = _job_index.get(job_id)
         if job is None:
+            return
+        if str(job.get("status")) == "cancelled":
             return
 
         logs = job.get("logs")
@@ -242,6 +266,26 @@ def _append_job_log(job_id: str, line: str) -> None:
             del logs[:-JOB_LOG_LIMIT]
 
         job["updated_at"] = _utc_iso()
+
+
+def _list_active_jobs() -> list[dict[str, JobValue]]:
+    with _job_lock:
+        result = []
+        for job in _job_index.values():
+            if str(job.get("status")) in ("queued", "running"):
+                result.append({
+                    "job_id": job["job_id"],
+                    "status": job["status"],
+                    "stage": job["stage"],
+                    "stage_label": job["stage_label"],
+                    "progress": int(job.get("progress") or 0),
+                    "bvid": job.get("bvid"),
+                    "title": job.get("title"),
+                    "author": job.get("author"),
+                    "created_at": str(job["created_at"]),
+                    "updated_at": str(job["updated_at"]),
+                })
+        return result
 
 
 def _get_job(job_id: str) -> dict[str, JobValue] | None:

@@ -55,6 +55,10 @@ def get_converter(
             from b2t.converter.md_to_png import MarkdownToPngConverter
 
             return MarkdownToPngConverter()
+        if source == "html":
+            from b2t.converter.md_to_png import HtmlToPngConverter
+
+            return HtmlToPngConverter()
 
     if target_format == ConversionFormat.HTML:
         if source in ("md", "markdown"):

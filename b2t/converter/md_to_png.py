@@ -665,6 +665,94 @@ class MarkdownToPngConverter:
                 merged.close()
 
 
+class HtmlToPngConverter:
+    """已渲染 HTML 文件转 PNG（桌面视角，适用于 fancy HTML 等页面）。"""
+
+    def __init__(
+        self,
+        width: int = 1280,
+        height: int = 900,
+        dpr: int = 2,
+    ):
+        self.width = width
+        self.height = height
+        self.dpr = dpr
+
+    def convert(
+        self,
+        input_path: Path,
+        output_path: Path | None = None,
+        **options,
+    ) -> Path:
+        if not input_path.exists():
+            raise FileNotFoundError(f"HTML 文件不存在: {input_path}")
+
+        input_path = input_path.expanduser().resolve()
+        if output_path is None:
+            output_path = input_path.with_suffix(".png")
+        else:
+            output_path = output_path.expanduser().resolve()
+
+        width = options.get("width", self.width)
+        height = options.get("height", self.height)
+        dpr = options.get("dpr", self.dpr)
+        reuse_browser = options.get("reuse_browser", True)
+
+        try:
+            if reuse_browser:
+                _CHROMIUM_WORKER.submit(
+                    lambda browser: self._render(
+                        browser,
+                        html_path=input_path,
+                        png_path=output_path,
+                        width=width,
+                        height=height,
+                        dpr=dpr,
+                    )
+                )
+            else:
+                with sync_playwright() as p:
+                    browser = p.chromium.launch()
+                    try:
+                        self._render(
+                            browser,
+                            html_path=input_path,
+                            png_path=output_path,
+                            width=width,
+                            height=height,
+                            dpr=dpr,
+                        )
+                    finally:
+                        browser.close()
+        except Exception as exc:
+            raise RuntimeError(f"Playwright 渲染失败: {exc}") from exc
+
+        logger.info("Fancy HTML PNG 已生成: %s", output_path)
+        return output_path
+
+    def _render(
+        self,
+        browser,
+        *,
+        html_path: Path,
+        png_path: Path,
+        width: int,
+        height: int,
+        dpr: int,
+    ) -> None:
+        context = browser.new_context(
+            viewport={"width": width, "height": height},
+            device_scale_factor=dpr,
+            is_mobile=False,
+        )
+        try:
+            page = context.new_page()
+            page.goto(html_path.as_uri(), wait_until="domcontentloaded")
+            page.screenshot(path=str(png_path), full_page=True)
+        finally:
+            context.close()
+
+
 def warmup_png_renderer() -> None:
     """预热 PNG 渲染器（启动并常驻一个 Chromium 实例）。"""
     # 预下载 CSS 到本地缓存，避免首次转换等待外网。

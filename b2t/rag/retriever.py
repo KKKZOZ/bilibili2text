@@ -9,9 +9,10 @@ os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "true")
 
 import litellm  # noqa: E402
 
-from b2t.config import RagConfig  # noqa: E402
+from b2t.config import AppConfig, resolve_rag_llm_profile, resolve_summarize_api_base  # noqa: E402
 from b2t.rag.embedder import embed_texts  # noqa: E402
 from b2t.rag.store import RagStore  # noqa: E402
+from b2t.summarize.litellm_client import _to_litellm_model_name  # noqa: E402
 
 _ANSWER_PROMPT_TEMPLATE = """\
 你是一个金融行业报告助手。你的任务不是写泛泛的摘要，而是基于检索结果形成一份结构化、信息充分、面向投资研究场景的中文金融报告。
@@ -52,16 +53,17 @@ class RagAnswer:
 def retrieve_and_answer(
     question: str,
     *,
-    rag_config: RagConfig,
+    config: AppConfig,
     store: RagStore,
+    llm_profile_override: str | None = None,
 ) -> RagAnswer:
     """Embed question, retrieve top-k chunks, and generate an answer with LLM."""
     # 1. Embed question
-    query_embeddings = embed_texts([question], config=rag_config.embedding)
+    query_embeddings = embed_texts([question], config=config.rag.embedding)
     query_embedding = query_embeddings[0]
 
     # 2. Retrieve top-k chunks
-    raw_results = store.query(query_embedding, top_k=rag_config.top_k)
+    raw_results = store.query(query_embedding, top_k=config.rag.top_k)
 
     sources: list[SourceChunk] = []
     chunk_texts: list[str] = []
@@ -88,17 +90,14 @@ def retrieve_and_answer(
     prompt = _ANSWER_PROMPT_TEMPLATE.format(chunks=chunks_str, question=question)
 
     # 4. Call LLM
-    llm_cfg = rag_config.llm
-    provider = llm_cfg.provider.strip().lower()
-    model = llm_cfg.model.strip()
-    if provider == "bailian":
-        model = f"dashscope/{model}"
+    profile = resolve_rag_llm_profile(config, override=llm_profile_override)
+    model = _to_litellm_model_name(profile.model, profile.provider)
 
     response = litellm.completion(
         model=model,
         messages=[{"role": "user", "content": prompt}],
-        api_key=llm_cfg.api_key.strip() or None,
-        api_base=llm_cfg.api_base.strip() or None,
+        api_key=profile.api_key.strip() or None,
+        api_base=resolve_summarize_api_base(profile) or None,
     )
     answer = response.choices[0].message.content or ""
 

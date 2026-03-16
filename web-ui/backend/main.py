@@ -18,6 +18,7 @@ from backend.routes.history import router as history_router
 from backend.routes.process import router as process_router
 from backend.routes.rag import router as rag_router
 from backend.routes.runtime_routes import router as runtime_router
+from backend.routes.summary import router as summary_router
 
 app = FastAPI(title="bilibili-to-text API", version="0.1.0")
 logger = logging.getLogger(__name__)
@@ -54,4 +55,5 @@ app.include_router(process_router)
 app.include_router(config_router)
 app.include_router(history_router)
 app.include_router(download_router)
+app.include_router(summary_router)
 app.include_router(rag_router)

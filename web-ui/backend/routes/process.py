@@ -8,15 +8,17 @@ from threading import Thread
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
-from backend.jobs import _create_job, _get_job
+from backend.jobs import _create_job, _get_job, _list_active_jobs
 from backend.runner import _run_job
 from backend.schemas import (
+    ActiveJobItem,
+    ActiveJobsResponse,
     DownloadItemResponse,
     ProcessRequest,
     ProcessStartResponse,
     ProcessStatusResponse,
 )
-from backend.state import _get_runtime_app_config, _is_upload_enabled
+from backend.state import _get_runtime_app_config, _is_upload_enabled, _job_index, _job_lock, _utc_iso
 
 router = APIRouter()
 _UPLOAD_BVID_NAME_PATTERN = re.compile(r"^(BV[0-9A-Za-z]{10})_(.+)$", re.IGNORECASE)
@@ -104,6 +106,7 @@ def process_video(payload: ProcessRequest) -> ProcessStartResponse:
         skip_summary=payload.skip_summary,
         summary_preset=summary_preset,
         summary_profile=summary_profile,
+        auto_generate_fancy_html=payload.auto_generate_fancy_html,
     )
     Thread(
         target=_run_job,
@@ -113,6 +116,7 @@ def process_video(payload: ProcessRequest) -> ProcessStartResponse:
             "skip_summary": payload.skip_summary,
             "summary_preset": summary_preset,
             "summary_profile": summary_profile,
+            "auto_generate_fancy_html": payload.auto_generate_fancy_html,
         },
         daemon=True,
     ).start()
@@ -126,6 +130,7 @@ def process_uploaded_audio(
     skip_summary: bool = Form(default=False),
     summary_preset: str | None = Form(default=None),
     summary_profile: str | None = Form(default=None),
+    auto_generate_fancy_html: bool = Form(default=False),
 ) -> ProcessStartResponse:
     if not _is_upload_enabled():
         raise HTTPException(
@@ -161,6 +166,7 @@ def process_uploaded_audio(
         skip_summary=skip_summary,
         summary_preset=cleaned_summary_preset,
         summary_profile=cleaned_summary_profile,
+        auto_generate_fancy_html=auto_generate_fancy_html,
     )
     Thread(
         target=_run_job,
@@ -172,11 +178,38 @@ def process_uploaded_audio(
             "skip_summary": skip_summary,
             "summary_preset": cleaned_summary_preset,
             "summary_profile": cleaned_summary_profile,
+            "auto_generate_fancy_html": auto_generate_fancy_html,
         },
         daemon=True,
     ).start()
 
     return ProcessStartResponse(job_id=str(job["job_id"]))
+
+
+@router.get("/api/jobs/active", response_model=ActiveJobsResponse)
+def list_active_jobs() -> ActiveJobsResponse:
+    jobs = _list_active_jobs()
+    return ActiveJobsResponse(jobs=[ActiveJobItem(**j) for j in jobs])
+
+
+@router.post("/api/process/{job_id}/cancel")
+def cancel_job(job_id: str) -> dict:
+    with _job_lock:
+        job = _job_index.get(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="任务不存在或已过期")
+        status = str(job.get("status") or "")
+        if status not in ("queued", "running"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"只能取消进行中的任务（当前状态：{status}）",
+            )
+        job["status"] = "cancelled"
+        job["stage"] = "cancelled"
+        job["stage_label"] = "任务已取消"
+        job["error"] = "任务已被用户取消"
+        job["updated_at"] = _utc_iso()
+    return {"ok": True, "job_id": job_id}
 
 
 @router.get("/api/process/{job_id}", response_model=ProcessStatusResponse)
@@ -243,6 +276,11 @@ def process_status(job_id: str) -> ProcessStatusResponse:
         summary_profile=job["summary_profile"]
         if isinstance(job["summary_profile"], str)
         else None,
+        auto_generate_fancy_html=bool(job.get("auto_generate_fancy_html")),
+        fancy_html_status=str(job.get("fancy_html_status") or "idle"),
+        fancy_html_error=job["fancy_html_error"]
+        if isinstance(job.get("fancy_html_error"), str)
+        else None,
         already_transcribed=bool(job.get("already_transcribed")),
         notice=job["notice"] if isinstance(job.get("notice"), str) else None,
         all_downloads=all_downloads,
@@ -253,4 +291,5 @@ def process_status(job_id: str) -> ProcessStatusResponse:
         else {},
         created_at=str(job["created_at"]),
         updated_at=str(job["updated_at"]),
+        title=job["title"] if isinstance(job.get("title"), str) else None,
     )

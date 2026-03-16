@@ -8,6 +8,7 @@ export function resolveFileType(filename, kind) {
     markdown: 'Markdown',
     txt: 'TXT',
     pdf: 'PDF',
+    html: 'HTML',
     json: 'JSON',
     m4a: 'M4A',
     mp3: 'MP3',
@@ -19,10 +20,12 @@ export function resolveFileType(filename, kind) {
     summary: 'Markdown',
     summary_no_table: 'Markdown',
     summary_text: 'TXT',
+    summary_fancy_html: 'HTML',
     summary_table_md: 'Markdown',
     summary_table_pdf: 'PDF',
     json: 'JSON',
     audio: '音频',
+    rag_answer: 'Markdown',
   };
 
   if (typeof filename === 'string') {
@@ -67,11 +70,22 @@ export function inferSummaryPresetFromFilename(filename) {
 
 export function buildArtifactDisplayName(artifact, options = {}) {
   const bvid = options.bvid || inferBvidFromFilename(artifact.filename);
+  const stem = (artifact.filename || '').replace(/\.[^.]*$/, '');
   if (artifact.kind === 'summary' || artifact.kind === 'summary_text') {
     return `${bvid}_总结`;
   }
   if (artifact.kind === 'summary_no_table') {
     return `${bvid}_总结_无表格`;
+  }
+  if (artifact.kind === 'summary_fancy_html') {
+    if (stem.startsWith('rag_')) {
+      const questionPart = stem.replace(/^rag_\d{8}_\d{6}_/, '').replace(/_fancy$/i, '');
+      if (questionPart) {
+        return `${questionPart.replace(/_/g, ' ')} FancyHTML`;
+      }
+      return '知识库查询 FancyHTML';
+    }
+    return `${bvid}_总结_FancyHTML`;
   }
   if (artifact.kind === 'summary_table_md' || artifact.kind === 'summary_table_pdf') {
     return `${bvid}_表格`;
@@ -84,6 +98,14 @@ export function buildArtifactDisplayName(artifact, options = {}) {
   }
   if (artifact.kind === 'audio') {
     return `${bvid}_音频`;
+  }
+  if (artifact.kind === 'rag_answer') {
+    // filename: rag_YYYYMMDD_HHMMSS_question_text.md — extract question part
+    const questionPart = stem.replace(/^rag_\d{8}_\d{6}_/, '');
+    if (questionPart) {
+      return questionPart.replace(/_/g, ' ');
+    }
+    return '知识库查询';
   }
   return `${bvid}_文件`;
 }

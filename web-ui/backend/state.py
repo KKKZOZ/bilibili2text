@@ -303,6 +303,7 @@ def _build_open_public_config(config: AppConfig, api_key: str) -> AppConfig:
         config,
         stt=public_stt_config,
         summarize=public_summarize_config,
+        fancy_html=replace(config.fancy_html, profile="open_public_bailian"),
     )
 
 

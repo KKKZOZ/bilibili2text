@@ -9,7 +9,7 @@ from threading import Thread, get_ident
 from b2t.download.yutto_cli import extract_bvid
 from b2t.pipeline import run_pipeline
 
-from backend.jobs import _append_job_log, _update_job
+from backend.jobs import _append_job_log, _get_job, _update_job
 from backend.logging_config import (
     JOB_LOG_DATE_FORMAT,
     _JobLogHandler,
@@ -19,7 +19,10 @@ from backend.services import (
     _build_all_download_items,
     _build_success_download_fields,
     _collect_all_artifacts_for_bvid,
+    _artifact_download_item,
+    _merge_history_artifact,
     _record_history,
+    _run_fancy_html_only_from_summary,
     _run_summary_only_from_existing,
 )
 from backend.state import (
@@ -63,6 +66,87 @@ def _trigger_rag_index(run_id: str | None, config) -> None:
     Thread(target=_do_index, daemon=True).start()
 
 
+def _trigger_fancy_html_generation(
+    *,
+    job_id: str,
+    bvid: str | None,
+    results: dict[str, object],
+    config,
+    storage_backend,
+    run_id: str | None,
+    summary_preset: str | None,
+    summary_profile: str | None,
+) -> None:
+    summary_artifact = results.get("summary")
+    if not hasattr(summary_artifact, "storage_key") or not hasattr(summary_artifact, "filename"):
+        return
+
+    def _do_generate() -> None:
+        _update_job(
+            job_id,
+            fancy_html_status="running",
+            fancy_html_error=None,
+        )
+        try:
+            fancy_artifact = _run_fancy_html_only_from_summary(
+                summary_artifact=summary_artifact,
+                storage_backend=storage_backend,
+                config=config,
+                summary_profile=summary_profile,
+            )
+            if run_id and bvid:
+                _merge_history_artifact(
+                    run_id=run_id,
+                    bvid=bvid,
+                    artifact=fancy_artifact,
+                    summary_preset=summary_preset,
+                    summary_profile=summary_profile,
+                )
+
+            job = _get_job(job_id) or {}
+            existing_downloads = job.get("all_downloads")
+            merged_downloads = (
+                list(existing_downloads)
+                if isinstance(existing_downloads, list)
+                else []
+            )
+            merged_downloads.append(_artifact_download_item(fancy_artifact))
+            deduped_downloads: list[dict[str, str]] = []
+            seen_urls: set[str] = set()
+            for item in merged_downloads:
+                if not isinstance(item, dict):
+                    continue
+                url = item.get("url")
+                if not isinstance(url, str) or url in seen_urls:
+                    continue
+                seen_urls.add(url)
+                deduped_downloads.append(item)
+
+            notice = str(job.get("notice") or "").strip()
+            suffix = "Fancy HTML 已生成。"
+            next_notice = f"{notice} {suffix}".strip() if notice else suffix
+            _update_job(
+                job_id,
+                all_downloads=deduped_downloads,
+                fancy_html_status="succeeded",
+                fancy_html_error=None,
+                notice=next_notice,
+            )
+        except Exception as exc:
+            logger.warning("Fancy HTML 生成失败（不影响主流程）: %s", exc)
+            _update_job(
+                job_id,
+                fancy_html_status="failed",
+                fancy_html_error=str(exc),
+            )
+            _append_job_log(
+                job_id,
+                f"{datetime.now().strftime(JOB_LOG_DATE_FORMAT)} [WARNING] b2t.pipeline: {_redact_text(f'Fancy HTML 生成失败: {exc}')}",
+            )
+
+    Thread(target=_do_generate, daemon=True).start()
+
+
 def _run_job(
     job_id: str,
     *,
@@ -72,6 +156,7 @@ def _run_job(
     skip_summary: bool,
     summary_preset: str | None,
     summary_profile: str | None,
+    auto_generate_fancy_html: bool,
 ) -> None:
     normalized_url = (url or "").strip()
     normalized_audio_path = (input_audio_path or "").strip()
@@ -244,6 +329,19 @@ def _run_job(
                     summary_preset=summary_preset,
                     summary_profile=summary_profile,
                 )
+                if auto_generate_fancy_html:
+                    _trigger_fancy_html_generation(
+                        job_id=job_id,
+                        bvid=bvid,
+                        results=combined_results,
+                        config=config,
+                        storage_backend=storage_backend,
+                        run_id=_run_id,
+                        summary_preset=summary_preset,
+                        summary_profile=summary_profile,
+                    )
+                else:
+                    _update_job(job_id, fancy_html_status="idle")
                 _trigger_rag_index(_run_id, config)
                 _cleanup_upload_temp_dir(upload_temp_dir)
                 return
@@ -334,6 +432,8 @@ def _run_job(
         if metadata:
             metadata_fields["author"] = metadata.author
             metadata_fields["pubdate"] = metadata.pubdate
+            if getattr(metadata, "title", None):
+                metadata_fields["title"] = metadata.title
         if bvid:
             metadata_fields["bvid"] = bvid
 
@@ -377,7 +477,22 @@ def _run_job(
                 summary_preset=summary_preset,
                 summary_profile=summary_profile,
             )
+            if auto_generate_fancy_html:
+                _trigger_fancy_html_generation(
+                    job_id=job_id,
+                    bvid=bvid,
+                    results=results,
+                    config=config,
+                    storage_backend=storage_backend,
+                    run_id=_run_id,
+                    summary_preset=summary_preset,
+                    summary_profile=summary_profile,
+                )
+            else:
+                _update_job(job_id, fancy_html_status="idle")
             _trigger_rag_index(_run_id, config)
+        else:
+            _update_job(job_id, fancy_html_status="idle")
     finally:
         root_logger.removeHandler(log_handler)
         log_handler.close()

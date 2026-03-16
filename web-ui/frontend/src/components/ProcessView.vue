@@ -1,7 +1,9 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import {
   AlertCircle,
+  ArrowLeft,
   CheckCircle2,
   FileAudio2,
   Link2,
@@ -11,6 +13,9 @@ import {
 import ProgressPanel from './ProgressPanel.vue';
 import FileList from './FileList.vue';
 import { inferSummaryPresetFromFilename } from '../utils/fileUtils';
+
+const route = useRoute();
+const router = useRouter();
 
 const props = defineProps({
   summaryPresets: {
@@ -76,6 +81,7 @@ const inputMode = ref('url');
 const uploadedAudioFile = ref(null);
 const uploadFileInput = ref(null);
 const enableSummary = ref(true);
+const autoGenerateFancyHtml = ref(false);
 const currentSkipSummary = ref(false);
 const isStarting = ref(false);
 const isPolling = ref(false);
@@ -99,6 +105,9 @@ const job = ref({
   summary_table_pdf_filename: '',
   summary_preset: '',
   summary_profile: '',
+  auto_generate_fancy_html: false,
+  fancy_html_status: 'idle',
+  fancy_html_error: '',
   already_transcribed: false,
   notice: '',
   all_downloads: [],
@@ -114,45 +123,46 @@ const job = ref({
 
 let pollTimer = null;
 const maxPollErrors = 3;
-const ACTIVE_JOB_STORAGE_KEY = 'b2t.active-job-id';
+const ACTIVE_JOB_IDS_KEY = 'b2t.active-job-ids';
 const uploadAccept = '.aac,.flac,.m4a,.mp3,.ogg,.opus,.wav,.webm';
 const uploadFilenamePattern = /^(BV[0-9A-Za-z]{10})_.+\.(aac|flac|m4a|mp3|ogg|opus|wav|webm)$/i;
 
-const readPersistedJobId = () => {
-  if (typeof window === 'undefined') {
-    return '';
-  }
+// Job from route param
+const routeJobId = computed(() => String(route.params.jobId || ''));
+const isJobDetailMode = computed(() => !!routeJobId.value);
 
+// Multi-job localStorage helpers (shared with HistoryView for active job tracking)
+const readActiveJobIds = () => {
   try {
-    return window.localStorage.getItem(ACTIVE_JOB_STORAGE_KEY)?.trim() || '';
+    const raw = window.localStorage.getItem(ACTIVE_JOB_IDS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((id) => typeof id === 'string' && id) : [];
   } catch {
-    return '';
+    return [];
   }
 };
 
-const persistActiveJobId = (id) => {
-  if (typeof window === 'undefined') {
-    return;
-  }
-
+const addActiveJobId = (id) => {
   try {
-    if (!id) {
-      window.localStorage.removeItem(ACTIVE_JOB_STORAGE_KEY);
-      return;
+    const ids = readActiveJobIds();
+    if (!ids.includes(id)) {
+      ids.push(id);
+      window.localStorage.setItem(ACTIVE_JOB_IDS_KEY, JSON.stringify(ids));
     }
-    window.localStorage.setItem(ACTIVE_JOB_STORAGE_KEY, id);
-  } catch {
-    // ignore storage errors (private mode / quota / permission)
-  }
+  } catch {}
 };
 
-const setActiveJobId = (id) => {
-  jobId.value = id;
-  persistActiveJobId(id);
+const removeActiveJobId = (id) => {
+  try {
+    const ids = readActiveJobIds().filter((i) => i !== id);
+    window.localStorage.setItem(ACTIVE_JOB_IDS_KEY, JSON.stringify(ids));
+  } catch {}
 };
 
 const clearActiveJobId = () => {
-  setActiveJobId('');
+  if (jobId.value) removeActiveJobId(jobId.value);
+  jobId.value = '';
 };
 
 const parseJsonSafely = async (resp, fallbackMessage) => {
@@ -183,6 +193,11 @@ const isRunning = computed(
   () => job.value.status === 'queued' || job.value.status === 'running'
 );
 const isDone = computed(() => job.value.status === 'succeeded');
+const isFancyHtmlPending = computed(
+  () =>
+    Boolean(job.value.auto_generate_fancy_html) &&
+    ['pending', 'running'].includes(job.value.fancy_html_status || '')
+);
 const shouldSkipSummary = computed(() => {
   if (job.value.status === 'idle') {
     return !enableSummary.value;
@@ -256,6 +271,9 @@ const resetJob = () => {
     summary_table_pdf_filename: '',
     summary_preset: '',
     summary_profile: '',
+    auto_generate_fancy_html: false,
+    fancy_html_status: 'idle',
+    fancy_html_error: '',
     already_transcribed: false,
     notice: '',
     all_downloads: [],
@@ -333,7 +351,17 @@ const pollStatus = async () => {
       error.value = data.error || '处理失败';
       clearActiveJobId();
       stopPolling();
-    } else if (data.status === 'succeeded') {
+    } else if (data.status === 'cancelled') {
+      error.value = data.error || '任务已取消';
+      clearActiveJobId();
+      stopPolling();
+    } else if (
+      data.status === 'succeeded' &&
+      !(
+        data.auto_generate_fancy_html &&
+        ['pending', 'running'].includes(data.fancy_html_status || '')
+      )
+    ) {
       clearActiveJobId();
       stopPolling();
     }
@@ -385,6 +413,9 @@ const submit = async () => {
       if (!skipSummary && props.selectedSummaryProfile) {
         formData.append('summary_profile', props.selectedSummaryProfile);
       }
+      if (!skipSummary) {
+        formData.append('auto_generate_fancy_html', String(autoGenerateFancyHtml.value));
+      }
       resp = await fetch('/api/process/upload', {
         method: 'POST',
         body: formData,
@@ -409,6 +440,7 @@ const submit = async () => {
             skipSummary || !props.selectedSummaryProfile
               ? null
               : props.selectedSummaryProfile,
+          auto_generate_fancy_html: skipSummary ? false : autoGenerateFancyHtml.value,
         }),
       });
     }
@@ -426,7 +458,10 @@ const submit = async () => {
       throw new Error('提交任务失败（服务未返回有效 job_id）');
     }
 
-    setActiveJobId(data.job_id);
+    jobId.value = data.job_id;
+    addActiveJobId(data.job_id);
+    // Navigate to the job detail URL
+    await router.push(`/process/${data.job_id}`);
     pollTimer = setInterval(pollStatus, 1200);
     await pollStatus();
   } catch (err) {
@@ -437,12 +472,11 @@ const submit = async () => {
 };
 
 onMounted(async () => {
-  const persistedJobId = readPersistedJobId();
-  if (!persistedJobId) {
+  if (!routeJobId.value) {
     return;
   }
 
-  setActiveJobId(persistedJobId);
+  jobId.value = routeJobId.value;
   pollErrorCount.value = 0;
   await pollStatus();
   if (jobId.value && (job.value.status === 'queued' || job.value.status === 'running')) {
@@ -478,6 +512,9 @@ onBeforeUnmount(() => {
             </span>
             <span class="hero-pill hero-pill-soft">
               总结{{ enableSummary ? '已开启' : '已关闭' }}
+            </span>
+            <span v-if="enableSummary" class="hero-pill hero-pill-soft">
+              Fancy HTML{{ autoGenerateFancyHtml ? '自动生成' : '手动生成' }}
             </span>
           </div>
         </header>
@@ -565,6 +602,23 @@ onBeforeUnmount(() => {
             </div>
 
             <div class="process-summary-grid">
+              <div class="summary-preset process-summary-field process-summary-toggle">
+                <label class="switch switch-compact" for="auto-generate-fancy-html">
+                  <input
+                    id="auto-generate-fancy-html"
+                    v-model="autoGenerateFancyHtml"
+                    type="checkbox"
+                  />
+                  <span class="switch-track">
+                    <span class="switch-thumb"></span>
+                  </span>
+                  <span class="switch-label">总结完成后自动生成 Fancy HTML</span>
+                </label>
+                <p class="preset-hint">
+                  不阻塞总结文件展示；总结可下载后，Fancy HTML 会在后台补生成并自动出现在文件列表中。
+                </p>
+              </div>
+
               <div class="summary-preset process-summary-field">
                 <label for="summary-profile-select">模型配置</label>
                 <select
@@ -643,6 +697,18 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
+          <div v-if="isJobDetailMode" class="new-job-hint">
+            <button
+              type="button"
+              class="new-job-btn"
+              @click="router.push('/process')"
+            >
+              <ArrowLeft :size="14" />
+              <span>新建转录</span>
+            </button>
+            <span class="new-job-hint-text">当前任务在后台进行，可从历史记录中查看进度</span>
+          </div>
+
           <button class="submit" type="submit" :disabled="isStarting || isRunning">
             <LoaderCircle v-if="isStarting || isRunning" class="spin" :size="16" />
             <span>
@@ -684,6 +750,17 @@ onBeforeUnmount(() => {
           </div>
 
           <template v-if="isDone">
+            <p v-if="isFancyHtmlPending" class="cache-hit-note">
+              <LoaderCircle :size="16" class="spin" />
+              <span>Fancy HTML 正在后台生成，现有总结文件已可下载，稍后会自动加入文件列表。</span>
+            </p>
+            <p
+              v-else-if="job.auto_generate_fancy_html && job.fancy_html_status === 'failed' && job.fancy_html_error"
+              class="inline-error"
+            >
+              <AlertCircle :size="16" />
+              <span>Fancy HTML 自动生成失败：{{ job.fancy_html_error }}</span>
+            </p>
             <FileList
               :items="allDownloadRows"
               :summary-presets="summaryPresets"
@@ -718,6 +795,41 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+/* ─── New-job hint row ───────────────────────────────────────── */
+
+.new-job-hint {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.new-job-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--text-soft);
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.new-job-btn:hover {
+  background: #ffffff;
+  border-color: #94a3b8;
+}
+
+.new-job-hint-text {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
 /* ─── Layouts ────────────────────────────────────────────────── */
 
 .layout {
@@ -1031,7 +1143,12 @@ onBeforeUnmount(() => {
 }
 
 .process-summary-field {
+  display: grid;
   gap: 6px;
+}
+
+.process-summary-toggle {
+  grid-column: 1 / -1;
 }
 
 .process-summary-field label {

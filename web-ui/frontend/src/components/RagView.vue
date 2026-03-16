@@ -33,6 +33,29 @@ const queryStageMessage = ref('');
 
 const { convertAndDownload, isConverting, download } = useConversion();
 
+const fancyHtmlGenerating = ref(false);
+const fancyHtmlError = ref('');
+
+const generateFancyHtml = async () => {
+  if (!answerDownloadId.value || fancyHtmlGenerating.value) return;
+  fancyHtmlGenerating.value = true;
+  fancyHtmlError.value = '';
+  try {
+    const resp = await fetch('/api/summary/fancy-html', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ download_id: answerDownloadId.value }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.detail || '生成 Fancy HTML 失败');
+    download(data.download_url, data.filename);
+  } catch (err) {
+    fancyHtmlError.value = err instanceof Error ? err.message : '生成 Fancy HTML 失败';
+  } finally {
+    fancyHtmlGenerating.value = false;
+  }
+};
+
 // ─── LLM profile ──────────────────────────────────────────────────
 const llmProfiles = ref([]);
 const selectedLlmProfile = ref('');
@@ -403,7 +426,20 @@ onMounted(() => {
               <Download v-else :size="13" />
               <span>PDF</span>
             </button>
+            <button
+              class="answer-dl-btn answer-dl-btn-fancy"
+              :disabled="fancyHtmlGenerating"
+              @click="generateFancyHtml"
+            >
+              <LoaderCircle v-if="fancyHtmlGenerating" :size="13" class="spin" />
+              <FileText v-else :size="13" />
+              <span>Fancy HTML</span>
+            </button>
           </div>
+          <p v-if="fancyHtmlError" class="inline-error" style="margin-top:6px;font-size:0.82rem;">
+            <AlertCircle :size="13" />
+            {{ fancyHtmlError }}
+          </p>
         </div>
         <!-- eslint-disable-next-line vue/no-v-html -->
         <div class="answer-text" v-html="renderedAnswer" @click="onAnswerClick" />
@@ -765,6 +801,17 @@ onMounted(() => {
 .answer-dl-btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.answer-dl-btn-fancy {
+  border-color: rgba(249, 115, 22, 0.35);
+  color: #c2410c;
+}
+
+.answer-dl-btn-fancy:hover:not(:disabled) {
+  border-color: #f97316;
+  color: #c2410c;
+  background: rgba(249, 115, 22, 0.08);
 }
 
 .answer-text {

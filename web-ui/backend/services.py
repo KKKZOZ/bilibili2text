@@ -11,9 +11,10 @@ from b2t.config import (
     resolve_summarize_model_profile,
     resolve_summary_preset_name,
 )
-from b2t.history import record_pipeline_run
+from b2t.history import HistoryArtifact, record_pipeline_run
 from b2t.storage import StorageBackend, StoredArtifact
 from b2t.storage.base import classify_artifact_filename
+from b2t.summarize.fancy_html import generate_fancy_summary_html
 from b2t.summarize.llm import (
     export_summary_table_markdown,
     summarize,
@@ -180,6 +181,33 @@ def _materialize_artifact_to_file(
     return target_path
 
 
+def _storage_parent_key(storage_key: str) -> str:
+    normalized = storage_key.replace("\\", "/").strip("/")
+    if "/" not in normalized:
+        return ""
+    return normalized.rsplit("/", 1)[0]
+
+
+def _artifact_sibling_object_key(
+    *,
+    storage_backend: StorageBackend,
+    config: AppConfig,
+    source_storage_key: str,
+    filename: str,
+) -> str:
+    parent_key = _storage_parent_key(source_storage_key)
+    if storage_backend.backend_name == "minio":
+        base_prefix = config.storage.minio.base_prefix.strip("/")
+        if base_prefix and parent_key.startswith(f"{base_prefix}/"):
+            parent_key = parent_key[len(base_prefix) + 1 :]
+    elif storage_backend.backend_name == "alicloud":
+        base_prefix = config.storage.alicloud.base_prefix.strip("/")
+        if base_prefix and parent_key.startswith(f"{base_prefix}/"):
+            parent_key = parent_key[len(base_prefix) + 1 :]
+
+    return f"{parent_key}/{filename}" if parent_key else filename
+
+
 def _run_summary_only_from_existing(
     *,
     bvid: str,
@@ -244,6 +272,157 @@ def _run_summary_only_from_existing(
     finally:
         if cleanup_temp_dir is not None:
             cleanup_temp_dir.cleanup()
+
+
+def _run_fancy_html_only_from_summary(
+    *,
+    summary_artifact: StoredArtifact,
+    storage_backend: StorageBackend,
+    config: AppConfig,
+    summary_profile: str | None,
+) -> StoredArtifact:
+    if classify_artifact_filename(summary_artifact.filename) not in ("summary", "rag_answer"):
+        raise ValueError("仅支持基于总结 Markdown 或知识库回答生成 fancy HTML")
+
+    cleanup_temp_dir: tempfile.TemporaryDirectory | None = None
+    local_temp_dir: Path | None = None
+    if storage_backend.persist_local_outputs:
+        work_root = Path(config.download.output_dir).expanduser().resolve()
+        work_root.mkdir(parents=True, exist_ok=True)
+        work_dir = work_root / f".tmp-fancy-{uuid4().hex[:8]}"
+        work_dir.mkdir(parents=True, exist_ok=False)
+        local_temp_dir = work_dir
+    else:
+        cleanup_temp_dir = tempfile.TemporaryDirectory(prefix="b2t-fancy-html-")
+        work_dir = Path(cleanup_temp_dir.name)
+
+    try:
+        summary_path = _materialize_artifact_to_file(
+            storage_backend,
+            summary_artifact,
+            work_dir,
+        )
+        fancy_html_path = generate_fancy_summary_html(
+            summary_path,
+            config,
+            profile=summary_profile,
+        )
+
+        object_key = _artifact_sibling_object_key(
+            storage_backend=storage_backend,
+            config=config,
+            source_storage_key=summary_artifact.storage_key,
+            filename=fancy_html_path.name,
+        )
+        stored = storage_backend.store_file(
+            fancy_html_path,
+            object_key=object_key,
+        )
+        if storage_backend.persist_local_outputs:
+            summary_path.unlink(missing_ok=True)
+            fancy_html_path.unlink(missing_ok=True)
+        return stored
+    finally:
+        if cleanup_temp_dir is not None:
+            cleanup_temp_dir.cleanup()
+        if local_temp_dir is not None:
+            for path in local_temp_dir.iterdir():
+                if path.is_file():
+                    path.unlink(missing_ok=True)
+            local_temp_dir.rmdir()
+
+
+def _merge_history_artifact(
+    *,
+    run_id: str,
+    bvid: str,
+    artifact: StoredArtifact,
+    title: str = "",
+    author: str = "",
+    pubdate: str = "",
+    created_at: str | None = None,
+    summary_preset: str | None = None,
+    summary_profile: str | None = None,
+    fancy_html_status: str | None = None,
+    fancy_html_error: str | None = None,
+) -> object | None:
+    try:
+        db = _get_history_db()
+    except Exception as exc:
+        logger.warning("无法初始化历史数据库，跳过 fancy HTML 归档: %s", exc)
+        return None
+
+    detail = db.get_run_detail(run_id)
+    if detail is None:
+        inferred_title = title or bvid
+        db.record_run(
+            run_id=run_id,
+            bvid=bvid,
+            title=inferred_title,
+            author=author,
+            pubdate=pubdate,
+            created_at=created_at,
+            has_summary=True,
+            artifacts=[
+                HistoryArtifact(
+                    kind=classify_artifact_filename(artifact.filename) or "file",
+                    filename=artifact.filename,
+                    storage_key=artifact.storage_key,
+                    backend=artifact.backend,
+                    summary_preset=(summary_preset or "").strip(),
+                    summary_profile=(summary_profile or "").strip(),
+                )
+            ],
+            fancy_html_status=fancy_html_status,
+            fancy_html_error=fancy_html_error,
+        )
+        return db.get_run_detail(run_id)
+
+    merged_artifacts = list(detail.artifacts)
+    if not any(item.storage_key == artifact.storage_key for item in merged_artifacts):
+        merged_artifacts.append(
+            HistoryArtifact(
+                kind=classify_artifact_filename(artifact.filename) or "file",
+                filename=artifact.filename,
+                storage_key=artifact.storage_key,
+                backend=artifact.backend,
+                summary_preset=(summary_preset or "").strip(),
+                summary_profile=(summary_profile or "").strip(),
+            )
+        )
+    has_summary = any(
+        item.kind
+        in {
+            "summary",
+            "summary_text",
+            "summary_fancy_html",
+            "summary_table_md",
+            "summary_table_pdf",
+        }
+        for item in merged_artifacts
+    )
+    db.record_run(
+        run_id=detail.run_id,
+        bvid=detail.bvid,
+        title=detail.title,
+        author=detail.author,
+        pubdate=detail.pubdate,
+        created_at=detail.created_at,
+        has_summary=has_summary,
+        artifacts=merged_artifacts,
+        record_type=detail.record_type,
+        fancy_html_status=fancy_html_status,
+        fancy_html_error=fancy_html_error,
+    )
+    return db.get_run_detail(run_id)
+
+
+def _artifact_download_item(artifact: StoredArtifact) -> dict[str, str]:
+    return {
+        "url": f"/api/download/{_store_download(artifact)}",
+        "filename": artifact.filename,
+        "kind": classify_artifact_filename(artifact.filename) or "file",
+    }
 
 
 def _record_history(

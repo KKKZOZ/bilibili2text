@@ -42,6 +42,8 @@ def _media_type_for_filename(filename: str) -> str:
         return "text/markdown; charset=utf-8"
     if suffix == ".txt":
         return "text/plain; charset=utf-8"
+    if suffix == ".html":
+        return "text/html; charset=utf-8"
     if suffix == ".pdf":
         return "application/pdf"
     return "application/octet-stream"

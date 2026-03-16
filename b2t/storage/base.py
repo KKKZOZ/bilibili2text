@@ -11,6 +11,12 @@ def classify_artifact_filename(filename: str) -> str | None:
     """根据文件名推断产物类型键。"""
     lowered = filename.lower()
 
+    if lowered.endswith("_summary_fancy.html"):
+        return "summary_fancy_html"
+    if lowered.startswith("rag_") and lowered.endswith("_fancy.html"):
+        return "summary_fancy_html"
+    if lowered.startswith("rag_") and lowered.endswith(".md"):
+        return "rag_answer"
     if lowered.endswith("_summary_table.pdf"):
         return "summary_table_pdf"
     if lowered.endswith("_summary_table.md"):

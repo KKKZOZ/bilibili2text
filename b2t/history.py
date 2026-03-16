@@ -24,7 +24,9 @@ CREATE TABLE IF NOT EXISTS transcription_runs (
     created_at    TEXT    NOT NULL,
     has_summary   INTEGER NOT NULL DEFAULT 0,
     file_count    INTEGER NOT NULL DEFAULT 0,
-    record_type   TEXT    NOT NULL DEFAULT 'transcription'
+    record_type   TEXT    NOT NULL DEFAULT 'transcription',
+    fancy_html_status TEXT NOT NULL DEFAULT 'idle',
+    fancy_html_error  TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_runs_bvid       ON transcription_runs(bvid);
@@ -85,6 +87,8 @@ class HistoryDetail:
     has_summary: bool
     artifacts: list[HistoryArtifact]
     record_type: str = "transcription"
+    fancy_html_status: str = "idle"
+    fancy_html_error: str = ""
 
 
 @dataclass(frozen=True)
@@ -124,6 +128,14 @@ class HistoryDB:
         return conn
 
     @staticmethod
+    def _normalize_artifact_kind(kind: str, filename: str) -> str:
+        inferred = classify_artifact_filename(filename)
+        normalized_kind = (kind or "").strip()
+        if normalized_kind in {"", "file"} and inferred:
+            return inferred
+        return normalized_kind or inferred or "file"
+
+    @staticmethod
     def _ensure_schema(conn: sqlite3.Connection) -> None:
         conn.executescript(_SCHEMA_SQL)
         # Backward-compatible migration for existing DB files.
@@ -150,6 +162,16 @@ class HistoryDB:
                 "ALTER TABLE transcription_runs "
                 "ADD COLUMN record_type TEXT NOT NULL DEFAULT 'transcription'"
             )
+        if "fancy_html_status" not in existing_run_columns:
+            conn.execute(
+                "ALTER TABLE transcription_runs "
+                "ADD COLUMN fancy_html_status TEXT NOT NULL DEFAULT 'idle'"
+            )
+        if "fancy_html_error" not in existing_run_columns:
+            conn.execute(
+                "ALTER TABLE transcription_runs "
+                "ADD COLUMN fancy_html_error TEXT NOT NULL DEFAULT ''"
+            )
 
     def record_run(
         self,
@@ -163,6 +185,8 @@ class HistoryDB:
         has_summary: bool = False,
         artifacts: list[HistoryArtifact] | None = None,
         record_type: str = "transcription",
+        fancy_html_status: str | None = None,
+        fancy_html_error: str | None = None,
     ) -> None:
         """Insert or replace a transcription run and its artifacts."""
         if created_at is None:
@@ -185,11 +209,40 @@ class HistoryDB:
                     (run_id,),
                 ).fetchall()
             }
+            existing_run_meta = conn.execute(
+                """\
+                SELECT fancy_html_status, fancy_html_error
+                FROM transcription_runs
+                WHERE run_id = ?
+                """,
+                (run_id,),
+            ).fetchone()
+            persisted_fancy_html_status = (
+                fancy_html_status
+                if fancy_html_status is not None
+                else (
+                    str(existing_run_meta["fancy_html_status"])
+                    if existing_run_meta is not None
+                    else "idle"
+                )
+            )
+            persisted_fancy_html_error = (
+                fancy_html_error
+                if fancy_html_error is not None
+                else (
+                    str(existing_run_meta["fancy_html_error"])
+                    if existing_run_meta is not None
+                    else ""
+                )
+            )
             conn.execute(
                 """\
                 INSERT INTO transcription_runs
-                    (run_id, bvid, title, author, pubdate, created_at, has_summary, file_count, record_type)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (
+                        run_id, bvid, title, author, pubdate, created_at,
+                        has_summary, file_count, record_type, fancy_html_status, fancy_html_error
+                    )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(run_id) DO UPDATE SET
                     bvid        = excluded.bvid,
                     title       = excluded.title,
@@ -198,7 +251,9 @@ class HistoryDB:
                     created_at  = excluded.created_at,
                     has_summary = excluded.has_summary,
                     file_count  = excluded.file_count,
-                    record_type = excluded.record_type
+                    record_type = excluded.record_type,
+                    fancy_html_status = excluded.fancy_html_status,
+                    fancy_html_error = excluded.fancy_html_error
                 """,
                 (
                     run_id,
@@ -210,6 +265,8 @@ class HistoryDB:
                     int(has_summary),
                     len(artifact_list),
                     record_type,
+                    persisted_fancy_html_status,
+                    persisted_fancy_html_error,
                 ),
             )
             conn.execute(
@@ -320,7 +377,9 @@ class HistoryDB:
         conn = self._conn()
         run_row = conn.execute(
             """\
-            SELECT run_id, bvid, title, author, pubdate, created_at, has_summary, record_type
+            SELECT
+                run_id, bvid, title, author, pubdate, created_at, has_summary,
+                record_type, fancy_html_status, fancy_html_error
             FROM transcription_runs
             WHERE run_id = ?
             """,
@@ -341,7 +400,7 @@ class HistoryDB:
 
         artifacts = [
             HistoryArtifact(
-                kind=r["kind"],
+                kind=self._normalize_artifact_kind(r["kind"], r["filename"]),
                 filename=r["filename"],
                 storage_key=r["storage_key"],
                 backend=r["backend"],
@@ -361,7 +420,27 @@ class HistoryDB:
             has_summary=bool(run_row["has_summary"]),
             artifacts=artifacts,
             record_type=run_row["record_type"] or "transcription",
+            fancy_html_status=run_row["fancy_html_status"] or "idle",
+            fancy_html_error=run_row["fancy_html_error"] or "",
         )
+
+    def update_run_fancy_html_status(
+        self,
+        run_id: str,
+        *,
+        status: str,
+        error: str = "",
+    ) -> None:
+        conn = self._conn()
+        with conn:
+            conn.execute(
+                """\
+                UPDATE transcription_runs
+                SET fancy_html_status = ?, fancy_html_error = ?
+                WHERE run_id = ?
+                """,
+                (status.strip() or "idle", error.strip(), run_id),
+            )
 
     def list_authors(self) -> list[str]:
         """Return distinct non-empty author names, sorted alphabetically."""
@@ -413,7 +492,7 @@ class HistoryDB:
 
         artifacts = [
             HistoryArtifact(
-                kind=r["kind"],
+                kind=self._normalize_artifact_kind(r["kind"], r["filename"]),
                 filename=r["filename"],
                 storage_key=r["storage_key"],
                 backend=r["backend"],
@@ -506,6 +585,7 @@ def build_history_artifacts(
     summary_kinds = {
         "summary",
         "summary_text",
+        "summary_fancy_html",
         "summary_table_md",
         "summary_table_pdf",
     }
@@ -582,7 +662,13 @@ def record_pipeline_run(
             artifacts = deduped_artifacts
     has_summary = any(
         artifact.kind
-        in {"summary", "summary_text", "summary_table_md", "summary_table_pdf"}
+        in {
+            "summary",
+            "summary_text",
+            "summary_fancy_html",
+            "summary_table_md",
+            "summary_table_pdf",
+        }
         for artifact in artifacts
     )
 

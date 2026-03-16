@@ -134,6 +134,11 @@ class SummarizeConfig:
 
 
 @dataclass(frozen=True)
+class FancyHtmlConfig:
+    profile: str = ""
+
+
+@dataclass(frozen=True)
 class SummaryPreset:
     prompt_template: str
     label: str
@@ -160,23 +165,15 @@ class RagEmbeddingConfig:
 
 
 @dataclass(frozen=True)
-class RagLLMConfig:
-    provider: str = "bailian"
-    model: str = "qwen3-max"
-    api_key: str = ""
-    api_base: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-
-
-@dataclass(frozen=True)
 class RagConfig:
     enabled: bool = False
     collection_name: str = "b2t_rag"
     chroma_dir: str = "./chroma_data"
     chunk_size: int = 800
     chunk_overlap: int = 100
-    top_k: int = 5
+    top_k: int = 10
     embedding: RagEmbeddingConfig = field(default_factory=RagEmbeddingConfig)
-    llm: RagLLMConfig = field(default_factory=RagLLMConfig)
+    llm_profile: str = ""
 
 
 @dataclass(frozen=True)
@@ -185,6 +182,7 @@ class AppConfig:
     storage: StorageConfig
     stt: STTConfig
     summarize: SummarizeConfig
+    fancy_html: FancyHtmlConfig
     summary_presets: SummaryPresetsConfig
     converter: ConverterConfig
     rag: RagConfig = field(default_factory=RagConfig)
@@ -360,6 +358,50 @@ def resolve_summarize_api_base(profile: SummarizeModelProfile) -> str:
     if api_base:
         return api_base
     return _SUMMARIZE_PROVIDER_DEFAULT_API_BASE[profile.provider]
+
+
+def resolve_rag_llm_profile(
+    config: "AppConfig",
+    override: str | None = None,
+) -> SummarizeModelProfile:
+    selected_profile = (override or config.rag.llm_profile or config.summarize.profile).strip()
+    profile = config.summarize.profiles.get(selected_profile)
+    if profile is None:
+        available = ", ".join(config.summarize.profiles.keys())
+        raise ValueError(
+            f"RAG LLM profile `{selected_profile}` 不存在，可选值: {available}"
+        )
+    return profile
+
+
+def _load_fancy_html_config(
+    raw_fancy_html: dict,
+    *,
+    summarize: SummarizeConfig,
+) -> FancyHtmlConfig:
+    if not isinstance(raw_fancy_html, dict):
+        raise ValueError("fancy_html 配置必须是 TOML 表")
+
+    fancy_html = dict(raw_fancy_html)
+    allowed_fields = {"profile"}
+    unknown_fields = sorted(set(fancy_html.keys()) - allowed_fields)
+    if unknown_fields:
+        raise ValueError(
+            "fancy_html 包含未知字段: " f"{', '.join(unknown_fields)}"
+        )
+
+    raw_profile = fancy_html.get("profile")
+    if not isinstance(raw_profile, str) or not raw_profile.strip():
+        raise ValueError("fancy_html.profile 必须在配置文件中显式声明为非空字符串")
+    profile = raw_profile.strip()
+
+    if profile not in summarize.profiles:
+        available = ", ".join(summarize.profiles.keys())
+        raise ValueError(
+            f"fancy_html.profile `{profile}` 不存在，可选值: {available}"
+        )
+
+    return FancyHtmlConfig(profile=profile)
 
 
 def _load_stt_profile(
@@ -676,6 +718,20 @@ def _load_rag_config(raw_rag: dict, *, base_dir: Path) -> RagConfig:
     if not isinstance(raw_rag, dict):
         raise ValueError("rag 配置必须是 TOML 表")
 
+    allowed_fields = {
+        "enabled",
+        "collection_name",
+        "chroma_dir",
+        "chunk_size",
+        "chunk_overlap",
+        "top_k",
+        "embedding",
+        "llm_profile",
+    }
+    unknown_fields = sorted(set(raw_rag.keys()) - allowed_fields)
+    if unknown_fields:
+        raise ValueError("rag 包含未知字段: " f"{', '.join(unknown_fields)}")
+
     enabled = raw_rag.get("enabled", False)
     if not isinstance(enabled, bool):
         raise ValueError("rag.enabled 必须是布尔值")
@@ -701,6 +757,11 @@ def _load_rag_config(raw_rag: dict, *, base_dir: Path) -> RagConfig:
     if not isinstance(top_k, int) or top_k <= 0:
         raise ValueError("rag.top_k 必须是正整数")
 
+    raw_llm_profile = raw_rag.get("llm_profile", RagConfig.llm_profile)
+    if not isinstance(raw_llm_profile, str):
+        raise ValueError("rag.llm_profile 必须是字符串")
+    llm_profile = raw_llm_profile.strip()
+
     raw_embedding = raw_rag.get("embedding", {})
     if not isinstance(raw_embedding, dict):
         raise ValueError("rag.embedding 必须是 TOML 表")
@@ -711,16 +772,6 @@ def _load_rag_config(raw_rag: dict, *, base_dir: Path) -> RagConfig:
         api_base=raw_embedding.get("api_base", RagEmbeddingConfig.api_base),
     )
 
-    raw_llm = raw_rag.get("llm", {})
-    if not isinstance(raw_llm, dict):
-        raise ValueError("rag.llm 必须是 TOML 表")
-    llm = RagLLMConfig(
-        provider=raw_llm.get("provider", RagLLMConfig.provider),
-        model=raw_llm.get("model", RagLLMConfig.model),
-        api_key=raw_llm.get("api_key", RagLLMConfig.api_key),
-        api_base=raw_llm.get("api_base", RagLLMConfig.api_base),
-    )
-
     return RagConfig(
         enabled=enabled,
         collection_name=collection_name.strip(),
@@ -729,7 +780,7 @@ def _load_rag_config(raw_rag: dict, *, base_dir: Path) -> RagConfig:
         chunk_overlap=chunk_overlap,
         top_k=top_k,
         embedding=embedding,
-        llm=llm,
+        llm_profile=llm_profile,
     )
 
 
@@ -795,6 +846,10 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         preset=selected_preset,
         presets_file=summarize_config.presets_file,
     )
+    fancy_html_config = _load_fancy_html_config(
+        raw.get("fancy_html"),
+        summarize=summarize_config,
+    )
 
     # Load download config and resolve relative paths
     raw_download = raw.get("download", {})
@@ -826,6 +881,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         storage=storage_config,
         stt=stt_config,
         summarize=summarize_config,
+        fancy_html=fancy_html_config,
         summary_presets=summary_presets,
         converter=ConverterConfig(**raw.get("converter", {})),
         rag=rag_config,

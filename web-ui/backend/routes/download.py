@@ -82,6 +82,7 @@ def convert_artifact(payload: ConvertRequest) -> ConvertResponse:
 
     支持的转换：
     - Markdown -> txt, pdf, png, html
+    - HTML (fancy) -> png
     """
     with _download_lock:
         artifact = _download_index.get(payload.download_id)
@@ -100,7 +101,14 @@ def convert_artifact(payload: ConvertRequest) -> ConvertResponse:
 
     # 检查源文件格式
     source_suffix = Path(artifact.filename).suffix.lower().lstrip(".")
-    if source_suffix not in ("md", "markdown"):
+    _md_suffixes = ("md", "markdown")
+    _html_suffixes = ("html", "htm")
+    if source_suffix in _html_suffixes and target_format != ConversionFormat.PNG:
+        raise HTTPException(
+            status_code=400,
+            detail="HTML 文件仅支持转换为 PNG",
+        )
+    if source_suffix not in (*_md_suffixes, *_html_suffixes):
         raise HTTPException(
             status_code=400,
             detail=f"不支持转换此文件类型: {source_suffix}",

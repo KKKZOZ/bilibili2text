@@ -27,7 +27,9 @@
       "Bash(source:*)",
       "Bash(grep:*)",
       "Bash(grep Version:*)",
-      "Bash(timeout 5 bash:*)"
+      "Bash(timeout 5 bash:*)",
+      "Bash(cd:*)",
+      "Bash(bun run:*)"
     ]
   }
 }

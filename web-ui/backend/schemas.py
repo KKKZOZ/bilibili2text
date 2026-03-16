@@ -19,6 +19,10 @@ class ProcessRequest(BaseModel):
         default=None,
         description="总结模型 profile 名称",
     )
+    auto_generate_fancy_html: bool = Field(
+        default=False,
+        description="总结完成后是否自动异步生成 fancy HTML",
+    )
 
 
 class ProcessStartResponse(BaseModel):
@@ -31,9 +35,26 @@ class DownloadItemResponse(BaseModel):
     kind: str
 
 
+class ActiveJobItem(BaseModel):
+    job_id: str
+    status: str
+    stage: str
+    stage_label: str
+    progress: int = Field(ge=0, le=100)
+    bvid: str | None = None
+    title: str | None = None
+    author: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class ActiveJobsResponse(BaseModel):
+    jobs: list[ActiveJobItem]
+
+
 class ProcessStatusResponse(BaseModel):
     job_id: str
-    status: Literal["queued", "running", "succeeded", "failed"]
+    status: Literal["queued", "running", "succeeded", "failed", "cancelled"]
     skip_summary: bool = False
     stage: str
     stage_label: str
@@ -50,6 +71,9 @@ class ProcessStatusResponse(BaseModel):
     summary_table_pdf_filename: str | None = None
     summary_preset: str | None = None
     summary_profile: str | None = None
+    auto_generate_fancy_html: bool = False
+    fancy_html_status: Literal["idle", "pending", "running", "succeeded", "failed"] = "idle"
+    fancy_html_error: str | None = None
     already_transcribed: bool = False
     notice: str | None = None
     all_downloads: list[DownloadItemResponse] = Field(default_factory=list)
@@ -61,6 +85,7 @@ class ProcessStatusResponse(BaseModel):
     author: str | None = None
     pubdate: str | None = None
     bvid: str | None = None
+    title: str | None = None
 
 
 class SummaryPresetItemResponse(BaseModel):
@@ -143,6 +168,8 @@ class HistoryDetailResponse(BaseModel):
     has_summary: bool
     artifacts: list[HistoryDetailArtifactResponse]
     record_type: str = "transcription"
+    fancy_html_status: Literal["idle", "pending", "running", "succeeded", "failed"] = "idle"
+    fancy_html_error: str | None = None
 
 
 class HistoryRegenerateSummaryRequest(BaseModel):
@@ -154,6 +181,28 @@ class HistoryRegenerateSummaryRequest(BaseModel):
         default=None,
         description="总结模型 profile 名称，为空时使用后端默认",
     )
+
+
+class GenerateFancyHtmlRequest(BaseModel):
+    download_id: str = Field(..., description="总结 Markdown 的下载 ID")
+    history_run_id: str | None = Field(
+        default=None,
+        description="可选，历史记录 run_id，用于生成后刷新历史详情",
+    )
+    summary_preset: str | None = Field(
+        default=None,
+        description="源总结的 preset 元数据，用于落库归档",
+    )
+    summary_profile: str | None = Field(
+        default=None,
+        description="生成 fancy HTML 使用的 profile；为空时使用后端默认",
+    )
+
+
+class GenerateFancyHtmlResponse(BaseModel):
+    download_url: str | None = None
+    filename: str | None = None
+    history_detail: HistoryDetailResponse | None = None
 
 
 class ConvertRequest(BaseModel):

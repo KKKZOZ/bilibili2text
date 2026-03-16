@@ -39,6 +39,7 @@ language = "zh"
 # 可选: "local"、"minio"、"alicloud"。为空时复用 storage.backend。
 storage_profile = "alicloud"
 qwen_api_key = "your-dashscope-api-key"
+# 支持 `qwen3-asr-flash-filetrans` 与 `fun-asr`
 qwen_model = "qwen3-asr-flash-filetrans"
 qwen_base_url = "https://dashscope.aliyuncs.com/api/v1"
 
@@ -81,5 +82,26 @@ model = "llama-3.3-70b-versatile"
 api_base = "https://api.groq.com/openai/v1"
 api_key = "your-groq-api-key"
 
+[fancy_html]
+# Fancy HTML 默认使用的 profile。
+# 这里必须显式配置，不再回退到 summarize.profile。
+profile = "openrouter-main"
+
 [converter]
 min_length = 60
+
+[rag]
+enabled = true
+collection_name = "b2t_rag"
+chroma_dir = "./chroma_data"
+chunk_size = 800
+chunk_overlap = 100
+top_k = 10
+# RAG 回答阶段复用 summarize.profiles 中的模型配置
+llm_profile = "bailian-main"
+
+[rag.embedding]
+provider = "bailian"
+model = "text-embedding-v3"
+api_base = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+api_key = "your-dashscope-api-key"

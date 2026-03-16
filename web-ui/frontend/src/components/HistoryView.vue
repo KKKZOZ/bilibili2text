@@ -1,5 +1,6 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { useRouter } from 'vue-router';
 import { BookMarked, ExternalLink } from 'lucide-vue-next';
 import {
   AlertCircle,
@@ -12,10 +13,13 @@ import {
   Search,
   Trash2,
   User,
+  XCircle,
 } from 'lucide-vue-next';
 import FileList from './FileList.vue';
 import { bilibiliVideoUrl, formatTime } from '../utils/fileUtils';
 import { extractRagReferenceItems, renderMarkdown } from '../utils/markdown';
+
+const router = useRouter();
 
 const props = defineProps({
   summaryPresets: {
@@ -66,6 +70,71 @@ const selectedHistorySummaryProfile = ref('');
 const ragAnswerMarkdown = ref('');
 const ragAnswerError = ref('');
 const ragAnswerLoading = ref(false);
+const ragFancyHtmlGenerating = ref(false);
+const ragFancyHtmlError = ref('');
+let ragFancyHtmlPollTimer = null;
+
+// ─── Active jobs (in-progress) ───────────────────────────────
+const ACTIVE_JOB_IDS_KEY = 'b2t.active-job-ids';
+const activeJobs = ref([]);
+let activeJobsPollTimer = null;
+
+const readActiveJobIds = () => {
+  try {
+    const raw = window.localStorage.getItem(ACTIVE_JOB_IDS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((id) => typeof id === 'string' && id) : [];
+  } catch {
+    return [];
+  }
+};
+
+const removeActiveJobId = (id) => {
+  try {
+    const ids = readActiveJobIds().filter((i) => i !== id);
+    window.localStorage.setItem(ACTIVE_JOB_IDS_KEY, JSON.stringify(ids));
+  } catch {}
+};
+
+const loadActiveJobs = async () => {
+  const ids = readActiveJobIds();
+  if (ids.length === 0) {
+    activeJobs.value = [];
+    return;
+  }
+  const results = await Promise.allSettled(
+    ids.map((id) => fetch(`/api/process/${id}`).then((r) => r.json()))
+  );
+  const next = [];
+  for (let i = 0; i < ids.length; i++) {
+    const r = results[i];
+    if (r.status === 'fulfilled') {
+      const data = r.value;
+      if (data.status === 'queued' || data.status === 'running') {
+        next.push(data);
+      } else {
+        // Job is done/failed/cancelled – remove from tracking
+        removeActiveJobId(ids[i]);
+      }
+    }
+  }
+  activeJobs.value = next;
+};
+
+const cancelActiveJob = async (jobId) => {
+  try {
+    const resp = await fetch(`/api/process/${jobId}/cancel`, { method: 'POST' });
+    if (!resp.ok) {
+      const data = await resp.json().catch(() => ({}));
+      throw new Error(data.detail || '取消失败');
+    }
+    removeActiveJobId(jobId);
+    activeJobs.value = activeJobs.value.filter((j) => j.job_id !== jobId);
+  } catch (err) {
+    historyError.value = err instanceof Error ? err.message : '取消任务失败';
+  }
+};
 
 let searchTimer = null;
 
@@ -129,6 +198,7 @@ const loadHistoryDetail = async (runId) => {
   historyDetail.value = null;
   ragAnswerMarkdown.value = '';
   ragAnswerError.value = '';
+  ragFancyHtmlError.value = '';
   regenerateError.value = '';
   regenerateSuccess.value = '';
   selectedHistorySummaryPreset.value =
@@ -141,14 +211,91 @@ const loadHistoryDetail = async (runId) => {
       throw new Error(data.detail || '获取详情失败');
     }
     historyDetail.value = data;
+    ragFancyHtmlError.value = data.fancy_html_error || '';
+    syncRagFancyHtmlPolling();
     if (data.record_type === 'rag_query') {
       await loadRagAnswerMarkdown(data);
     }
   } catch (err) {
     historyError.value = err instanceof Error ? err.message : '获取详情失败';
     showHistoryDetail.value = false;
+    stopRagFancyHtmlPolling();
   } finally {
     historyDetailLoading.value = false;
+  }
+};
+
+const stopRagFancyHtmlPolling = () => {
+  if (ragFancyHtmlPollTimer !== null) {
+    clearInterval(ragFancyHtmlPollTimer);
+    ragFancyHtmlPollTimer = null;
+  }
+};
+
+const syncRagFancyHtmlPolling = () => {
+  stopRagFancyHtmlPolling();
+  const shouldPoll =
+    showHistoryDetail.value &&
+    historyDetail.value?.record_type === 'rag_query' &&
+    historyDetail.value?.fancy_html_status === 'running';
+  if (!shouldPoll) return;
+
+  ragFancyHtmlPollTimer = setInterval(async () => {
+    const runId = historyDetail.value?.run_id;
+    if (!runId || !showHistoryDetail.value) {
+      stopRagFancyHtmlPolling();
+      return;
+    }
+    try {
+      const resp = await fetch(`/api/history/${encodeURIComponent(runId)}`);
+      const data = await resp.json();
+      if (!resp.ok) return;
+      historyDetail.value = data;
+      if (data.record_type === 'rag_query') {
+        ragFancyHtmlError.value = data.fancy_html_error || '';
+      }
+      if (data.fancy_html_status !== 'running') {
+        stopRagFancyHtmlPolling();
+        await loadHistory();
+      }
+    } catch {}
+  }, 2000);
+};
+
+const generateRagFancyHtml = async () => {
+  const artifact = historyDetail.value?.artifacts?.find((item) => item.kind === 'rag_answer');
+  if (!artifact?.download_url || ragFancyHtmlGenerating.value) return;
+  const downloadId = artifact.download_url.split('/').pop();
+  if (!downloadId) return;
+  ragFancyHtmlGenerating.value = true;
+  ragFancyHtmlError.value = '';
+  try {
+    const resp = await fetch('/api/summary/fancy-html', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        download_id: downloadId,
+        history_run_id: historyDetail.value?.run_id || null,
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.detail || '生成 Fancy HTML 失败');
+    if (data.history_detail) {
+      historyDetail.value = data.history_detail;
+      ragFancyHtmlError.value = data.history_detail.fancy_html_error || '';
+      syncRagFancyHtmlPolling();
+      await loadHistory();
+    }
+    if (data.download_url && data.filename) {
+      const a = document.createElement('a');
+      a.href = data.download_url;
+      a.download = data.filename;
+      a.click();
+    }
+  } catch (err) {
+    ragFancyHtmlError.value = err instanceof Error ? err.message : '生成 Fancy HTML 失败';
+  } finally {
+    ragFancyHtmlGenerating.value = false;
   }
 };
 
@@ -280,6 +427,21 @@ const onHistoryArtifactDeleted = (detail) => {
   historyDetail.value = detail;
   regenerateError.value = '';
   regenerateSuccess.value = '文件已删除。';
+  if (detail?.record_type === 'rag_query') {
+    ragFancyHtmlError.value = detail.fancy_html_error || '';
+    syncRagFancyHtmlPolling();
+  }
+  loadHistory();
+};
+
+const onHistoryArtifactGenerated = (detail) => {
+  historyDetail.value = detail;
+  regenerateError.value = '';
+  regenerateSuccess.value = 'Fancy HTML 已生成并归档。';
+  if (detail?.record_type === 'rag_query') {
+    ragFancyHtmlError.value = detail.fancy_html_error || '';
+    syncRagFancyHtmlPolling();
+  }
   loadHistory();
 };
 
@@ -289,6 +451,16 @@ defineExpose({
 
 onMounted(() => {
   loadHistory();
+  loadActiveJobs();
+  activeJobsPollTimer = setInterval(loadActiveJobs, 2000);
+});
+
+onBeforeUnmount(() => {
+  stopRagFancyHtmlPolling();
+  if (activeJobsPollTimer !== null) {
+    clearInterval(activeJobsPollTimer);
+    activeJobsPollTimer = null;
+  }
 });
 </script>
 
@@ -424,7 +596,29 @@ onMounted(() => {
               <p class="history-regenerate-kicker">知识库回答</p>
               <h3>渲染预览</h3>
             </div>
+            <div class="rag-fancy-actions">
+              <button
+                class="rag-fancy-btn"
+                :disabled="ragFancyHtmlGenerating || ragAnswerLoading || historyDetail.fancy_html_status === 'running'"
+                @click="generateRagFancyHtml"
+              >
+                <LoaderCircle v-if="ragFancyHtmlGenerating || historyDetail.fancy_html_status === 'running'" :size="13" class="spin" />
+                <FileText v-else :size="13" />
+                <span>{{ historyDetail.fancy_html_status === 'running' ? '生成中...' : 'Fancy HTML' }}</span>
+              </button>
+            </div>
           </div>
+          <p
+            v-if="historyDetail.fancy_html_status === 'running'"
+            class="preset-hint"
+            style="margin-top:6px;"
+          >
+            Fancy HTML 正在后台生成，离开当前页面后稍后再回来，状态仍会保留。
+          </p>
+          <p v-if="ragFancyHtmlError" class="inline-error" style="margin-top:6px;">
+            <AlertCircle :size="14" />
+            <span>{{ ragFancyHtmlError }}</span>
+          </p>
           <div v-if="ragAnswerLoading" class="status-loading">
             <LoaderCircle :size="14" class="spin" />
             <span>加载回答中…</span>
@@ -486,9 +680,10 @@ onMounted(() => {
           :allow-delete="allowDelete"
           title="文件列表"
           :filter-kinds="historyDetail.record_type === 'rag_query'
-            ? ['rag_answer']
-            : ['markdown', 'summary', 'summary_no_table', 'summary_table_md', 'text', 'json', 'audio']"
+            ? ['rag_answer', 'summary_fancy_html']
+            : ['markdown', 'summary', 'summary_no_table', 'summary_fancy_html', 'summary_table_md', 'text', 'json', 'audio']"
           @artifact-deleted="onHistoryArtifactDeleted"
+          @artifact-generated="onHistoryArtifactGenerated"
         />
       </template>
     </article>
@@ -530,6 +725,43 @@ onMounted(() => {
           />
         </div>
       </header>
+
+      <!-- Active jobs section -->
+      <div v-if="activeJobs.length > 0" class="active-jobs-section">
+        <h3 class="active-jobs-heading">
+          <LoaderCircle :size="14" class="spin" />
+          进行中的任务
+        </h3>
+        <div
+          v-for="job in activeJobs"
+          :key="job.job_id"
+          class="active-job-card"
+          @click="router.push(`/process/${job.job_id}`)"
+        >
+          <div class="active-job-info">
+            <p class="active-job-title-text">{{ job.title || job.bvid || '转录中...' }}</p>
+            <div class="active-job-meta">
+              <span v-if="job.bvid && job.title" class="active-job-bvid">{{ job.bvid }}</span>
+              <span v-if="job.author" class="active-job-author">
+                <User :size="11" />
+                {{ job.author }}
+              </span>
+            </div>
+            <p class="active-job-stage">{{ job.stage_label }}</p>
+            <div class="active-job-progress-bar">
+              <div class="active-job-progress-fill" :style="{ width: job.progress + '%' }"></div>
+            </div>
+          </div>
+          <button
+            class="active-job-cancel"
+            type="button"
+            title="取消任务"
+            @click.stop="cancelActiveJob(job.job_id)"
+          >
+            <XCircle :size="16" />
+          </button>
+        </div>
+      </div>
 
       <div v-if="showHistorySkeleton" class="history-list-skeleton" aria-hidden="true">
         <div v-for="idx in 6" :key="idx" class="history-skeleton-item">
@@ -1091,10 +1323,47 @@ onMounted(() => {
   background: rgba(255, 255, 255, 0.72);
 }
 
+.rag-history-preview-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 .rag-history-preview-head h3 {
   margin: 3px 0 0;
   font-size: 1rem;
   color: var(--text-main);
+}
+
+.rag-fancy-actions {
+  flex-shrink: 0;
+}
+
+.rag-fancy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border: 1.5px solid rgba(249, 115, 22, 0.35);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.8);
+  color: #c2410c;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.rag-fancy-btn:hover:not(:disabled) {
+  border-color: #f97316;
+  background: rgba(249, 115, 22, 0.08);
+}
+
+.rag-fancy-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .rag-history-markdown {
@@ -1572,5 +1841,119 @@ onMounted(() => {
   .delete-button {
     align-self: flex-end;
   }
+}
+/* ─── Active jobs ────────────────────────────────────────────── */
+
+.active-jobs-section {
+  margin-bottom: 18px;
+  display: grid;
+  gap: 8px;
+}
+
+.active-jobs-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 4px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #0284c7;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.active-job-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid #bae6fd;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
+  cursor: pointer;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.active-job-card:hover {
+  border-color: #7dd3fc;
+  box-shadow: 0 2px 8px rgba(14, 165, 233, 0.12);
+}
+
+.active-job-info {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.active-job-title-text {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.active-job-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.active-job-bvid {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #0369a1;
+}
+
+.active-job-author {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+.active-job-stage {
+  margin: 0;
+  font-size: 0.82rem;
+  color: #475569;
+}
+
+.active-job-progress-bar {
+  height: 4px;
+  border-radius: 999px;
+  background: #bae6fd;
+  overflow: hidden;
+}
+
+.active-job-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #0ea5e9, #14b8a6);
+  transition: width 0.6s ease;
+}
+
+.active-job-cancel {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: color 0.2s ease, background-color 0.2s ease;
+}
+
+.active-job-cancel:hover {
+  color: #dc2626;
+  background: #fee2e2;
 }
 </style>

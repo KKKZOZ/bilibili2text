@@ -57,6 +57,7 @@ const props = defineProps({
       'markdown',
       'summary',
       'summary_no_table',
+      'summary_fancy_html',
       'summary_table_md',
       'summary_table_pdf',
     ],
@@ -67,18 +68,21 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(['artifactDeleted']);
+const emit = defineEmits(['artifactDeleted', 'artifactGenerated']);
 
 const { conversionError, convertAndDownload, isConverting, download } = useConversion();
 const noTableConverting = ref(new Set());
+const fancyGenerating = ref(new Set());
 const deleteError = ref('');
 const deletingKeys = ref(new Set());
 const deleteConfirmItem = ref(null);
+const generatedItems = ref([]);
 
 const formatIconMap = {
   markdown: FileText,
   txt: Type,
   pdf: FileText,
+  html: FileText,
   png: ImageIcon,
   json: Braces,
   音频: Music,
@@ -91,6 +95,7 @@ const formatLabelMap = {
   markdown: 'Markdown',
   txt: 'TXT',
   pdf: 'PDF',
+  html: 'HTML',
   png: 'PNG',
   json: 'JSON',
   音频: '音频',
@@ -119,11 +124,15 @@ const isSummaryKind = (kind) =>
   kind === 'summary' ||
   kind === 'summary_text' ||
   kind === 'summary_no_table' ||
+  kind === 'summary_fancy_html' ||
   kind === 'summary_table_md' ||
   kind === 'summary_table_pdf';
 
 const isSummaryDerivedKind = (kind) =>
-  kind === 'summary_no_table' || kind === 'summary_table_md' || kind === 'summary_table_pdf';
+  kind === 'summary_no_table' ||
+  kind === 'summary_fancy_html' ||
+  kind === 'summary_table_md' ||
+  kind === 'summary_table_pdf';
 
 const resolveSummaryProfileLabel = (profileName) => {
   const effectiveName = (profileName || '').trim();
@@ -145,8 +154,12 @@ const resolveSummaryFamilyKey = (item, kind) => {
   if (kind === 'summary' || kind === 'summary_no_table' || kind === 'summary_text') {
     return stem;
   }
-  if (kind === 'summary_table_md' || kind === 'summary_table_pdf') {
-    return stem.replace(/_table$/i, '');
+  if (
+    kind === 'summary_fancy_html' ||
+    kind === 'summary_table_md' ||
+    kind === 'summary_table_pdf'
+  ) {
+    return stem.replace(/_fancy$/i, '').replace(/_table$/i, '');
   }
   return '';
 };
@@ -156,16 +169,18 @@ const displayItems = computed(() => {
     Markdown: 0,
     TXT: 1,
     PDF: 2,
-    PNG: 3,
-    JSON: 4,
-    音频: 5,
+    HTML: 3,
+    PNG: 4,
+    JSON: 5,
+    音频: 6,
   };
   const kindBaseOrder = {
     markdown: 100,
     summary: 200,
     summary_no_table: 210,
-    summary_table_md: 220,
-    summary_table_pdf: 221,
+    summary_fancy_html: 220,
+    summary_table_md: 230,
+    summary_table_pdf: 231,
     text: 300,
     summary_text: 310,
     json: 400,
@@ -198,6 +213,7 @@ const displayItems = computed(() => {
         kind === 'summary' ||
         kind === 'summary_text' ||
         kind === 'summary_no_table' ||
+        kind === 'summary_fancy_html' ||
         kind === 'summary_table_md'
           ? resolveSummaryPresetLabel(item.presetName || '')
           : '',
@@ -216,7 +232,10 @@ const displayItems = computed(() => {
       order:
         overrides.order ??
         (kindBaseOrder[kind] !== undefined ? kindBaseOrder[kind] + index / 100 : 900 + index),
-      isWideLayout: kind === 'markdown' || kind === 'summary_no_table',
+      isWideLayout:
+        kind === 'markdown' ||
+        kind === 'summary_no_table' ||
+        kind === 'summary_fancy_html',
       primaryTargetFormat: kind === 'summary_no_table' ? 'md_no_table' : '',
       noTableBadge: kind === 'summary_no_table',
       derivedFromSummary: isDerivedFromSummary,
@@ -224,7 +243,8 @@ const displayItems = computed(() => {
   };
 
   const rows = [];
-  const filteredItems = props.items.filter((item) => props.filterKinds.includes(item.kind));
+  const sourceItems = [...props.items, ...generatedItems.value];
+  const filteredItems = sourceItems.filter((item) => props.filterKinds.includes(item.kind));
   const summaryRowsByFamily = new Map();
   const summaryRowsBySignature = new Map();
 
@@ -274,7 +294,11 @@ const displayItems = computed(() => {
       return;
     }
 
-    if (item.kind === 'summary_table_md' || item.kind === 'summary_table_pdf') {
+    if (
+      item.kind === 'summary_fancy_html' ||
+      item.kind === 'summary_table_md' ||
+      item.kind === 'summary_table_pdf'
+    ) {
       const signature = `${(item.presetName || '').trim()}::${(item.summaryProfile || '').trim()}`;
       const familyKey = resolveSummaryFamilyKey(item, item.kind);
       const compositeKey = familyKey ? `${familyKey}::${signature}` : '';
@@ -283,7 +307,12 @@ const displayItems = computed(() => {
         const sameSignature = summaryRowsBySignature.get(signature) || [];
         parentSummary = sameSignature.length > 0 ? sameSignature[sameSignature.length - 1] : null;
       }
-      const derivedOffset = item.kind === 'summary_table_pdf' ? 0.25 : 0.2;
+      const derivedOffset =
+        item.kind === 'summary_fancy_html'
+          ? 0.15
+          : item.kind === 'summary_table_pdf'
+            ? 0.25
+            : 0.2;
       rows.push(
         toDisplayItem(item, index, {
           parentSummaryRowId: parentSummary?.summaryRowId || '',
@@ -348,6 +377,8 @@ const handlePrimaryAction = (item) => {
 const noTableConvertKey = (downloadId, targetFormat) =>
   `${downloadId}-summary-no-table-${targetFormat}`;
 
+const fancyGenerateKey = (downloadId) => `${downloadId}-summary-fancy-html`;
+
 const isNoTableConverting = (item, targetFormat) =>
   noTableConverting.value.has(noTableConvertKey(item.downloadId, targetFormat));
 
@@ -374,6 +405,27 @@ const extractDownloadId = (downloadUrl) => {
     return '';
   }
   return downloadUrl.split('/').pop() || '';
+};
+
+const isFancyGenerating = (item) =>
+  (item.kind === 'summary' || item.kind === 'rag_answer') &&
+  fancyGenerating.value.has(fancyGenerateKey(item.downloadId));
+
+const addGeneratedArtifact = (artifact) => {
+  if (!artifact?.download_url || !artifact?.filename || !artifact?.kind) {
+    return;
+  }
+  generatedItems.value = [
+    ...generatedItems.value.filter((item) => item.url !== artifact.download_url),
+    {
+      key: `${artifact.download_url}-${artifact.filename}-generated`,
+      kind: artifact.kind,
+      url: artifact.download_url,
+      filename: artifact.filename,
+      presetName: artifact.summary_preset || '',
+      summaryProfile: artifact.summary_profile || '',
+    },
+  ];
 };
 
 const convertNoTableAndDownload = async (item, targetFormat) => {
@@ -412,6 +464,49 @@ const onConvertClick = (item, targetFormat) => {
   convertAndDownload(item.downloadId, item.filename, targetFormat);
 };
 
+const generateFancyHtml = async (item) => {
+  const key = fancyGenerateKey(item.downloadId);
+  if (fancyGenerating.value.has(key)) {
+    return;
+  }
+  fancyGenerating.value.add(key);
+  conversionError.value = '';
+  try {
+    const resp = await fetch('/api/summary/fancy-html', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        download_id: item.downloadId,
+        history_run_id: props.historyRunId || null,
+        summary_preset: item.presetName || null,
+        summary_profile: item.summaryProfile || props.selectedSummaryProfile || null,
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      throw new Error(data.detail || '生成 Fancy HTML 失败');
+    }
+    if (data.history_detail) {
+      emit('artifactGenerated', data.history_detail);
+    } else {
+      addGeneratedArtifact({
+        kind: 'summary_fancy_html',
+        download_url: data.download_url,
+        filename: data.filename,
+        summary_preset: item.presetName || '',
+        summary_profile: item.summaryProfile || props.selectedSummaryProfile || '',
+      });
+    }
+    download(data.download_url, data.filename);
+  } catch (err) {
+    conversionError.value = err instanceof Error ? err.message : '生成 Fancy HTML 失败';
+  } finally {
+    fancyGenerating.value.delete(key);
+  }
+};
+
 const isConvertButtonLoading = (item, targetFormat) => {
   if (item.kind === 'summary_no_table') {
     return isNoTableConverting(item, targetFormat);
@@ -426,10 +521,12 @@ const canDeleteMarkdownArtifact = (item) => {
   if (!props.historyRunId) {
     return false;
   }
-  return item.kind === 'summary';
+  return item.kind === 'summary' || item.kind === 'summary_fancy_html';
 };
 
 const isDeleting = (item) => deletingKeys.value.has(item.key);
+
+const isFancyHtmlArtifact = (item) => item.kind === 'summary_fancy_html';
 
 const requestDeleteArtifact = (item) => {
   if (!canDeleteMarkdownArtifact(item) || isDeleting(item)) {
@@ -465,9 +562,24 @@ const deletePreviewNames = computed(() => {
       candidate.parentSummaryRowId === item.summaryRowId &&
       candidate.kind === 'summary_table_md'
   );
+  const fancy = displayItems.value.find(
+    (candidate) =>
+      candidate.parentSummaryRowId &&
+      candidate.parentSummaryRowId === item.summaryRowId &&
+      candidate.kind === 'summary_fancy_html'
+  );
   return [
     item.displayName,
     noTable ? noTable.displayName : `${item.displayName}_无表格`,
+    fancy
+      ? fancy.displayName
+      : buildArtifactDisplayName(
+          {
+            filename: item.filename.replace(/_summary(\.[^.]+)?$/i, '_summary_fancy.html'),
+            kind: 'summary_fancy_html',
+          },
+          { bvid: props.bvid }
+        ),
     table
       ? table.displayName
       : buildArtifactDisplayName(
@@ -545,8 +657,8 @@ const handleDeleteArtifact = async () => {
                 class="all-download-delete-icon"
                 type="button"
                 :disabled="isDeleting(item)"
-                title="删除该总结"
-                aria-label="删除该总结"
+                :title="item.kind === 'summary_fancy_html' ? '删除该 Fancy HTML' : '删除该总结'"
+                :aria-label="item.kind === 'summary_fancy_html' ? '删除该 Fancy HTML' : '删除该总结'"
                 @click="requestDeleteArtifact(item)"
               >
                 <LoaderCircle v-if="isDeleting(item)" :size="14" class="spin" />
@@ -594,7 +706,41 @@ const handleDeleteArtifact = async () => {
                 <span>{{ getFormatLabel(item.fileType) }}</span>
               </template>
             </button>
+            <button
+              v-if="item.kind === 'summary_fancy_html'"
+              class="download download-sm"
+              type="button"
+              :disabled="isConvertButtonLoading(item, 'png')"
+              @click="convertAndDownload(item.downloadId, item.filename, 'png')"
+            >
+              <LoaderCircle
+                v-if="isConvertButtonLoading(item, 'png')"
+                :size="14"
+                class="spin"
+              />
+              <template v-else>
+                <component :is="getFormatIcon('png')" :size="14" />
+                <span>{{ getFormatLabel('png') }}</span>
+              </template>
+            </button>
             <template v-if="canConvert(item.kind)">
+              <button
+                v-if="item.kind === 'summary' || item.kind === 'rag_answer'"
+                class="download download-sm"
+                type="button"
+                :disabled="isFancyGenerating(item)"
+                @click="generateFancyHtml(item)"
+              >
+                <LoaderCircle
+                  v-if="isFancyGenerating(item)"
+                  :size="14"
+                  class="spin"
+                />
+                <template v-else>
+                  <component :is="getFormatIcon('html')" :size="14" />
+                  <span>Fancy HTML</span>
+                </template>
+              </button>
               <button
                 class="download download-sm"
                 type="button"
@@ -655,10 +801,14 @@ const handleDeleteArtifact = async () => {
       @click="cancelDeleteArtifact"
     >
       <div class="modal-content" @click.stop>
-        <h3>确认删除总结</h3>
-        <p>此操作会一次性删除以下 3 项，并且无法恢复：</p>
+        <h3>{{ isFancyHtmlArtifact(deleteConfirmItem) ? '确认删除 Fancy HTML' : '确认删除总结' }}</h3>
+        <p v-if="isFancyHtmlArtifact(deleteConfirmItem)">
+          此操作将删除该 Fancy HTML 文件，无法恢复：
+        </p>
+        <p v-else>此操作会一次性删除以下派生文件，并且无法恢复：</p>
         <ul class="delete-preview-list">
-          <li v-for="name in deletePreviewNames" :key="name">{{ name }}</li>
+          <li v-if="isFancyHtmlArtifact(deleteConfirmItem)">{{ deleteConfirmItem.displayName }}</li>
+          <li v-else v-for="name in deletePreviewNames" :key="name">{{ name }}</li>
         </ul>
         <div class="modal-actions">
           <button
