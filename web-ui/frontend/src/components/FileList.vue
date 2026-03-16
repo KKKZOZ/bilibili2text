@@ -514,6 +514,14 @@ const isConvertButtonLoading = (item, targetFormat) => {
   return isConverting(item.downloadId, targetFormat);
 };
 
+const isFancyPngConverting = (item, renderMode) =>
+  isConverting(item.downloadId, 'png', { render_mode: renderMode });
+
+const convertFancyHtmlToPng = (item, renderMode) =>
+  convertAndDownload(item.downloadId, item.filename, 'png', {
+    render_mode: renderMode,
+  });
+
 const canDeleteMarkdownArtifact = (item) => {
   if (!props.allowDelete) {
     return false;
@@ -710,17 +718,34 @@ const handleDeleteArtifact = async () => {
               v-if="item.kind === 'summary_fancy_html'"
               class="download download-sm"
               type="button"
-              :disabled="isConvertButtonLoading(item, 'png')"
-              @click="convertAndDownload(item.downloadId, item.filename, 'png')"
+              :disabled="isFancyPngConverting(item, 'desktop')"
+              @click="convertFancyHtmlToPng(item, 'desktop')"
             >
               <LoaderCircle
-                v-if="isConvertButtonLoading(item, 'png')"
+                v-if="isFancyPngConverting(item, 'desktop')"
                 :size="14"
                 class="spin"
               />
               <template v-else>
                 <component :is="getFormatIcon('png')" :size="14" />
-                <span>{{ getFormatLabel('png') }}</span>
+                <span>PNG Desktop</span>
+              </template>
+            </button>
+            <button
+              v-if="item.kind === 'summary_fancy_html'"
+              class="download download-sm"
+              type="button"
+              :disabled="isFancyPngConverting(item, 'mobile')"
+              @click="convertFancyHtmlToPng(item, 'mobile')"
+            >
+              <LoaderCircle
+                v-if="isFancyPngConverting(item, 'mobile')"
+                :size="14"
+                class="spin"
+              />
+              <template v-else>
+                <component :is="getFormatIcon('png')" :size="14" />
+                <span>PNG Mobile</span>
               </template>
             </button>
             <template v-if="canConvert(item.kind)">

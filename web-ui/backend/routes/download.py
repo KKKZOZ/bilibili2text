@@ -147,10 +147,36 @@ def convert_artifact(payload: ConvertRequest) -> ConvertResponse:
                 target_format == ConversionFormat.PNG
                 and source_kind == "summary_table_md"
             )
+            convert_options = {}
+            explicit_output_path = None
+            if source_suffix in _html_suffixes and target_format == ConversionFormat.PNG:
+                render_mode = payload.render_mode or "desktop"
+                if render_mode == "mobile":
+                    convert_options.update(
+                        width=430,
+                        height=932,
+                        dpr=3,
+                        is_mobile=True,
+                    )
+                    explicit_output_path = source_path.with_name(
+                        f"{source_path.stem}_mobile.png"
+                    )
+                else:
+                    convert_options.update(
+                        width=1440,
+                        height=1080,
+                        dpr=2,
+                        is_mobile=False,
+                    )
+                    explicit_output_path = source_path.with_name(
+                        f"{source_path.stem}_desktop.png"
+                    )
             output_path = convert_file(
                 source_path,
                 target_format,
+                output_path=explicit_output_path,
                 is_table=png_is_table,
+                **convert_options,
             )
         except RuntimeError as exc:
             raise HTTPException(

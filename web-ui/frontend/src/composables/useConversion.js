@@ -7,8 +7,14 @@ export function useConversion() {
   const convertingItems = ref(new Set());
   const conversionError = ref('');
 
-  const convertAndDownload = async (downloadId, filename, targetFormat) => {
-    const key = `${downloadId}-${targetFormat}`;
+  const convertAndDownload = async (
+    downloadId,
+    filename,
+    targetFormat,
+    extraPayload = {}
+  ) => {
+    const renderMode = extraPayload?.render_mode || '';
+    const key = `${downloadId}-${targetFormat}-${renderMode}`;
     if (convertingItems.value.has(key)) {
       return;
     }
@@ -25,6 +31,7 @@ export function useConversion() {
         body: JSON.stringify({
           download_id: downloadId,
           target_format: targetFormat,
+          ...extraPayload,
         }),
       });
       const data = await resp.json();
@@ -42,8 +49,9 @@ export function useConversion() {
     }
   };
 
-  const isConverting = (downloadId, targetFormat) => {
-    return convertingItems.value.has(`${downloadId}-${targetFormat}`);
+  const isConverting = (downloadId, targetFormat, extraPayload = {}) => {
+    const renderMode = extraPayload?.render_mode || '';
+    return convertingItems.value.has(`${downloadId}-${targetFormat}-${renderMode}`);
   };
 
   const download = (url, filename) => {

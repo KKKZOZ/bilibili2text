@@ -172,25 +172,28 @@ HTML_TEMPLATE = """<!doctype html>
       background: var(--bg);
       min-height: 100vh;
       -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
     }}
     .page {{
       max-width: 1120px;
       margin: 0 auto;
-      padding: 40px 16px 60px;
+      padding: clamp(14px, 3vw, 40px) clamp(12px, 2.5vw, 24px) clamp(24px, 5vw, 60px);
     }}
     .frame {{
       background: var(--paper);
-      border-radius: 12px;
+      border-radius: 18px;
       border: 1px solid var(--line);
       box-shadow: var(--shadow);
-      padding: 40px 44px 48px;
+      padding: clamp(18px, 4vw, 40px) clamp(16px, 4.5vw, 44px) clamp(24px, 5vw, 48px);
+      overflow: hidden;
     }}
     .content {{
       counter-reset: section-counter;
+      overflow-wrap: anywhere;
     }}
     /* ── Hero ─────────────────────────────── */
     .hero {{
-      padding-bottom: 32px;
+      padding-bottom: clamp(20px, 3vw, 32px);
       border-bottom: 1.5px solid var(--line);
       margin-bottom: 4px;
     }}
@@ -212,13 +215,14 @@ HTML_TEMPLATE = """<!doctype html>
     }}
     .hero-dek, .lead {{
       margin-top: 12px;
-      font-size: 16px;
+      font-size: clamp(15px, 2.6vw, 16px);
       line-height: 1.75;
       color: var(--ink-soft);
+      max-width: 72ch;
     }}
     /* ── Section ──────────────────────────── */
     .section {{
-      padding: 28px 0;
+      padding: clamp(18px, 3vw, 28px) 0;
       border-bottom: 1px solid var(--line);
     }}
     .section:last-child {{
@@ -234,6 +238,7 @@ HTML_TEMPLATE = """<!doctype html>
       margin-bottom: 16px;
       display: flex;
       align-items: flex-start;
+      flex-wrap: wrap;
       gap: 10px;
     }}
     .section-title::before {{
@@ -308,8 +313,8 @@ HTML_TEMPLATE = """<!doctype html>
     }}
     /* ── Callout ──────────────────────────── */
     .callout {{
-      padding: 14px 18px;
-      border-radius: 6px;
+      padding: clamp(12px, 2.8vw, 16px) clamp(14px, 3vw, 18px);
+      border-radius: 10px;
       border-left: 3px solid var(--line);
       background: #F9FAFB;
       margin-bottom: 14px;
@@ -345,16 +350,23 @@ HTML_TEMPLATE = """<!doctype html>
     }}
     .cards:last-child {{ margin-bottom: 0; }}
     .card {{
-      padding: 16px 18px;
-      border-radius: 8px;
+      padding: clamp(14px, 3vw, 18px);
+      border-radius: 12px;
       border: 1px solid var(--line);
       background: var(--paper);
     }}
     .card-title {{
+      font-size: clamp(15px, 2.4vw, 17px);
+      font-weight: 800;
+      line-height: 1.35;
+      letter-spacing: -0.015em;
+      color: #0F172A;
+      margin-bottom: 8px;
+    }}
+    .card-body {{
+      color: var(--ink-soft);
       font-size: 14px;
-      font-weight: 700;
-      color: var(--ink);
-      margin-bottom: 6px;
+      line-height: 1.7;
     }}
     .card-body > *:first-child {{ margin-top: 0 !important; }}
     .card-body > *:last-child {{ margin-bottom: 0 !important; }}
@@ -381,7 +393,8 @@ HTML_TEMPLATE = """<!doctype html>
     /* ── Table ────────────────────────────── */
     .table-wrap {{
       overflow-x: auto;
-      border-radius: 8px;
+      -webkit-overflow-scrolling: touch;
+      border-radius: 12px;
       border: 1px solid var(--line);
       margin-bottom: 14px;
     }}
@@ -389,6 +402,7 @@ HTML_TEMPLATE = """<!doctype html>
     table {{
       width: 100%;
       border-collapse: collapse;
+      min-width: 560px;
     }}
     th, td {{
       padding: 10px 14px;
@@ -411,14 +425,103 @@ HTML_TEMPLATE = """<!doctype html>
       border-top: 1px solid var(--line);
       margin: 14px 0;
     }}
-    @media (max-width: 680px) {{
+    @media (max-width: 860px) {{
+      body {{
+        font-size: 15px;
+      }}
       .frame {{
-        padding: 24px 20px 28px;
+        border-radius: 14px;
+      }}
+      .section-title {{
+        font-size: 17px;
+      }}
+      th, td {{
+        padding: 9px 12px;
+      }}
+    }}
+    @media (max-width: 680px) {{
+      body {{
+        font-size: 14.5px;
+        line-height: 1.72;
+      }}
+      .page {{
+        padding-top: max(12px, env(safe-area-inset-top));
+        padding-right: max(12px, env(safe-area-inset-right));
+        padding-bottom: max(24px, env(safe-area-inset-bottom));
+        padding-left: max(12px, env(safe-area-inset-left));
+      }}
+      .frame {{
+        padding: 18px 16px 22px;
+        border-radius: 12px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05), 0 4px 18px rgba(0,0,0,0.06);
+      }}
+      .hero-title {{
+        font-size: 24px;
+        line-height: 1.22;
+      }}
+      .hero-kicker, .eyebrow {{
+        letter-spacing: 0.1em;
+      }}
+      .section-title {{
+        gap: 8px;
+        margin-bottom: 12px;
+      }}
+      .section-title::before {{
+        width: 24px;
+        height: 24px;
+        min-width: 24px;
+        line-height: 24px;
+        font-size: 10px;
+      }}
+      .cards {{
+        grid-template-columns: 1fr;
+        gap: 10px;
+      }}
+      .card-title {{
+        font-size: 15px;
+      }}
+      .card-body {{
+        font-size: 13.5px;
+      }}
+      .quote {{
+        padding: 12px 14px 12px 16px;
+        font-size: 15px;
+      }}
+      .table-wrap {{
+        margin-left: -4px;
+        margin-right: -4px;
         border-radius: 10px;
       }}
-      .hero-title {{ font-size: 24px; }}
-      .cards {{ grid-template-columns: 1fr; }}
-      .section {{ padding: 20px 0; }}
+      table {{
+        min-width: 480px;
+      }}
+      th, td {{
+        font-size: 13px;
+        padding: 8px 10px;
+      }}
+    }}
+    @media (max-width: 420px) {{
+      .hero-title {{
+        font-size: 22px;
+      }}
+      .hero-dek, .lead {{
+        font-size: 14px;
+      }}
+      .section-title {{
+        font-size: 16px;
+      }}
+      ul > li, ol > li {{
+        padding-left: 20px;
+      }}
+      ol > li {{
+        padding-left: 24px;
+      }}
+      .callout {{
+        border-radius: 8px;
+      }}
+      .card-title {{
+        font-size: 14.5px;
+      }}
     }}
   </style>
 </head>

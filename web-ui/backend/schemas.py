@@ -208,6 +208,10 @@ class GenerateFancyHtmlResponse(BaseModel):
 class ConvertRequest(BaseModel):
     download_id: str = Field(..., description="下载 ID（来自 all_downloads 或 history 详情）")
     target_format: str = Field(..., description="目标格式：txt, pdf, png, html")
+    render_mode: Literal["desktop", "mobile"] | None = Field(
+        default=None,
+        description="可选渲染模式，仅用于 HTML -> PNG",
+    )
 
 
 class ConvertResponse(BaseModel):

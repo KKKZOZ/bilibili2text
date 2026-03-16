@@ -696,6 +696,7 @@ class HtmlToPngConverter:
         width = options.get("width", self.width)
         height = options.get("height", self.height)
         dpr = options.get("dpr", self.dpr)
+        is_mobile = options.get("is_mobile", False)
         reuse_browser = options.get("reuse_browser", True)
 
         try:
@@ -708,6 +709,7 @@ class HtmlToPngConverter:
                         width=width,
                         height=height,
                         dpr=dpr,
+                        is_mobile=is_mobile,
                     )
                 )
             else:
@@ -721,6 +723,7 @@ class HtmlToPngConverter:
                             width=width,
                             height=height,
                             dpr=dpr,
+                            is_mobile=is_mobile,
                         )
                     finally:
                         browser.close()
@@ -739,18 +742,130 @@ class HtmlToPngConverter:
         width: int,
         height: int,
         dpr: int,
+        is_mobile: bool,
     ) -> None:
         context = browser.new_context(
             viewport={"width": width, "height": height},
             device_scale_factor=dpr,
-            is_mobile=False,
+            is_mobile=is_mobile,
+            has_touch=is_mobile,
         )
         try:
             page = context.new_page()
             page.goto(html_path.as_uri(), wait_until="domcontentloaded")
+            if is_mobile:
+                self._rewrite_tables_for_mobile(page)
             page.screenshot(path=str(png_path), full_page=True)
         finally:
             context.close()
+
+    def _rewrite_tables_for_mobile(self, page) -> None:
+        page.add_style_tag(
+            content="""
+            .table-wrap {
+              overflow: visible !important;
+              border: 0 !important;
+              margin: 14px 0 !important;
+            }
+            .mobile-table {
+              display: flex;
+              flex-direction: column;
+              gap: 12px;
+              margin: 0;
+            }
+            .mobile-table-row {
+              display: flex;
+              flex-direction: column;
+              border: 1px solid #E5E7EB;
+              border-radius: 14px;
+              overflow: hidden;
+              background: #FFFFFF;
+              box-shadow: 0 6px 20px rgba(15, 23, 42, 0.06);
+            }
+            .mobile-table-cell {
+              display: grid;
+              grid-template-columns: 84px minmax(0, 1fr);
+              gap: 10px;
+              padding: 10px 12px;
+              border-top: 1px solid #EEF2F7;
+              font-size: 13px;
+              line-height: 1.5;
+            }
+            .mobile-table-row .mobile-table-cell:first-child {
+              border-top: 0;
+            }
+            .mobile-table-label {
+              font-weight: 700;
+              color: #6B7280;
+            }
+            .mobile-table-value {
+              min-width: 0;
+              word-break: break-word;
+              overflow-wrap: anywhere;
+              color: #111827;
+            }
+            .mobile-table-value > *:first-child {
+              margin-top: 0 !important;
+            }
+            .mobile-table-value > *:last-child {
+              margin-bottom: 0 !important;
+            }
+            .mobile-table-value p,
+            .mobile-table-value ul,
+            .mobile-table-value ol {
+              margin-bottom: 0;
+            }
+            """
+        )
+        page.evaluate(
+            """
+            () => {
+              document.querySelectorAll('table').forEach((table) => {
+                const rows = Array.from(table.querySelectorAll('tbody tr'));
+                if (rows.length === 0) return;
+
+                const headerCells = Array.from(table.querySelectorAll('thead th'));
+                const headers = headerCells.length > 0
+                  ? headerCells.map((th) => th.textContent.trim())
+                  : Array.from(rows[0]?.children || []).map((_, index) => `列${index + 1}`);
+
+                const wrapper = document.createElement('div');
+                wrapper.className = 'mobile-table';
+
+                rows.forEach((row) => {
+                  const rowEl = document.createElement('div');
+                  rowEl.className = 'mobile-table-row';
+
+                  Array.from(row.children).forEach((cell, index) => {
+                    const cellEl = document.createElement('div');
+                    cellEl.className = 'mobile-table-cell';
+
+                    const labelEl = document.createElement('div');
+                    labelEl.className = 'mobile-table-label';
+                    labelEl.textContent = headers[index] || `列${index + 1}`;
+
+                    const valueEl = document.createElement('div');
+                    valueEl.className = 'mobile-table-value';
+                    valueEl.innerHTML = cell.innerHTML;
+
+                    cellEl.appendChild(labelEl);
+                    cellEl.appendChild(valueEl);
+                    rowEl.appendChild(cellEl);
+                  });
+
+                  wrapper.appendChild(rowEl);
+                });
+
+                const tableWrap = table.closest('.table-wrap');
+                if (tableWrap) {
+                  tableWrap.replaceChildren(wrapper);
+                } else {
+                  table.replaceWith(wrapper);
+                }
+              });
+            }
+            """
+        )
 
 
 def warmup_png_renderer() -> None:

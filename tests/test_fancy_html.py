@@ -109,6 +109,10 @@ def test_generate_fancy_summary_html_writes_wrapped_document(
     assert "<!doctype html>" in content.lower()
     assert 'class="hero-title">核心结论<' in content
     assert "<body>" in content
+    assert "@media (max-width: 680px)" in content
+    assert "@media (max-width: 420px)" in content
+    assert "env(safe-area-inset-top)" in content
+    assert "table {\n      width: 100%;\n      border-collapse: collapse;\n      min-width: 560px;" in content
 
 
 def test_generate_fancy_summary_html_uses_dedicated_fancy_profile(
