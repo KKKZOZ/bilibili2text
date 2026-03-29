@@ -1,22 +1,22 @@
 /* ─── CSS Variables ──────────────────────────────────────────── */
 
 :root {
-  --bg-base: #eef3fb;
-  --bg-gradient-top: #dbeafe;
-  --bg-gradient-mid: #e6fffb;
+  --bg-base: #f0f4f8;
+  --bg-gradient-top: #e0f2fe;
+  --bg-gradient-mid: #ccfbf1;
   --bg-gradient-bottom: #f8fafc;
-  --panel-bg: rgba(255, 255, 255, 0.82);
-  --panel-border: rgba(148, 163, 184, 0.28);
-  --panel-shadow: 0 22px 45px rgba(15, 23, 42, 0.12);
+  --panel-bg: rgba(255, 255, 255, 0.75);
+  --panel-border: rgba(255, 255, 255, 0.6);
+  --panel-shadow: 0 24px 48px -12px rgba(15, 23, 42, 0.08), 0 4px 24px -4px rgba(15, 23, 42, 0.04);
   --text-main: #0f172a;
   --text-soft: #334155;
   --text-muted: #64748b;
   --brand: #0d9488;
   --brand-strong: #0f766e;
-  --brand-soft: #e6fffb;
-  --danger: #dc2626;
-  --success: #16a34a;
-  --line: rgba(148, 163, 184, 0.33);
+  --brand-soft: #f0fdfa;
+  --danger: #ef4444;
+  --success: #10b981;
+  --line: rgba(148, 163, 184, 0.25);
 }
 
 /* ─── Reset & Base ───────────────────────────────────────────── */
@@ -30,22 +30,24 @@ body {
   min-height: 100vh;
   color: var(--text-main);
   background:
-    radial-gradient(circle at 10% -10%, var(--bg-gradient-top), transparent 48%),
-    radial-gradient(circle at 100% 0%, #d1fae5, transparent 44%),
-    linear-gradient(160deg, var(--bg-base), var(--bg-gradient-mid) 48%, var(--bg-gradient-bottom));
+    radial-gradient(circle at 15% 0%, var(--bg-gradient-top), transparent 45%),
+    radial-gradient(circle at 85% 15%, var(--bg-gradient-mid), transparent 45%),
+    linear-gradient(170deg, var(--bg-base), var(--bg-gradient-bottom));
   font-family: "Manrope", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 /* ─── Panel base (used in all components) ───────────────────── */
 
 .panel {
   border: 1px solid var(--panel-border);
-  background:
-    linear-gradient(155deg, rgba(255, 255, 255, 0.93), rgba(255, 255, 255, 0.72));
-  border-radius: 24px;
-  box-shadow: var(--panel-shadow);
-  backdrop-filter: blur(12px);
-  animation: panel-rise 0.52s cubic-bezier(0.22, 1, 0.36, 1) both;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0.55));
+  border-radius: 28px;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.8), var(--panel-shadow);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  animation: panel-rise 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 /* ─── Shared utilities ───────────────────────────────────────── */
@@ -66,26 +68,28 @@ body {
 /* ─── Submit button (ProcessView + HistoryView) ──────────────── */
 
 .submit {
-  margin-top: 8px;
+  margin-top: 12px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  border-radius: 13px;
-  font-size: 0.95rem;
+  gap: 10px;
+  border-radius: 16px;
+  font-size: 1rem;
   font-weight: 700;
   cursor: pointer;
-  min-height: 46px;
-  padding: 0 16px;
-  transition: transform 0.16s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  min-height: 52px;
+  padding: 0 24px;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   border: none;
   color: #ffffff;
   background: linear-gradient(135deg, #0d9488, #0284c7);
+  box-shadow: 0 4px 12px rgba(2, 132, 199, 0.2);
 }
 
 .submit:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 12px 28px rgba(2, 132, 199, 0.28);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 24px -6px rgba(2, 132, 199, 0.4);
+  background: linear-gradient(135deg, #0f766e, #0369a1);
 }
 
 .submit:disabled {
@@ -104,28 +108,30 @@ body {
 
 .preset-select {
   border: 1px solid var(--line);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.9);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.7);
   color: var(--text-main);
-  min-height: 44px;
+  min-height: 48px;
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  padding: 0 12px;
-  font-size: 0.9rem;
+  padding: 0 16px;
+  font-size: 0.95rem;
   outline: none;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transition: all 0.25s ease;
+  backdrop-filter: blur(8px);
 }
 
 .preset-select:disabled {
   color: #94a3b8;
-  background: #f8fafc;
+  background: rgba(248, 250, 252, 0.5);
   cursor: not-allowed;
 }
 
 .preset-select:focus {
-  border-color: #22d3ee;
-  box-shadow: 0 0 0 4px rgba(34, 211, 238, 0.15);
+  border-color: #38bdf8;
+  background: #ffffff;
+  box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.15);
 }
 
 .preset-hint {

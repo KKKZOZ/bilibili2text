@@ -317,17 +317,17 @@ onBeforeUnmount(() => {
 .shell {
   position: relative;
   min-height: 100vh;
-  padding: clamp(16px, 3vw, 36px);
+  padding: clamp(24px, 4vw, 48px);
   overflow: hidden;
 }
 
 .ambient {
   position: absolute;
   border-radius: 999px;
-  filter: blur(65px);
-  opacity: 0.52;
+  filter: blur(80px);
+  opacity: 0.35;
   pointer-events: none;
-  animation: float 12s ease-in-out infinite;
+  animation: float 16s ease-in-out infinite;
 }
 
 .ambient-left {
@@ -353,28 +353,29 @@ onBeforeUnmount(() => {
   position: relative;
   z-index: 2;
   max-width: 1160px;
-  margin: 0 auto 20px;
+  margin: 0 auto 32px;
   display: inline-flex;
   gap: 4px;
-  padding: 4px;
-  border-radius: 16px;
-  border: 1px solid var(--panel-border);
-  background: rgba(255, 255, 255, 0.72);
-  backdrop-filter: blur(12px);
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
+  padding: 6px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04), inset 0 1px 1px rgba(255, 255, 255, 0.6);
   isolation: isolate;
 }
 
 .tab-indicator {
   position: absolute;
-  top: 4px;
+  top: 6px;
   left: 0;
-  bottom: 4px;
-  border-radius: 12px;
-  background: #ffffff;
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+  bottom: 6px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
   pointer-events: none;
-  transition: transform 0.34s cubic-bezier(0.22, 1, 0.36, 1), width 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 0.34s cubic-bezier(0.16, 1, 0.3, 1), width 0.34s cubic-bezier(0.16, 1, 0.3, 1);
   z-index: 0;
 }
 
@@ -384,13 +385,13 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 9px 18px;
+  gap: 8px;
+  padding: 10px 20px;
   border: none;
-  border-radius: 12px;
+  border-radius: 14px;
   background: transparent;
   color: var(--text-muted);
-  font-size: 0.88rem;
+  font-size: 0.9rem;
   font-weight: 600;
   cursor: pointer;
   transition: color 0.24s ease, transform 0.2s ease;
