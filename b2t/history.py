@@ -476,6 +476,24 @@ class HistoryDB:
         ).fetchone()
         return int(row["cnt"]) if row else 0
 
+    def has_summary_for_bvid(self, bvid: str) -> bool:
+        """Return whether the given BV already has a summarized run."""
+        normalized_bvid = bvid.strip()
+        if not normalized_bvid:
+            return False
+
+        conn = self._conn()
+        row = conn.execute(
+            """\
+            SELECT 1
+            FROM transcription_runs
+            WHERE bvid = ? AND has_summary = 1
+            LIMIT 1
+            """,
+            (normalized_bvid,),
+        ).fetchone()
+        return row is not None
+
     def delete_run(self, run_id: str) -> list[HistoryArtifact]:
         """Delete a transcription run and return its artifacts for file cleanup."""
         conn = self._conn()

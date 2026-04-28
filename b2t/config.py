@@ -7,6 +7,10 @@ from pathlib import Path
 
 DEFAULT_SUMMARY_PRESETS_FILE = "summary_presets.toml"
 DEFAULT_STT_PROFILE = "qwen"
+DEFAULT_BILIBILI_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+)
 _SUPPORTED_SUMMARIZE_PROVIDERS = ("bailian", "openrouter", "groq")
 _SUMMARIZE_PROVIDER_DEFAULT_API_BASE: dict[str, str] = {
     "bailian": "https://dashscope.aliyuncs.com/compatible-mode/v1",
@@ -177,6 +181,51 @@ class RagConfig:
 
 
 @dataclass(frozen=True)
+class FeishuConfig:
+    mode: str = "disabled"
+    webhook_url: str = ""
+    app_id: str = ""
+    app_secret: str = ""
+    receive_id: str = ""
+    receive_id_type: str = "open_id"
+    title_prefix: str = "b2t"
+    timeout_seconds: int = 20
+    summary_max_chars: int = 8000
+
+
+@dataclass(frozen=True)
+class MonitorCreatorConfig:
+    uid: int
+    name: str = ""
+    check_interval: int = 300
+
+
+@dataclass(frozen=True)
+class MonitorConfig:
+    enabled: bool = False
+    state_file: str = "./db_data/bilibili_monitor_state.json"
+    user_agent: str = DEFAULT_BILIBILI_USER_AGENT
+    lookback_hours: int = 48
+    first_run_max_push: int = 3
+    default_check_interval: int = 300
+    startup_notification: bool = True
+    summary_preset: str | None = None
+    summary_profile: str | None = None
+    output_dir: str = ""
+    creators: tuple[MonitorCreatorConfig, ...] = ()
+
+
+@dataclass(frozen=True)
+class BilibiliConfig:
+    SESSDATA: str = ""
+    bili_jct: str = ""
+    buvid3: str = ""
+    DedeUserID: str = ""
+    DedeUserID__ckMd5: str = ""
+    refresh_token: str = ""
+
+
+@dataclass(frozen=True)
 class AppConfig:
     download: DownloadConfig
     storage: StorageConfig
@@ -186,6 +235,9 @@ class AppConfig:
     summary_presets: SummaryPresetsConfig
     converter: ConverterConfig
     rag: RagConfig = field(default_factory=RagConfig)
+    feishu: FeishuConfig = field(default_factory=FeishuConfig)
+    monitor: MonitorConfig = field(default_factory=MonitorConfig)
+    bilibili: BilibiliConfig = field(default_factory=BilibiliConfig)
 
 
 def _load_summarize_config(raw_summarize: dict) -> SummarizeConfig:
@@ -784,6 +836,260 @@ def _load_rag_config(raw_rag: dict, *, base_dir: Path) -> RagConfig:
     )
 
 
+def _load_feishu_config(raw_feishu: dict) -> FeishuConfig:
+    if raw_feishu is None:
+        raw_feishu = {}
+    if not isinstance(raw_feishu, dict):
+        raise ValueError("feishu 配置必须是 TOML 表")
+
+    allowed_fields = {
+        "mode",
+        "webhook_url",
+        "app_id",
+        "app_secret",
+        "receive_id",
+        "receive_id_type",
+        "title_prefix",
+        "timeout_seconds",
+        "summary_max_chars",
+    }
+    unknown_fields = sorted(set(raw_feishu.keys()) - allowed_fields)
+    if unknown_fields:
+        raise ValueError("feishu 包含未知字段: " f"{', '.join(unknown_fields)}")
+
+    config = FeishuConfig(**raw_feishu)
+
+    string_fields = {
+        "feishu.mode": config.mode,
+        "feishu.webhook_url": config.webhook_url,
+        "feishu.app_id": config.app_id,
+        "feishu.app_secret": config.app_secret,
+        "feishu.receive_id": config.receive_id,
+        "feishu.receive_id_type": config.receive_id_type,
+        "feishu.title_prefix": config.title_prefix,
+    }
+    for field_name, value in string_fields.items():
+        if not isinstance(value, str):
+            raise ValueError(f"{field_name} 必须是字符串")
+
+    if not isinstance(config.timeout_seconds, int) or config.timeout_seconds <= 0:
+        raise ValueError("feishu.timeout_seconds 必须是正整数")
+    if not isinstance(config.summary_max_chars, int) or config.summary_max_chars <= 0:
+        raise ValueError("feishu.summary_max_chars 必须是正整数")
+
+    mode = config.mode.strip().lower()
+    if mode not in {"disabled", "webhook", "app"}:
+        raise ValueError("feishu.mode 仅支持 disabled、webhook 或 app")
+
+    receive_id_type = config.receive_id_type.strip().lower()
+    if receive_id_type not in {"open_id", "user_id", "union_id", "chat_id", "email"}:
+        raise ValueError(
+            "feishu.receive_id_type 仅支持 open_id、user_id、union_id、chat_id 或 email"
+        )
+
+    if mode == "webhook" and not config.webhook_url.strip():
+        raise ValueError("feishu.mode=webhook 时，feishu.webhook_url 必须是非空字符串")
+    if mode == "app":
+        required_fields = {
+            "feishu.app_id": config.app_id,
+            "feishu.app_secret": config.app_secret,
+            "feishu.receive_id": config.receive_id,
+        }
+        for field_name, value in required_fields.items():
+            if not value.strip():
+                raise ValueError(f"feishu.mode=app 时，{field_name} 必须是非空字符串")
+
+    return FeishuConfig(
+        mode=mode,
+        webhook_url=config.webhook_url.strip(),
+        app_id=config.app_id.strip(),
+        app_secret=config.app_secret.strip(),
+        receive_id=config.receive_id.strip(),
+        receive_id_type=receive_id_type,
+        title_prefix=config.title_prefix.strip() or "b2t",
+        timeout_seconds=config.timeout_seconds,
+        summary_max_chars=config.summary_max_chars,
+    )
+
+
+def _load_monitor_config(raw_monitor: dict, *, base_dir: Path) -> MonitorConfig:
+    if raw_monitor is None:
+        raw_monitor = {}
+    if not isinstance(raw_monitor, dict):
+        raise ValueError("monitor 配置必须是 TOML 表")
+
+    allowed_fields = {
+        "enabled",
+        "state_file",
+        "user_agent",
+        "lookback_hours",
+        "first_run_max_push",
+        "default_check_interval",
+        "startup_notification",
+        "summary_preset",
+        "summary_profile",
+        "output_dir",
+        "creators",
+    }
+    unknown_fields = sorted(set(raw_monitor.keys()) - allowed_fields)
+    if unknown_fields:
+        raise ValueError("monitor 包含未知字段: " f"{', '.join(unknown_fields)}")
+
+    enabled = raw_monitor.get("enabled", False)
+    if not isinstance(enabled, bool):
+        raise ValueError("monitor.enabled 必须是布尔值")
+
+    raw_state_file = raw_monitor.get("state_file", MonitorConfig.state_file)
+    if not isinstance(raw_state_file, str) or not raw_state_file.strip():
+        raise ValueError("monitor.state_file 必须是非空字符串")
+    state_file = str(
+        _resolve_relative_path(raw_state_file.strip(), base_dir=base_dir)
+    )
+
+    raw_user_agent = raw_monitor.get("user_agent", DEFAULT_BILIBILI_USER_AGENT)
+    if not isinstance(raw_user_agent, str) or not raw_user_agent.strip():
+        raise ValueError("monitor.user_agent 必须是非空字符串")
+
+    lookback_hours = raw_monitor.get("lookback_hours", MonitorConfig.lookback_hours)
+    if not isinstance(lookback_hours, int) or lookback_hours <= 0:
+        raise ValueError("monitor.lookback_hours 必须是正整数")
+
+    first_run_max_push = raw_monitor.get(
+        "first_run_max_push",
+        MonitorConfig.first_run_max_push,
+    )
+    if not isinstance(first_run_max_push, int) or first_run_max_push < 0:
+        raise ValueError("monitor.first_run_max_push 必须是非负整数")
+
+    default_check_interval = raw_monitor.get(
+        "default_check_interval",
+        MonitorConfig.default_check_interval,
+    )
+    if not isinstance(default_check_interval, int) or default_check_interval <= 0:
+        raise ValueError("monitor.default_check_interval 必须是正整数")
+
+    startup_notification = raw_monitor.get(
+        "startup_notification",
+        MonitorConfig.startup_notification,
+    )
+    if not isinstance(startup_notification, bool):
+        raise ValueError("monitor.startup_notification 必须是布尔值")
+
+    raw_summary_preset = raw_monitor.get("summary_preset")
+    if raw_summary_preset is not None and not isinstance(raw_summary_preset, str):
+        raise ValueError("monitor.summary_preset 必须是字符串")
+    summary_preset = raw_summary_preset.strip() if isinstance(raw_summary_preset, str) else None
+    if summary_preset == "":
+        summary_preset = None
+
+    raw_summary_profile = raw_monitor.get("summary_profile")
+    if raw_summary_profile is not None and not isinstance(raw_summary_profile, str):
+        raise ValueError("monitor.summary_profile 必须是字符串")
+    summary_profile = (
+        raw_summary_profile.strip() if isinstance(raw_summary_profile, str) else None
+    )
+    if summary_profile == "":
+        summary_profile = None
+
+    raw_output_dir = raw_monitor.get("output_dir", "")
+    if not isinstance(raw_output_dir, str):
+        raise ValueError("monitor.output_dir 必须是字符串")
+    output_dir = ""
+    if raw_output_dir.strip():
+        output_dir = str(
+            _resolve_relative_path(raw_output_dir.strip(), base_dir=base_dir)
+        )
+
+    raw_creators = raw_monitor.get("creators", [])
+    if not isinstance(raw_creators, list):
+        raise ValueError("monitor.creators 必须是 TOML 数组")
+
+    creators: list[MonitorCreatorConfig] = []
+    for index, raw_creator in enumerate(raw_creators):
+        if not isinstance(raw_creator, dict):
+            raise ValueError(f"monitor.creators[{index}] 必须是 TOML 表")
+
+        uid = raw_creator.get("uid")
+        if not isinstance(uid, int) or uid <= 0:
+            raise ValueError(f"monitor.creators[{index}].uid 必须是正整数")
+
+        raw_name = raw_creator.get("name", "")
+        if not isinstance(raw_name, str):
+            raise ValueError(f"monitor.creators[{index}].name 必须是字符串")
+
+        interval = raw_creator.get("check_interval", default_check_interval)
+        if not isinstance(interval, int) or interval <= 0:
+            raise ValueError(
+                f"monitor.creators[{index}].check_interval 必须是正整数"
+            )
+
+        creators.append(
+            MonitorCreatorConfig(
+                uid=uid,
+                name=raw_name.strip(),
+                check_interval=interval,
+            )
+        )
+
+    return MonitorConfig(
+        enabled=enabled,
+        state_file=state_file,
+        user_agent=raw_user_agent.strip(),
+        lookback_hours=lookback_hours,
+        first_run_max_push=first_run_max_push,
+        default_check_interval=default_check_interval,
+        startup_notification=startup_notification,
+        summary_preset=summary_preset,
+        summary_profile=summary_profile,
+        output_dir=output_dir,
+        creators=tuple(creators),
+    )
+
+
+def _load_bilibili_config(raw_bilibili: dict) -> BilibiliConfig:
+    if raw_bilibili is None:
+        raw_bilibili = {}
+    if not isinstance(raw_bilibili, dict):
+        raise ValueError("bilibili 配置必须是 TOML 表")
+
+    allowed_fields = {
+        "SESSDATA",
+        "bili_jct",
+        "buvid3",
+        "DedeUserID",
+        "DedeUserID__ckMd5",
+        "refresh_token",
+    }
+    unknown_fields = sorted(set(raw_bilibili.keys()) - allowed_fields)
+    if unknown_fields:
+        raise ValueError("bilibili 包含未知字段: " f"{', '.join(unknown_fields)}")
+
+    normalized: dict[str, str] = {}
+    for field_name in allowed_fields:
+        value = raw_bilibili.get(field_name, "")
+        if not isinstance(value, str):
+            raise ValueError(f"bilibili.{field_name} 必须是字符串")
+        normalized[field_name] = value.strip()
+
+    return BilibiliConfig(**normalized)
+
+
+def build_bilibili_cookie(config: AppConfig) -> str:
+    parts: list[str] = []
+    bilibili = config.bilibili
+    for key in (
+        "SESSDATA",
+        "bili_jct",
+        "buvid3",
+        "DedeUserID",
+        "DedeUserID__ckMd5",
+    ):
+        value = getattr(bilibili, key).strip()
+        if value:
+            parts.append(f"{key}={value}")
+    return "; ".join(parts)
+
+
 def load_config(path: str | Path | None = None) -> AppConfig:
     """加载 TOML 配置文件
 
@@ -875,6 +1181,12 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         raw.get("rag", {}),
         base_dir=config_path.parent.resolve(),
     )
+    feishu_config = _load_feishu_config(raw.get("feishu", {}))
+    monitor_config = _load_monitor_config(
+        raw.get("monitor", {}),
+        base_dir=config_path.parent.resolve(),
+    )
+    bilibili_config = _load_bilibili_config(raw.get("bilibili", {}))
 
     return AppConfig(
         download=DownloadConfig(**download_dict),
@@ -885,4 +1197,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         summary_presets=summary_presets,
         converter=ConverterConfig(**raw.get("converter", {})),
         rag=rag_config,
+        feishu=feishu_config,
+        monitor=monitor_config,
+        bilibili=bilibili_config,
     )

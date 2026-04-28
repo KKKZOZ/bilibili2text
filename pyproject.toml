@@ -10,6 +10,7 @@ dependencies = [
     "dashscope>=1.25.12",
     "fastapi>=0.116.1",
     "groq>=1.0.0",
+    "httpx>=0.28.1",
     "litellm>=1.74.9",
     "minio>=7.2.12",
     "openai>=2.17.0",
@@ -31,3 +32,6 @@ include = ["b2t*"]
 [project.scripts]
 b2t = "b2t.cli:main"
 md-table-pdf = "b2t.converter.md_table_to_pdf:main"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

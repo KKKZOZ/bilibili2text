@@ -14,6 +14,7 @@ from rich.table import Table
 from b2t.config import load_config
 from b2t.download.yutto_cli import extract_bvid
 from b2t.history import HistoryDB, record_pipeline_run
+from b2t.monitor import BilibiliMonitorService
 from b2t.pipeline import run_pipeline
 from b2t.storage import StoredArtifact
 
@@ -26,6 +27,15 @@ class CLIArgs:
     no_summary: bool = False
     summary_preset: str | None = None
     summary_profile: str | None = None
+    verbose: bool = False
+
+
+@dataclass(frozen=True)
+class MonitorCLIArgs:
+    config: str | None = None
+    once: bool = False
+    reset_state: bool = False
+    bootstrap_unsummarized_count: int = 0
     verbose: bool = False
 
 
@@ -118,6 +128,32 @@ def _build_script_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _build_monitor_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="b2t monitor",
+        description="监控 Bilibili UP 主动态，发现新视频后自动总结并推送到飞书",
+    )
+    parser.add_argument(
+        "-c", "--config", default=None, help="配置文件路径（默认 ./config.toml）"
+    )
+    parser.add_argument("--once", action="store_true", help="仅执行一次检查")
+    parser.add_argument(
+        "--reset-state",
+        action="store_true",
+        help="清空监控状态文件，再开始监控",
+    )
+    parser.add_argument(
+        "--bootstrap-unsummarized",
+        type=int,
+        default=0,
+        help="测试用：回填最近前 N 个尚未总结过的视频",
+    )
+    parser.add_argument(
+        "-v", "--verbose", action="store_true", help="显示详细日志"
+    )
+    return parser
+
+
 def _validate_script_args(
     parser: argparse.ArgumentParser, parsed: argparse.Namespace
 ) -> CLIArgs:
@@ -148,6 +184,24 @@ def _validate_script_args(
         no_summary=bool(parsed.no_summary),
         summary_preset=summary_preset,
         summary_profile=summary_profile,
+        verbose=bool(parsed.verbose),
+    )
+
+
+def _validate_monitor_args(parsed: argparse.Namespace) -> MonitorCLIArgs:
+    config = _normalize_optional_text(parsed.config)
+    if parsed.config is not None and config is None:
+        raise ValueError("--config 不能为空字符串")
+    if not isinstance(parsed.bootstrap_unsummarized, int):
+        raise ValueError("--bootstrap-unsummarized 必须是整数")
+    if parsed.bootstrap_unsummarized < 0:
+        raise ValueError("--bootstrap-unsummarized 不能小于 0")
+
+    return MonitorCLIArgs(
+        config=config,
+        once=bool(parsed.once),
+        reset_state=bool(parsed.reset_state),
+        bootstrap_unsummarized_count=int(parsed.bootstrap_unsummarized),
         verbose=bool(parsed.verbose),
     )
 
@@ -443,9 +497,60 @@ def _run_pipeline_with_args(args: CLIArgs, console: Console) -> int:
     return 0
 
 
+def _run_monitor_with_args(args: MonitorCLIArgs, console: Console) -> int:
+    _configure_logging(args.verbose)
+
+    try:
+        config = load_config(args.config)
+    except (FileNotFoundError, ValueError) as exc:
+        console.print(f"[bold red]配置错误:[/] {exc}")
+        return 1
+
+    if not config.monitor.enabled:
+        console.print(
+            "[bold red]配置错误:[/] [monitor].enabled = true 后才能启动监控"
+        )
+        return 1
+
+    service = BilibiliMonitorService(config)
+    try:
+        if args.reset_state:
+            service.reset_state()
+            console.print("[bold #0f766e]监控状态已重置[/bold #0f766e]")
+        service.run(
+            once=args.once,
+            bootstrap_unsummarized_count=args.bootstrap_unsummarized_count,
+        )
+    except KeyboardInterrupt:
+        console.print("[bold #334155]已停止监控[/bold #334155]")
+        return 130
+    except Exception as exc:
+        logging.error("监控执行失败: %s", exc)
+        console.print(f"[bold red]监控执行失败:[/] {exc}")
+        return 1
+    finally:
+        service.close()
+
+    console.print("[bold #16a34a]监控检查完成[/bold #16a34a]")
+    return 0
+
+
 def main() -> None:
     console = Console()
     argv = sys.argv[1:]
+
+    if argv and argv[0] == "monitor":
+        parser = _build_monitor_parser()
+        parsed = parser.parse_args(argv[1:])
+        try:
+            args = _validate_monitor_args(parsed)
+        except ValueError as exc:
+            console.print(f"[bold red]参数错误:[/] {exc}")
+            sys.exit(2)
+        exit_code = _run_monitor_with_args(args, console)
+        if exit_code != 0:
+            sys.exit(exit_code)
+        return
 
     if argv:
         parser = _build_script_parser()

@@ -11,7 +11,8 @@ from b2t.config import (
     resolve_summarize_model_profile,
     resolve_summary_preset_name,
 )
-from b2t.history import HistoryArtifact, record_pipeline_run
+from b2t.download.metadata import VideoMetadata
+from b2t.history import HistoryArtifact, infer_run_id, record_pipeline_run
 from b2t.storage import StorageBackend, StoredArtifact
 from b2t.storage.base import classify_artifact_filename
 from b2t.summarize.fancy_html import generate_fancy_summary_html
@@ -216,10 +217,41 @@ def _run_summary_only_from_existing(
     existing_results: dict[str, StoredArtifact],
     summary_preset: str | None,
     summary_profile: str | None,
+    title: str = "",
+    author: str = "",
+    pubdate: str = "",
 ) -> dict[str, StoredArtifact]:
     markdown_artifact = existing_results.get("markdown")
     if markdown_artifact is None:
         raise ValueError("历史转录结果中缺少 Markdown 文件，无法仅执行总结步骤")
+
+    resolved_title = title.strip()
+    resolved_author = author.strip()
+    resolved_pubdate = pubdate.strip()
+    if not (resolved_title and resolved_author and resolved_pubdate):
+        try:
+            detail = _get_history_db().get_run_detail(
+                infer_run_id(markdown_artifact.storage_key, bvid=bvid)
+            )
+        except Exception as exc:
+            logger.debug("读取历史元信息失败，重新总结将回退到文件名推断标题: %s", exc)
+        else:
+            if detail is not None:
+                resolved_title = resolved_title or detail.title.strip()
+                resolved_author = resolved_author or detail.author.strip()
+                resolved_pubdate = resolved_pubdate or detail.pubdate.strip()
+
+    metadata = None
+    if resolved_title or resolved_author or resolved_pubdate:
+        metadata = VideoMetadata(
+            bvid=bvid,
+            title=resolved_title,
+            author=resolved_author,
+            author_uid=0,
+            pubdate=resolved_pubdate,
+            pubdate_timestamp=0,
+            description="",
+        )
 
     run_prefix = f"{bvid}-{uuid4().hex[:8]}"
     cleanup_temp_dir: tempfile.TemporaryDirectory | None = None
@@ -245,6 +277,7 @@ def _run_summary_only_from_existing(
             config.summary_presets,
             preset=summary_preset,
             profile=summary_profile,
+            metadata=metadata,
         )
 
         summary_table_md: Path | None = None

@@ -1,6 +1,7 @@
 """LLM 总结"""
 
 import logging
+from datetime import datetime
 from pathlib import Path
 import re
 
@@ -13,6 +14,7 @@ from b2t.config import (
 )
 from b2t.converter.markdown_formatter import format_markdown_with_markdownlint
 from b2t.converter.md_table_to_pdf import markdown_table_to_pdf
+from b2t.download.metadata import VideoMetadata
 from b2t.summarize.litellm_client import (
     collect_stream_result,
     stream_summary_completion,
@@ -24,6 +26,8 @@ TABLE_ROW_RE = re.compile(r"^\s*\|?.*\|.*\|?\s*$")
 TABLE_SEPARATOR_RE = re.compile(
     r"^\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?\s*$"
 )
+_BVID_PREFIX_RE = re.compile(r"^(BV[0-9A-Za-z]{10})[_-]?", re.IGNORECASE)
+
 
 def _extract_markdown_table_blocks(content: str) -> list[str]:
     """Extract markdown table blocks from mixed markdown content."""
@@ -120,12 +124,127 @@ def export_summary_table_pdf(
     return table_pdf_path
 
 
+def _infer_video_title_from_markdown_path(md_path: Path) -> str:
+    stem = md_path.stem
+    if stem.lower().endswith("_transcription"):
+        stem = stem[:-14]
+    inferred = _BVID_PREFIX_RE.sub("", stem, count=1).strip("_- ")
+    return inferred or stem or "未命名视频"
+
+
+def _parse_pubdate_datetime(pubdate: str) -> datetime | None:
+    cleaned = pubdate.strip()
+    if not cleaned:
+        return None
+
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(cleaned, fmt)
+        except ValueError:
+            continue
+
+    normalized = cleaned.replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is not None:
+        return parsed.astimezone().replace(tzinfo=None)
+    return parsed
+
+
+def _format_publish_age(
+    metadata: VideoMetadata | None,
+    *,
+    now: datetime | None = None,
+) -> str:
+    if metadata is None:
+        return "未知"
+
+    pubdate = (metadata.pubdate or "").strip()
+    published_at: datetime | None = None
+    if metadata.pubdate_timestamp > 0:
+        published_at = datetime.fromtimestamp(metadata.pubdate_timestamp)
+        if not pubdate:
+            pubdate = published_at.strftime("%Y-%m-%d %H:%M:%S")
+    else:
+        published_at = _parse_pubdate_datetime(pubdate)
+
+    if published_at is None:
+        return pubdate or "未知"
+
+    current = now or datetime.now()
+    delta_seconds = max(0, int((current - published_at).total_seconds()))
+    if delta_seconds < 60:
+        relative = "刚刚"
+    elif delta_seconds < 3600:
+        relative = f"{delta_seconds // 60} 分钟前"
+    elif delta_seconds < 86400:
+        relative = f"{delta_seconds // 3600} 小时前"
+    elif delta_seconds < 86400 * 45:
+        relative = f"{delta_seconds // 86400} 天前"
+    elif delta_seconds < 86400 * 365:
+        relative = f"{delta_seconds // (86400 * 30)} 个月前"
+    else:
+        relative = f"{delta_seconds // (86400 * 365)} 年前"
+
+    return f"{pubdate or published_at.strftime('%Y-%m-%d %H:%M:%S')}（{relative}）"
+
+
+def _demote_top_level_headings(markdown: str) -> str:
+    lines = markdown.splitlines()
+    normalized_lines: list[str] = []
+    in_fence = False
+
+    for line in lines:
+        stripped = line.lstrip()
+        if stripped.startswith("```"):
+            in_fence = not in_fence
+            normalized_lines.append(line)
+            continue
+
+        if not in_fence and stripped.startswith("# "):
+            leading = line[: len(line) - len(stripped)]
+            normalized_lines.append(f"{leading}## {stripped[2:].strip()}")
+            continue
+
+        normalized_lines.append(line)
+
+    return "\n".join(normalized_lines).strip()
+
+
+def post_process_summary_markdown(
+    summary: str,
+    *,
+    metadata: VideoMetadata | None = None,
+    fallback_title: str,
+    now: datetime | None = None,
+) -> str:
+    title = (metadata.title.strip() if metadata else "") or fallback_title.strip() or "未命名视频"
+    author = (metadata.author.strip() if metadata else "") or "未知"
+    publish_age = _format_publish_age(metadata, now=now)
+    body = _demote_top_level_headings(summary.strip())
+
+    parts = [
+        f"# {title}",
+        "",
+        "## 关键信息",
+        "",
+        f"- UP主：{author}",
+        f"- 发布时间：{publish_age}",
+    ]
+    if body:
+        parts.extend(["", body])
+    return "\n".join(parts).rstrip() + "\n"
+
+
 def summarize(
     md_path: Path | str,
     config: SummarizeConfig,
     summary_presets: SummaryPresetsConfig,
     preset: str | None = None,
     profile: str | None = None,
+    metadata: VideoMetadata | None = None,
 ) -> Path:
     """使用 LLM 对 Markdown 文件进行总结
 
@@ -188,7 +307,11 @@ def summarize(
 
     if not content.strip():
         raise ValueError("LLM 未返回 content 字段，无法生成总结")
-    summary = content
+    summary = post_process_summary_markdown(
+        content,
+        metadata=metadata,
+        fallback_title=_infer_video_title_from_markdown_path(md_path),
+    )
 
     summary_path = md_path.parent / f"{md_path.stem}_summary.md"
     summary_path.write_text(summary, encoding="utf-8")

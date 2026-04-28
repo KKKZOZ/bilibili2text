@@ -182,6 +182,7 @@ def run_pipeline(
                 config.summary_presets,
                 preset=summary_preset,
                 profile=summary_profile,
+                metadata=metadata,
             )
             local_results["summary"] = summary_path
 

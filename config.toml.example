@@ -105,3 +105,51 @@ provider = "bailian"
 model = "text-embedding-v3"
 api_base = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 api_key = "your-dashscope-api-key"
+
+[feishu]
+# 可选: "disabled"、"webhook"、"app"
+mode = "webhook"
+# mode=webhook 时使用群机器人 webhook
+webhook_url = "https://open.feishu.cn/open-apis/bot/v2/hook/your-webhook-token"
+# mode=app 时使用自建应用发卡片
+app_id = ""
+app_secret = ""
+receive_id = ""
+# 可选: open_id、user_id、union_id、chat_id、email
+receive_id_type = "open_id"
+title_prefix = "b2t"
+timeout_seconds = 20
+# 飞书消息内最多保留多少字符的总结正文
+summary_max_chars = 8000
+
+[bilibili]
+SESSDATA = ""
+bili_jct = ""
+buvid3 = ""
+DedeUserID = ""
+DedeUserID__ckMd5 = ""
+refresh_token = ""
+
+[monitor]
+enabled = true
+state_file = "./db_data/bilibili_monitor_state.json"
+user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+lookback_hours = 48
+first_run_max_push = 3
+default_check_interval = 300
+startup_notification = true
+# 可选：单独覆盖监控链路使用的总结 preset / profile
+summary_preset = ""
+summary_profile = ""
+# 为空时复用 download.output_dir
+output_dir = ""
+
+[[monitor.creators]]
+uid = 11473291
+name = "笨笨的芝菜"
+check_interval = 300
+
+[[monitor.creators]]
+uid = 550494308
+name = "卢本圆复盘"
+check_interval = 300

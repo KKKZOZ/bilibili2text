@@ -237,6 +237,9 @@ def regenerate_history_summary(
             existing_results=existing_results,
             summary_preset=resolved_preset,
             summary_profile=resolved_profile,
+            title=detail.title,
+            author=detail.author,
+            pubdate=detail.pubdate,
         )
     except Exception as exc:
         raise HTTPException(
