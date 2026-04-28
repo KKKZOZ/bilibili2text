@@ -7,26 +7,26 @@ from backend.schemas import (
     OpenPublicApiKeyUpdateRequest,
     RuntimeFeaturesResponse,
 )
-from backend.state import (
-    _clear_public_api_key,
-    _get_public_api_key,
-    _get_runtime_features,
-    _is_open_public_mode,
-    _mask_api_key,
-    _set_public_api_key,
+from backend.settings import (
+    clear_public_api_key,
+    get_public_api_key,
+    get_runtime_features,
+    is_open_public_mode,
+    mask_api_key,
+    set_public_api_key,
 )
 
 router = APIRouter()
 
 
 def _ensure_open_public_mode() -> None:
-    if not _is_open_public_mode():
+    if not is_open_public_mode():
         raise HTTPException(status_code=404, detail="当前并非 open-public 模式")
 
 
 def _build_api_key_status() -> OpenPublicApiKeyStatusResponse:
-    api_key = _get_public_api_key()
-    masked = _mask_api_key(api_key) if api_key else None
+    api_key = get_public_api_key()
+    masked = mask_api_key(api_key) if api_key else None
     return OpenPublicApiKeyStatusResponse(
         configured=bool(api_key),
         masked_key=masked,
@@ -35,7 +35,7 @@ def _build_api_key_status() -> OpenPublicApiKeyStatusResponse:
 
 @router.get("/api/runtime", response_model=RuntimeFeaturesResponse)
 def get_runtime_features() -> RuntimeFeaturesResponse:
-    return RuntimeFeaturesResponse(**_get_runtime_features())
+    return RuntimeFeaturesResponse(**get_runtime_features())
 
 
 @router.get(
@@ -58,7 +58,7 @@ def update_open_public_api_key(
     cleaned = payload.api_key.strip()
     if not cleaned:
         raise HTTPException(status_code=400, detail="API Key 不能为空")
-    _set_public_api_key(cleaned)
+    set_public_api_key(cleaned)
     return _build_api_key_status()
 
 
@@ -68,5 +68,5 @@ def update_open_public_api_key(
 )
 def clear_open_public_api_key() -> OpenPublicApiKeyStatusResponse:
     _ensure_open_public_mode()
-    _clear_public_api_key()
+    clear_public_api_key()
     return _build_api_key_status()

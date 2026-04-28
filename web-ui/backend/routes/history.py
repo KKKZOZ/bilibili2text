@@ -9,7 +9,8 @@ from b2t.config import resolve_summarize_model_profile, resolve_summary_preset_n
 from b2t.history import build_history_artifacts
 from b2t.storage import StoredArtifact
 
-from backend.downloads import _store_download
+from backend.download_registry import download_registry
+from backend.dependencies import get_history_db, get_storage_backend
 from backend.services import _run_summary_only_from_existing
 from backend.schemas import (
     HistoryRegenerateSummaryRequest,
@@ -18,14 +19,7 @@ from backend.schemas import (
     HistoryItemResponse,
     HistoryListResponse,
 )
-from backend.state import (
-    _download_index,
-    _download_lock,
-    _get_history_db,
-    _get_runtime_app_config,
-    _get_storage_backend,
-    _is_delete_enabled,
-)
+from backend.settings import get_runtime_app_config, is_delete_enabled
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -80,7 +74,7 @@ def _to_history_detail_response(
             storage_key=artifact.storage_key,
             backend=artifact.backend,
         )
-        download_id = _store_download(stored)
+        download_id = download_registry.store_artifact(stored)
         artifacts.append(
             HistoryDetailArtifactResponse(
                 kind=artifact.kind,
@@ -114,7 +108,7 @@ def list_history(
     record_type: str = Query(default=""),
 ) -> HistoryListResponse:
     try:
-        db = _get_history_db()
+        db = get_history_db()
     except Exception as exc:
         raise HTTPException(
             status_code=503,
@@ -147,7 +141,7 @@ def list_history(
 @router.get("/api/history/{run_id}", response_model=HistoryDetailResponse)
 def history_detail(run_id: str) -> HistoryDetailResponse:
     try:
-        db = _get_history_db()
+        db = get_history_db()
     except Exception as exc:
         raise HTTPException(
             status_code=503,
@@ -170,7 +164,7 @@ def regenerate_history_summary(
     payload: HistoryRegenerateSummaryRequest,
 ) -> HistoryDetailResponse:
     try:
-        db = _get_history_db()
+        db = get_history_db()
     except Exception as exc:
         raise HTTPException(
             status_code=503,
@@ -182,8 +176,8 @@ def regenerate_history_summary(
         raise HTTPException(status_code=404, detail="转录记录不存在")
 
     try:
-        config = _get_runtime_app_config(require_public_api_key=True)
-        storage_backend = _get_storage_backend()
+        config = get_runtime_app_config(require_public_api_key=True)
+        storage_backend = get_storage_backend()
     except FileNotFoundError as exc:
         raise HTTPException(
             status_code=503,
@@ -285,13 +279,13 @@ def regenerate_history_summary(
     response_model=HistoryDetailResponse,
 )
 def delete_history_artifact(run_id: str, download_id: str) -> HistoryDetailResponse:
-    if not _is_delete_enabled():
+    if not is_delete_enabled():
         raise HTTPException(
             status_code=403,
             detail="open-public 模式不允许删除文件",
         )
     try:
-        db = _get_history_db()
+        db = get_history_db()
     except Exception as exc:
         raise HTTPException(
             status_code=503,
@@ -302,8 +296,7 @@ def delete_history_artifact(run_id: str, download_id: str) -> HistoryDetailRespo
     if detail is None:
         raise HTTPException(status_code=404, detail="转录记录不存在")
 
-    with _download_lock:
-        target_stored = _download_index.get(download_id)
+    target_stored = download_registry.get_artifact(download_id)
     if target_stored is None:
         raise HTTPException(status_code=404, detail="文件下载链接不存在或已过期")
 
@@ -325,7 +318,7 @@ def delete_history_artifact(run_id: str, download_id: str) -> HistoryDetailRespo
         if not storage_keys_to_delete:
             storage_keys_to_delete = {target_artifact.storage_key}
 
-    storage_backend = _get_storage_backend()
+    storage_backend = get_storage_backend()
     failed_files: list[str] = []
     for artifact in detail.artifacts:
         if artifact.storage_key not in storage_keys_to_delete:
@@ -341,14 +334,7 @@ def delete_history_artifact(run_id: str, download_id: str) -> HistoryDetailRespo
             detail=f"删除部分文件失败: {', '.join(failed_files)}",
         )
 
-    with _download_lock:
-        stale_ids = [
-            item_id
-            for item_id, artifact in _download_index.items()
-            if artifact.storage_key in storage_keys_to_delete
-        ]
-        for item_id in stale_ids:
-            _download_index.pop(item_id, None)
+    download_registry.remove_artifacts_by_storage_keys(storage_keys_to_delete)
 
     remained_artifacts = [
         item for item in detail.artifacts if item.storage_key not in storage_keys_to_delete
@@ -385,13 +371,13 @@ def delete_history_artifact(run_id: str, download_id: str) -> HistoryDetailRespo
 @router.delete("/api/history/{run_id}")
 def delete_history(run_id: str) -> dict[str, str]:
     """Delete a history record and its associated files."""
-    if not _is_delete_enabled():
+    if not is_delete_enabled():
         raise HTTPException(
             status_code=403,
             detail="open-public 模式不允许删除历史记录",
         )
     try:
-        db = _get_history_db()
+        db = get_history_db()
     except Exception as exc:
         raise HTTPException(
             status_code=503,
@@ -407,7 +393,7 @@ def delete_history(run_id: str) -> dict[str, str]:
     artifacts = db.delete_run(run_id)
 
     # Delete files
-    storage_backend = _get_storage_backend()
+    storage_backend = get_storage_backend()
     deleted_count = 0
     failed_files: list[str] = []
 

@@ -11,14 +11,9 @@ from fastapi.responses import StreamingResponse
 from b2t.converter.converter import ConversionFormat, convert_file
 from b2t.storage.base import classify_artifact_filename
 
-from backend.downloads import (
-    _content_cache,
-    _content_cache_lock,
-    _media_type_for_filename,
-    _store_download,
-)
+from backend.download_registry import download_registry, media_type_for_filename
 from backend.schemas import ConvertRequest, ConvertResponse
-from backend.state import _download_index, _download_lock, _get_storage_backend
+from backend.dependencies import get_storage_backend
 
 router = APIRouter()
 
@@ -26,24 +21,22 @@ router = APIRouter()
 @router.get("/api/download/{download_id}")
 def download_markdown(download_id: str) -> StreamingResponse:
     # Check in-memory content cache first (e.g. RAG answers)
-    with _content_cache_lock:
-        cached = _content_cache.get(download_id)
+    cached = download_registry.get_content(download_id)
     if cached is not None:
         content, filename = cached
         quoted_filename = quote(filename)
         return StreamingResponse(
             iter([content]),
-            media_type=_media_type_for_filename(filename),
+            media_type=media_type_for_filename(filename),
             headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quoted_filename}"},
         )
 
-    with _download_lock:
-        artifact = _download_index.get(download_id)
+    artifact = download_registry.get_artifact(download_id)
 
     if artifact is None:
         raise HTTPException(status_code=404, detail="下载链接不存在或已过期")
 
-    storage_backend = _get_storage_backend()
+    storage_backend = get_storage_backend()
     stream_cm = storage_backend.open_stream(artifact.storage_key)
     try:
         stream = stream_cm.__enter__()
@@ -68,7 +61,7 @@ def download_markdown(download_id: str) -> StreamingResponse:
     quoted_filename = quote(artifact.filename)
     return StreamingResponse(
         iter_stream(),
-        media_type=_media_type_for_filename(artifact.filename),
+        media_type=media_type_for_filename(artifact.filename),
         headers={
             "Content-Disposition": f"attachment; filename*=UTF-8''{quoted_filename}"
         },
@@ -84,8 +77,7 @@ def convert_artifact(payload: ConvertRequest) -> ConvertResponse:
     - Markdown -> txt, pdf, png, html
     - HTML (fancy) -> png
     """
-    with _download_lock:
-        artifact = _download_index.get(payload.download_id)
+    artifact = download_registry.get_artifact(payload.download_id)
 
     if artifact is None:
         raise HTTPException(status_code=404, detail="下载链接不存在或已过期")
@@ -114,7 +106,7 @@ def convert_artifact(payload: ConvertRequest) -> ConvertResponse:
             detail=f"不支持转换此文件类型: {source_suffix}",
         )
 
-    storage_backend = _get_storage_backend()
+    storage_backend = get_storage_backend()
 
     # 下载源文件到临时目录
     with tempfile.TemporaryDirectory(prefix="b2t-convert-") as temp_dir:
@@ -203,7 +195,7 @@ def convert_artifact(payload: ConvertRequest) -> ConvertResponse:
             ) from exc
 
     # 注册下载
-    download_id = _store_download(converted_artifact)
+    download_id = download_registry.store_artifact(converted_artifact)
 
     return ConvertResponse(
         download_url=f"/api/download/{download_id}",

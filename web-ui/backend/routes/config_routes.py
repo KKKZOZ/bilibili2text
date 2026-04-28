@@ -14,7 +14,7 @@ from backend.schemas import (
     SummaryProfileItemResponse,
     SummaryProfileListResponse,
 )
-from backend.state import _get_runtime_app_config
+from backend.settings import get_runtime_app_config
 
 router = APIRouter()
 
@@ -22,7 +22,7 @@ router = APIRouter()
 @router.get("/api/summary-presets", response_model=SummaryPresetListResponse)
 def summary_presets() -> SummaryPresetListResponse:
     try:
-        config = _get_runtime_app_config()
+        config = get_runtime_app_config()
     except FileNotFoundError as exc:
         raise HTTPException(
             status_code=503,
@@ -52,7 +52,7 @@ def summary_presets() -> SummaryPresetListResponse:
 @router.get("/api/summarize-profiles", response_model=SummaryProfileListResponse)
 def summarize_profiles() -> SummaryProfileListResponse:
     try:
-        config = _get_runtime_app_config()
+        config = get_runtime_app_config()
     except FileNotFoundError as exc:
         raise HTTPException(
             status_code=503,

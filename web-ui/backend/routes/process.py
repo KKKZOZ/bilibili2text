@@ -4,11 +4,11 @@ import shutil
 import tempfile
 from pathlib import Path
 import re
-from threading import Thread
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from backend.jobs import _create_job, _get_job, _list_active_jobs
+from backend.job_store import job_repository
 from backend.runner import _run_job
 from backend.schemas import (
     ActiveJobItem,
@@ -18,7 +18,8 @@ from backend.schemas import (
     ProcessStartResponse,
     ProcessStatusResponse,
 )
-from backend.state import _get_runtime_app_config, _is_upload_enabled, _job_index, _job_lock, _utc_iso
+from backend.settings import get_runtime_app_config, is_upload_enabled
+from backend.task_queue import submit_job
 
 router = APIRouter()
 _UPLOAD_BVID_NAME_PATTERN = re.compile(r"^(BV[0-9A-Za-z]{10})_(.+)$", re.IGNORECASE)
@@ -78,7 +79,7 @@ def _validate_upload_filename(filename: str) -> tuple[str, str]:
 
 def _ensure_runtime_ready() -> None:
     try:
-        _get_runtime_app_config(require_public_api_key=True)
+        get_runtime_app_config(require_public_api_key=True)
     except FileNotFoundError as exc:
         raise HTTPException(
             status_code=503,
@@ -108,18 +109,15 @@ def process_video(payload: ProcessRequest) -> ProcessStartResponse:
         summary_profile=summary_profile,
         auto_generate_fancy_html=payload.auto_generate_fancy_html,
     )
-    Thread(
-        target=_run_job,
-        kwargs={
-            "job_id": str(job["job_id"]),
-            "url": payload.url.strip(),
-            "skip_summary": payload.skip_summary,
-            "summary_preset": summary_preset,
-            "summary_profile": summary_profile,
-            "auto_generate_fancy_html": payload.auto_generate_fancy_html,
-        },
-        daemon=True,
-    ).start()
+    submit_job(
+        _run_job,
+        job_id=str(job["job_id"]),
+        url=payload.url.strip(),
+        skip_summary=payload.skip_summary,
+        summary_preset=summary_preset,
+        summary_profile=summary_profile,
+        auto_generate_fancy_html=payload.auto_generate_fancy_html,
+    )
 
     return ProcessStartResponse(job_id=str(job["job_id"]))
 
@@ -132,7 +130,7 @@ def process_uploaded_audio(
     summary_profile: str | None = Form(default=None),
     auto_generate_fancy_html: bool = Form(default=False),
 ) -> ProcessStartResponse:
-    if not _is_upload_enabled():
+    if not is_upload_enabled():
         raise HTTPException(
             status_code=403,
             detail="open-public 模式不允许直接上传音频文件，请改为输入视频 URL 或 BV 号",
@@ -168,20 +166,17 @@ def process_uploaded_audio(
         summary_profile=cleaned_summary_profile,
         auto_generate_fancy_html=auto_generate_fancy_html,
     )
-    Thread(
-        target=_run_job,
-        kwargs={
-            "job_id": str(job["job_id"]),
-            "url": None,
-            "input_audio_path": str(upload_path),
-            "input_bvid": bvid,
-            "skip_summary": skip_summary,
-            "summary_preset": cleaned_summary_preset,
-            "summary_profile": cleaned_summary_profile,
-            "auto_generate_fancy_html": auto_generate_fancy_html,
-        },
-        daemon=True,
-    ).start()
+    submit_job(
+        _run_job,
+        job_id=str(job["job_id"]),
+        url=None,
+        input_audio_path=str(upload_path),
+        input_bvid=bvid,
+        skip_summary=skip_summary,
+        summary_preset=cleaned_summary_preset,
+        summary_profile=cleaned_summary_profile,
+        auto_generate_fancy_html=auto_generate_fancy_html,
+    )
 
     return ProcessStartResponse(job_id=str(job["job_id"]))
 
@@ -194,21 +189,14 @@ def list_active_jobs() -> ActiveJobsResponse:
 
 @router.post("/api/process/{job_id}/cancel")
 def cancel_job(job_id: str) -> dict:
-    with _job_lock:
-        job = _job_index.get(job_id)
-        if job is None:
-            raise HTTPException(status_code=404, detail="任务不存在或已过期")
-        status = str(job.get("status") or "")
-        if status not in ("queued", "running"):
-            raise HTTPException(
-                status_code=400,
-                detail=f"只能取消进行中的任务（当前状态：{status}）",
-            )
-        job["status"] = "cancelled"
-        job["stage"] = "cancelled"
-        job["stage_label"] = "任务已取消"
-        job["error"] = "任务已被用户取消"
-        job["updated_at"] = _utc_iso()
+    cancelled, status = job_repository.cancel(job_id)
+    if status is None:
+        raise HTTPException(status_code=404, detail="任务不存在或已过期")
+    if not cancelled:
+        raise HTTPException(
+            status_code=400,
+            detail=f"只能取消进行中的任务（当前状态：{status}）",
+        )
     return {"ok": True, "job_id": job_id}
 
 
@@ -291,5 +279,8 @@ def process_status(job_id: str) -> ProcessStatusResponse:
         else {},
         created_at=str(job["created_at"]),
         updated_at=str(job["updated_at"]),
+        author=job["author"] if isinstance(job.get("author"), str) else None,
+        pubdate=job["pubdate"] if isinstance(job.get("pubdate"), str) else None,
+        bvid=job["bvid"] if isinstance(job.get("bvid"), str) else None,
         title=job["title"] if isinstance(job.get("title"), str) else None,
     )

@@ -21,8 +21,8 @@ from b2t.summarize.llm import (
     summarize,
 )
 
-from backend.downloads import _store_download
-from backend.state import _get_history_db
+from backend.dependencies import get_history_db
+from backend.download_registry import download_registry
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +63,7 @@ def _build_success_download_fields(
         raise ValueError("未生成 Markdown 文件")
 
     payload: dict[str, str | None] = {
-        "download_url": f"/api/download/{_store_download(md_artifact)}",
+        "download_url": f"/api/download/{download_registry.store_artifact(md_artifact)}",
         "filename": md_artifact.filename,
         "txt_download_url": None,
         "txt_filename": None,
@@ -77,27 +77,29 @@ def _build_success_download_fields(
 
     txt_artifact = results.get("text")
     if txt_artifact is not None:
-        payload["txt_download_url"] = f"/api/download/{_store_download(txt_artifact)}"
+        payload["txt_download_url"] = (
+            f"/api/download/{download_registry.store_artifact(txt_artifact)}"
+        )
         payload["txt_filename"] = txt_artifact.filename
 
     summary_artifact = results.get("summary")
     if summary_artifact is not None:
         payload["summary_download_url"] = (
-            f"/api/download/{_store_download(summary_artifact)}"
+            f"/api/download/{download_registry.store_artifact(summary_artifact)}"
         )
         payload["summary_filename"] = summary_artifact.filename
 
     summary_txt_artifact = results.get("summary_text")
     if summary_txt_artifact is not None:
         payload["summary_txt_download_url"] = (
-            f"/api/download/{_store_download(summary_txt_artifact)}"
+            f"/api/download/{download_registry.store_artifact(summary_txt_artifact)}"
         )
         payload["summary_txt_filename"] = summary_txt_artifact.filename
 
     summary_table_pdf_artifact = results.get("summary_table_pdf")
     if summary_table_pdf_artifact is not None:
         payload["summary_table_pdf_download_url"] = (
-            f"/api/download/{_store_download(summary_table_pdf_artifact)}"
+            f"/api/download/{download_registry.store_artifact(summary_table_pdf_artifact)}"
         )
         payload["summary_table_pdf_filename"] = summary_table_pdf_artifact.filename
 
@@ -114,7 +116,7 @@ def _build_all_download_items(
             continue
         seen_keys.add(artifact.storage_key)
 
-        download_id = _store_download(artifact)
+        download_id = download_registry.store_artifact(artifact)
         kind = classify_artifact_filename(artifact.filename) or "file"
         items.append(
             {
@@ -230,7 +232,7 @@ def _run_summary_only_from_existing(
     resolved_pubdate = pubdate.strip()
     if not (resolved_title and resolved_author and resolved_pubdate):
         try:
-            detail = _get_history_db().get_run_detail(
+            detail = get_history_db().get_run_detail(
                 infer_run_id(markdown_artifact.storage_key, bvid=bvid)
             )
         except Exception as exc:
@@ -380,7 +382,7 @@ def _merge_history_artifact(
     fancy_html_error: str | None = None,
 ) -> object | None:
     try:
-        db = _get_history_db()
+        db = get_history_db()
     except Exception as exc:
         logger.warning("无法初始化历史数据库，跳过 fancy HTML 归档: %s", exc)
         return None
@@ -452,7 +454,7 @@ def _merge_history_artifact(
 
 def _artifact_download_item(artifact: StoredArtifact) -> dict[str, str]:
     return {
-        "url": f"/api/download/{_store_download(artifact)}",
+        "url": f"/api/download/{download_registry.store_artifact(artifact)}",
         "filename": artifact.filename,
         "kind": classify_artifact_filename(artifact.filename) or "file",
     }
@@ -472,7 +474,7 @@ def _record_history(
     Returns the run_id if successful, None otherwise.
     """
     try:
-        db = _get_history_db()
+        db = get_history_db()
     except Exception as exc:
         logger.warning("无法初始化历史数据库，跳过记录: %s", exc)
         return None

@@ -1,8 +1,5 @@
 """FastAPI service for bilibili-to-text."""
 
-# state must be imported first to ensure sys.path is configured for b2t imports.
-from backend import state as _state  # noqa: F401
-
 import logging
 
 from fastapi import FastAPI
@@ -19,6 +16,7 @@ from backend.routes.process import router as process_router
 from backend.routes.rag import router as rag_router
 from backend.routes.runtime_routes import router as runtime_router
 from backend.routes.summary import router as summary_router
+from backend.task_queue import shutdown_task_queues
 
 app = FastAPI(title="bilibili-to-text API", version="0.1.0")
 logger = logging.getLogger(__name__)
@@ -46,6 +44,7 @@ def on_startup() -> None:
 
 @app.on_event("shutdown")
 def on_shutdown() -> None:
+    shutdown_task_queues()
     shutdown_png_renderer()
 
 

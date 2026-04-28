@@ -24,12 +24,9 @@ from backend.schemas_rag import (
     RagSourceItem,
     RagStatusResponse,
 )
-from backend.state import (
-    _get_app_config,
-    _get_history_db,
-    _get_rag_store,
-    _get_storage_backend,
-)
+from backend.dependencies import get_history_db, get_rag_store, get_storage_backend
+from backend.download_registry import download_registry
+from backend.settings import get_app_config
 
 router = APIRouter(prefix="/api/rag", tags=["rag"])
 logger = logging.getLogger(__name__)
@@ -47,7 +44,7 @@ def _shanghai_now() -> datetime:
 
 
 def _require_rag_enabled() -> None:
-    config = _get_app_config()
+    config = get_app_config()
     if not config.rag.enabled:
         raise HTTPException(
             status_code=503,
@@ -59,8 +56,8 @@ def _require_rag_enabled() -> None:
 def rag_authors() -> RagAuthorsResponse:
     """Return UP主 list that have indexed content."""
     _require_rag_enabled()
-    store = _get_rag_store()
-    history_db = _get_history_db()
+    store = get_rag_store()
+    history_db = get_history_db()
 
     indexed_ids = store.list_indexed_run_ids()
     all_authors = history_db.list_authors()
@@ -79,9 +76,9 @@ def rag_authors() -> RagAuthorsResponse:
 async def rag_query_stream(question: str, filter_authors: str = "", llm_profile: str = "") -> StreamingResponse:
     """Stream RAG query progress as Server-Sent Events."""
     _require_rag_enabled()
-    config = _get_app_config()
-    store = _get_rag_store()
-    history_db = _get_history_db()
+    config = get_app_config()
+    store = get_rag_store()
+    history_db = get_history_db()
 
     # Build ChromaDB where filter from author list
     where_filter: dict | None = None
@@ -197,9 +194,8 @@ async def rag_query_stream(question: str, filter_authors: str = "", llm_profile:
             answer_bytes = answer_md.encode("utf-8")
 
             # Register in-memory download
-            from backend.downloads import _store_content_download  # noqa: PLC0415
             download_id = await asyncio.to_thread(
-                _store_content_download, answer_bytes, answer_filename
+                download_registry.store_content, answer_bytes, answer_filename
             )
 
             # Persist to storage and record in history (best-effort)
@@ -207,10 +203,9 @@ async def rag_query_stream(question: str, filter_authors: str = "", llm_profile:
                 import tempfile  # noqa: PLC0415
                 from pathlib import Path  # noqa: PLC0415
                 from b2t.history import HistoryArtifact, record_rag_query  # noqa: PLC0415
-                from backend.state import _get_storage_backend  # noqa: PLC0415
 
                 def _persist():
-                    storage = _get_storage_backend()
+                    storage = get_storage_backend()
                     with tempfile.NamedTemporaryFile(
                         suffix=".md", delete=False, prefix="rag_answer_"
                     ) as tmp:
@@ -256,8 +251,8 @@ async def rag_query_stream(question: str, filter_authors: str = "", llm_profile:
 def rag_query(request: RagQueryRequest) -> RagQueryResponse:
     """Answer a question using RAG over indexed video transcripts."""
     _require_rag_enabled()
-    config = _get_app_config()
-    store = _get_rag_store()
+    config = get_app_config()
+    store = get_rag_store()
 
     try:
         from b2t.rag.retriever import retrieve_and_answer
@@ -291,10 +286,10 @@ def rag_query(request: RagQueryRequest) -> RagQueryResponse:
 def rag_index_run(run_id: str, request: RagIndexRequest) -> RagIndexResponse:
     """Index a single run into the RAG store."""
     _require_rag_enabled()
-    config = _get_app_config()
-    store = _get_rag_store()
-    history_db = _get_history_db()
-    storage_backend = _get_storage_backend()
+    config = get_app_config()
+    store = get_rag_store()
+    history_db = get_history_db()
+    storage_backend = get_storage_backend()
 
     try:
         from b2t.rag.indexer import index_run
@@ -319,10 +314,10 @@ def rag_index_run(run_id: str, request: RagIndexRequest) -> RagIndexResponse:
 def rag_index_all(request: RagIndexRequest) -> RagIndexAllResponse:
     """Index all runs in history (synchronous, runs in thread pool)."""
     _require_rag_enabled()
-    config = _get_app_config()
-    store = _get_rag_store()
-    history_db = _get_history_db()
-    storage_backend = _get_storage_backend()
+    config = get_app_config()
+    store = get_rag_store()
+    history_db = get_history_db()
+    storage_backend = get_storage_backend()
 
     def _do_index_all():
         from b2t.rag.indexer import index_all_runs
@@ -364,7 +359,7 @@ def rag_index_all(request: RagIndexRequest) -> RagIndexAllResponse:
 @router.get("/status", response_model=RagStatusResponse)
 def rag_status() -> RagStatusResponse:
     """Return RAG index status."""
-    config = _get_app_config()
+    config = get_app_config()
     if not config.rag.enabled:
         return RagStatusResponse(
             enabled=False,
@@ -376,8 +371,8 @@ def rag_status() -> RagStatusResponse:
             indexed_items=[],
         )
 
-    store = _get_rag_store()
-    history_db = _get_history_db()
+    store = get_rag_store()
+    history_db = get_history_db()
     try:
         total_chunks = store.count()
         raw_indexed_run_ids = sorted(store.list_indexed_run_ids())

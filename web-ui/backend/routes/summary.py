@@ -9,16 +9,11 @@ from b2t.history import infer_run_id
 from b2t.storage import StoredArtifact
 from b2t.storage.base import classify_artifact_filename
 
-from backend.downloads import _store_download
+from backend.dependencies import get_history_db, get_storage_backend
+from backend.download_registry import download_registry
 from backend.schemas import GenerateFancyHtmlRequest, GenerateFancyHtmlResponse
 from backend.services import _merge_history_artifact, _run_fancy_html_only_from_summary
-from backend.state import (
-    _download_index,
-    _download_lock,
-    _get_history_db,
-    _get_runtime_app_config,
-    _get_storage_backend,
-)
+from backend.settings import get_runtime_app_config
 
 from .history import _to_history_detail_response
 
@@ -36,8 +31,7 @@ def _infer_bvid_from_filename(filename: str) -> str | None:
 
 @router.post("/api/summary/fancy-html", response_model=GenerateFancyHtmlResponse)
 def generate_fancy_html(payload: GenerateFancyHtmlRequest) -> GenerateFancyHtmlResponse:
-    with _download_lock:
-        source_artifact = _download_index.get(payload.download_id)
+    source_artifact = download_registry.get_artifact(payload.download_id)
 
     if source_artifact is None:
         raise HTTPException(status_code=404, detail="下载链接不存在或已过期")
@@ -45,8 +39,8 @@ def generate_fancy_html(payload: GenerateFancyHtmlRequest) -> GenerateFancyHtmlR
         raise HTTPException(status_code=400, detail="仅支持基于总结 Markdown 或知识库回答生成 fancy HTML")
 
     try:
-        config = _get_runtime_app_config(require_public_api_key=True)
-        storage_backend = _get_storage_backend()
+        config = get_runtime_app_config(require_public_api_key=True)
+        storage_backend = get_storage_backend()
     except FileNotFoundError as exc:
         raise HTTPException(
             status_code=503,
@@ -67,7 +61,7 @@ def generate_fancy_html(payload: GenerateFancyHtmlRequest) -> GenerateFancyHtmlR
         run_id = infer_run_id(source_artifact.storage_key, bvid=inferred_bvid)
 
     if run_id:
-        db = _get_history_db()
+        db = get_history_db()
         detail = db.get_run_detail(run_id)
         if detail is not None and detail.record_type == "rag_query":
             if detail.fancy_html_status == "running":
@@ -125,7 +119,7 @@ def generate_fancy_html(payload: GenerateFancyHtmlRequest) -> GenerateFancyHtmlR
         ) from exc
 
     if run_id and inferred_bvid:
-        db = _get_history_db()
+        db = get_history_db()
         if db.get_run_detail(run_id) is not None:
             detail = _merge_history_artifact(
                 run_id=run_id,
@@ -151,7 +145,7 @@ def generate_fancy_html(payload: GenerateFancyHtmlRequest) -> GenerateFancyHtmlR
         if detail is not None:
             history_detail = _to_history_detail_response(detail)
 
-    download_id = _store_download(
+    download_id = download_registry.store_artifact(
         StoredArtifact(
             filename=fancy_artifact.filename,
             storage_key=fancy_artifact.storage_key,
