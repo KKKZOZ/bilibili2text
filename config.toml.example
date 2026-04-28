@@ -6,7 +6,8 @@ db_dir = "./db_data"
 
 [storage]
 # 可选: "local"、"minio"、"alicloud"
-backend = "minio"
+# Groq 转录可以使用 local；Qwen/DashScope 文件转录需要 minio 或 alicloud 提供公网临时 URL。
+backend = "local"
 
 [storage.minio]
 endpoint = "127.0.0.1:9000"
@@ -31,7 +32,9 @@ auto_create_bucket = false
 
 [stt]
 # 当前启用的 STT profile
-profile = "qwen-main"
+# 开箱默认使用 groq-main，避免必须先配置对象存储。
+# 如需 DashScope/Qwen ASR，将这里改为 "qwen-main"，并配置 storage.alicloud 或 storage.minio。
+profile = "groq-main"
 
 [stt.profiles.qwen-main]
 provider = "qwen"
@@ -46,7 +49,7 @@ qwen_base_url = "https://dashscope.aliyuncs.com/api/v1"
 [stt.profiles.groq-main]
 provider = "groq"
 language = "zh"
-storage_profile = "minio"
+storage_profile = "local"
 # groq_api_key 可从 https://console.groq.com/keys 获取
 groq_api_key = "your-groq-api-key"
 groq_model = "whisper-large-v3-turbo"
@@ -91,7 +94,7 @@ profile = "openrouter-main"
 min_length = 60
 
 [rag]
-enabled = true
+enabled = false
 collection_name = "b2t_rag"
 chroma_dir = "./chroma_data"
 chunk_size = 800
@@ -108,7 +111,7 @@ api_key = "your-dashscope-api-key"
 
 [feishu]
 # 可选: "disabled"、"webhook"、"app"
-mode = "webhook"
+mode = "disabled"
 # mode=webhook 时使用群机器人 webhook
 webhook_url = "https://open.feishu.cn/open-apis/bot/v2/hook/your-webhook-token"
 # mode=app 时使用自建应用发卡片
@@ -131,7 +134,7 @@ DedeUserID__ckMd5 = ""
 refresh_token = ""
 
 [monitor]
-enabled = true
+enabled = false
 state_file = "./db_data/bilibili_monitor_state.json"
 user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 lookback_hours = 48
@@ -144,12 +147,8 @@ summary_profile = ""
 # 为空时复用 download.output_dir
 output_dir = ""
 
-[[monitor.creators]]
-uid = 11473291
-name = "笨笨的芝菜"
-check_interval = 300
-
-[[monitor.creators]]
-uid = 550494308
-name = "卢本圆复盘"
-check_interval = 300
+# 监控功能的 creator 配置暂不在 README 中展开。需要时按下面格式添加：
+# [[monitor.creators]]
+# uid = 123456
+# name = "creator-name"
+# check_interval = 300

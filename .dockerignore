@@ -3,15 +3,26 @@
 .DS_Store
 .claude
 .venv
+.uv-cache
+.pytest_cache
 __pycache__/
 *.pyc
 
 web-ui/frontend/node_modules
 web-ui/frontend/dist
+web-ui/logs
+web-ui/transcriptions
 
 test-audio
 transcriptions
+db_data
+chroma_data
 
 config.toml
+*.local.toml
+.env
+.env.*
 scripts.md
 bilibili_to_text.egg-info
+AIFeedTracker
+doubao-test

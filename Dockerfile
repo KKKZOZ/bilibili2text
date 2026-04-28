@@ -14,7 +14,6 @@ ENV UV_PROJECT_ENVIRONMENT=/opt/venv
 COPY pyproject.toml uv.lock README.md ./
 COPY b2t ./b2t
 COPY web-ui/backend ./web-ui/backend
-COPY audio_chunking.py ./
 RUN uv sync --frozen --no-dev
 
 FROM python:3.12-slim-bookworm
@@ -46,7 +45,6 @@ COPY --from=frontend-builder /app/web-ui/frontend/dist /usr/share/nginx/html
 
 COPY b2t ./b2t
 COPY web-ui/backend ./web-ui/backend
-COPY audio_chunking.py ./
 COPY config.toml.example ./config.toml.example
 COPY docker/nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY docker/entrypoint.sh /entrypoint.sh

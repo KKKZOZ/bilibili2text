@@ -1,3 +1,14 @@
+# OS / editor
+.DS_Store
+.claude/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+config.toml
+*.local.toml
+
 # Python-generated files
 __pycache__/
 *.py[oc]
@@ -5,34 +16,30 @@ build/
 dist/
 wheels/
 *.egg-info
+.pytest_cache/
+.uv-cache/
 
 # Virtual environments
-.venv
+.venv/
 
-# Config with secrets
-config.toml
-
-test-audio/*
-transcriptions/*
-db_data/*
-chroma_data/*
-
-*.md
-*.pdf
-*.m4a
-*.mp3
-*.txt
-*.json
-*.log
-*.png
-*.html
-
-*license
+# Runtime data and generated outputs
+/test-audio/
+/transcriptions/
+/web-ui/transcriptions/
+/db_data/
+/chroma_data/
+/web-ui/logs/
+/input.md
+/output.*
+/raw*.md
+/raw*.txt
+/terminal_input_answer.md
+/scripts.md
 
 # Frontend
 web-ui/frontend/node_modules/
 web-ui/frontend/dist/
 
-doubao-test/*
-
-AIFeedTracker/*
+# Local scratch / external experiments
+/doubao-test/
+/AIFeedTracker/

@@ -1,180 +1,221 @@
 # bilibili-to-text
 
-Convert Bilibili videos into structured text, Markdown transcripts, and LLM-generated summaries.
+Bilibili 视频转文字工具，支持下载音频、语音转录、生成 Markdown/TXT、LLM 总结，以及通过 Web UI 管理处理结果。
 
-`bilibili-to-text` provides both a command-line pipeline and a Web UI for downloading Bilibili audio, transcribing speech, converting transcripts to Markdown/TXT, generating summaries, storing artifacts, and optionally monitoring creators for new videos.
+当前 README 只覆盖 CLI 和前后端 Web UI 的本地运行。`monitor` 相关能力仍保留在代码中，但暂不作为开源上手流程的一部分展开。
 
-## Features
+## 功能
 
-- Download audio from Bilibili videos with `yutto`
-- Transcribe audio with configurable STT providers:
-  - Alibaba DashScope / Qwen ASR
+- 使用 `yutto` 下载 Bilibili 视频音频
+- 语音转文字：
   - Groq Whisper-compatible ASR
-- Generate cleaned Markdown transcripts from STT JSON output
-- Summarize transcripts with configurable LiteLLM-compatible model profiles
-- Store generated artifacts locally, in MinIO, or in Alibaba Cloud OSS
-- Run a FastAPI + Vue Web UI for browser-based processing
-- Query indexed transcript history with the optional RAG module
-- Monitor Bilibili creators and send Feishu notifications for new videos
-- Export and format Markdown-derived outputs, including table-oriented PDF/PNG workflows
+  - Alibaba DashScope / Qwen ASR
+- 转录 JSON 转 Markdown/TXT
+- 使用 LiteLLM-compatible 接口生成总结
+- 本地、MinIO、Alibaba Cloud OSS 三种产物存储后端
+- FastAPI + Vue/Vite Web UI
+- 可选 RAG 检索历史转录内容
+- Markdown 派生的 PDF/PNG/HTML 转换工具
 
-## Project Structure
+## 开源前隐私检查
+
+不要提交下面这些本地文件或目录：
+
+- `config.toml`、`.env*`、`*.local.toml`：通常包含 API Key、Bilibili Cookie、对象存储密钥
+- `transcriptions/`、`web-ui/transcriptions/`：音频、转录文本、总结内容
+- `db_data/`、`chroma_data/`：历史数据库、向量数据库、monitor 状态
+- `web-ui/logs/`：本地服务日志
+- `.claude/`：本机 Claude/Codex 工具权限配置
+- `test-audio/`、`doubao-test/`、`AIFeedTracker/`：本地测试或外部实验数据
+
+仓库已用 `.gitignore` 和 `.dockerignore` 忽略上述内容。开源前仍建议再跑一次：
+
+```bash
+git status --short
+git grep -n -E "(api[_-]?key|secret|token|password|cookie|authorization|bearer|sk-)"
+```
+
+如果之前曾把真实密钥提交进 git 历史，应先吊销并重新生成密钥；仅从当前版本删除文件并不能清理历史记录。
+
+## 目录结构
 
 ```text
 .
-|-- b2t/                  # Core Python package and CLI pipeline
-|   |-- download/         # Bilibili/yutto download integration
-|   |-- stt/              # Speech-to-text providers
-|   |-- converter/        # JSON, Markdown, TXT, PDF, PNG converters
-|   |-- summarize/        # LLM summary generation
-|   |-- storage/          # Local, MinIO, and Alibaba Cloud OSS backends
-|   |-- rag/              # ChromaDB-based retrieval utilities
-|   `-- monitor/          # Bilibili creator monitoring and Feishu notifications
-|-- web-ui/               # FastAPI backend and Vue/Vite frontend
-|-- tests/                # Pytest test suite
-|-- scripts/              # Utility and maintenance scripts
-|-- config.toml.example   # Main configuration template
-|-- summary_presets.toml  # Summary prompt presets
-|-- justfile              # Common local commands
-`-- Dockerfile            # Single-container Web UI deployment
+|-- b2t/                  # 核心 Python 包和 CLI pipeline
+|-- web-ui/backend/       # FastAPI 后端
+|-- web-ui/frontend/      # Vue + Vite 前端
+|-- tests/                # Pytest 测试
+|-- scripts/              # 辅助脚本
+|-- config.toml.example   # 本地配置模板
+|-- summary_presets.toml  # 总结 prompt presets
+|-- justfile              # 常用本地命令
+`-- Dockerfile            # 单容器 Web UI 部署
 ```
 
-## Requirements
+## 环境要求
 
 - Python 3.12+
-- [uv](https://docs.astral.sh/uv/) for Python dependency management
-- [Bun](https://bun.sh/) for the Web UI frontend
-- `ffmpeg` for audio processing
-- `pandoc` for Markdown/TXT/PDF-related conversion workflows
-- Chromium installed through Playwright when using PNG/PDF rendering helpers:
+- [uv](https://docs.astral.sh/uv/)
+- [Bun](https://bun.sh/)
+- `ffmpeg`
+- `pandoc`
+- 需要 PDF/PNG 渲染时安装 Playwright Chromium
+
+macOS 可用 Homebrew 安装系统依赖：
 
 ```bash
-uv run playwright install chromium
+brew install ffmpeg pandoc
 ```
 
-## Installation
+## 从克隆到运行
 
-Clone the repository and install Python dependencies:
+1. 克隆仓库并安装 Python 依赖：
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/<owner>/bilibili-to-text.git
 cd bilibili-to-text
 uv sync
 ```
 
-Install frontend dependencies if you plan to run the Web UI:
+2. 安装前端依赖：
 
 ```bash
 cd web-ui/frontend
 bun install
+cd ../..
 ```
 
-## Configuration
-
-Create a local configuration file from the template:
+3. 复制并编辑本地配置：
 
 ```bash
 cp config.toml.example config.toml
 ```
 
-Then edit `config.toml` with the providers and credentials you need. The main sections are:
+最低配置建议先走 `Groq + local storage`，不需要 MinIO/OSS：
 
-- `[download]`: audio quality, output directory, and local database directory
-- `[storage]`: artifact storage backend, either `local`, `minio`, or `alicloud`
-- `[stt]`: active speech-to-text profile
-- `[summarize]`: active summary model profile and default summary preset
-- `[rag]`: optional ChromaDB-based transcript retrieval
-- `[feishu]`: optional notification settings
-- `[bilibili]`: optional Bilibili cookies for authenticated requests
-- `[monitor]`: optional creator monitoring configuration
+```toml
+[storage]
+backend = "local"
 
-The pipeline also reads summary prompt presets from `summary_presets.toml` by default. You can point `[summarize].presets_file` at another TOML file if you maintain custom presets.
+[stt]
+profile = "groq-main"
 
-For Qwen ASR, the STT storage backend must provide a public URL for uploaded audio, so use MinIO or Alibaba Cloud OSS for `storage_profile` or `storage.backend`.
+[stt.profiles.groq-main]
+groq_api_key = "your-groq-api-key"
+storage_profile = "local"
 
-## CLI Usage
+[summarize]
+profile = "groq-main"
 
-Run the full pipeline for a Bilibili video:
+[summarize.profiles.groq-main]
+api_key = "your-groq-api-key"
+```
+
+如果使用 DashScope/Qwen ASR，需要把 `[stt].profile` 改为 `qwen-main`，并配置 `storage.minio` 或 `storage.alicloud`，因为 Qwen 文件转录需要可公网访问的临时音频 URL。
+
+4. 可选：安装浏览器渲染依赖：
+
+```bash
+uv run playwright install chromium
+```
+
+5. 启动前后端：
+
+```bash
+just web on
+```
+
+访问：
+
+```text
+http://127.0.0.1:6010
+```
+
+后端默认监听 `8000`，前端默认监听 `6010`。停止服务：
+
+```bash
+just web off
+```
+
+## 手动启动前后端
+
+后端：
+
+```bash
+uv run uvicorn backend.main:app --app-dir web-ui --host 0.0.0.0 --port 8000 --reload
+```
+
+前端：
+
+```bash
+cd web-ui/frontend
+bun run dev
+```
+
+如果后端端口不是 `8000`：
+
+```bash
+cd web-ui/frontend
+bun run dev --backend-port 8001
+```
+
+或：
+
+```bash
+B2T_BACKEND_PORT=8001 bun run dev
+```
+
+## CLI 使用
+
+处理一个 Bilibili 视频：
 
 ```bash
 uv run b2t "https://www.bilibili.com/video/BVxxxxxxxxxx"
 ```
 
-Useful options:
+指定配置、输出目录和总结 preset：
 
 ```bash
 uv run b2t "https://www.bilibili.com/video/BVxxxxxxxxxx" \
   --config config.toml \
   --output ./transcriptions \
   --summary-preset timeline_merge \
-  --summary-profile bailian-main
+  --summary-profile groq-main
 ```
 
-Skip LLM summarization:
+跳过 LLM 总结：
 
 ```bash
 uv run b2t "https://www.bilibili.com/video/BVxxxxxxxxxx" --no-summary
 ```
 
-Run the interactive CLI:
+进入交互式 CLI：
 
 ```bash
 uv run b2t
 ```
 
-Run the Bilibili creator monitor once:
+## open-public Web UI 模式
 
-```bash
-uv run b2t monitor --once
-```
-
-Run the monitor continuously:
-
-```bash
-uv run b2t monitor
-```
-
-## Web UI
-
-The Web UI contains a FastAPI backend and a Vue/Vite frontend. It uses the same root-level `config.toml` and `summary_presets.toml` files as the CLI.
-
-Start both services from the repository root:
-
-```bash
-just web on
-```
-
-Open the frontend at:
-
-```text
-http://127.0.0.1:6010
-```
-
-Stop the services:
-
-```bash
-just web off
-```
-
-You can also start the public-safe mode:
+公开试用时可以启动 `open-public` 模式：
 
 ```bash
 just web-open-public on
 ```
 
-In `open-public` mode, uploaded audio, destructive history operations, and local project API keys are disabled. Users must provide their own DashScope API key in the Web UI.
+该模式会禁用上传音频、删除历史、本地项目 API Key，并要求用户在页面中输入自己的 DashScope API Key。
 
-For manual backend/frontend commands and API details, see [web-ui/README.md](web-ui/README.md).
+注意：`open-public` 模式仍依赖 Qwen ASR 的音频临时 URL 流程，因此本地 `config.toml` 里仍需要配置可用的 MinIO 或 Alibaba Cloud OSS。
 
 ## Docker
 
-Build the single-container Web UI image:
+构建镜像：
 
 ```bash
 docker build -t bilibili-to-text:latest .
 ```
 
-Run it with a mounted configuration file and output directory:
+运行：
 
 ```bash
 docker run --rm \
@@ -184,53 +225,32 @@ docker run --rm \
   bilibili-to-text:latest
 ```
 
-Then open:
+访问：
 
 ```text
 http://127.0.0.1:6010
 ```
 
-The container starts the FastAPI backend internally and serves the frontend through Nginx.
+容器内会启动 FastAPI 后端和 Nginx 前端，外部只需要访问 `6010`。
 
-## Development
-
-Run tests:
+## 测试
 
 ```bash
 uv run pytest
 ```
 
-Run the backend manually:
+## 生成数据
 
-```bash
-uv run uvicorn backend.main:app --app-dir web-ui --host 0.0.0.0 --port 8000 --reload
-```
+常见运行产物：
 
-Run the frontend manually:
+- `transcriptions/`：音频、转录、总结和派生文件
+- `web-ui/transcriptions/`：Web UI 侧转录产物
+- `db_data/`：历史数据库和状态文件
+- `chroma_data/`：RAG 向量数据库
+- `web-ui/logs/`：本地前后端日志
 
-```bash
-cd web-ui/frontend
-bun run dev
-```
-
-Build the frontend:
-
-```bash
-cd web-ui/frontend
-bun run build
-```
-
-## Generated Data
-
-Typical local runtime outputs include:
-
-- `transcriptions/`: audio, transcript, summary, and derived artifact files
-- `db_data/`: CLI/Web UI history and monitor state
-- `chroma_data/`: optional RAG vector database
-- `web-ui/logs/`: local Web UI service logs
-
-These files may contain transcripts, summaries, API-derived metadata, and credentials in generated logs. Do not commit local runtime data or secrets.
+这些文件可能包含隐私内容或凭据衍生信息，默认不应提交。
 
 ## License
 
-No license file is currently included. Add a license before publishing or redistributing this project as open source.
+当前仓库还没有 license 文件。正式开源前请先选择并添加许可证。
