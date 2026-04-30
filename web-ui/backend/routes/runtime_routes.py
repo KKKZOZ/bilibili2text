@@ -10,7 +10,7 @@ from backend.schemas import (
 from backend.settings import (
     clear_public_api_key,
     get_public_api_key,
-    get_runtime_features,
+    get_runtime_features as get_runtime_feature_flags,
     is_open_public_mode,
     mask_api_key,
     set_public_api_key,
@@ -35,7 +35,7 @@ def _build_api_key_status() -> OpenPublicApiKeyStatusResponse:
 
 @router.get("/api/runtime", response_model=RuntimeFeaturesResponse)
 def get_runtime_features() -> RuntimeFeaturesResponse:
-    return RuntimeFeaturesResponse(**get_runtime_features())
+    return RuntimeFeaturesResponse(**get_runtime_feature_flags())
 
 
 @router.get(
