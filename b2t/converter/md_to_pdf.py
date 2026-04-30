@@ -24,9 +24,7 @@ TABLE_DASH_TRANSLATION = str.maketrans(
         "\u00a0": " ",
     }
 )
-PANDOC_MARKDOWN_FORMAT = (
-    "markdown+pipe_tables+lists_without_preceding_blankline"
-)
+PANDOC_MARKDOWN_FORMAT = "markdown+pipe_tables+lists_without_preceding_blankline"
 
 HTML_TEMPLATE = r"""<!doctype html>
 <html>

@@ -5,10 +5,16 @@ on:
     branches: [main]
     paths:
       - "web-ui/frontend/**"
+      - ".github/workflows/frontend-ci.yml"
   pull_request:
     branches: [main]
     paths:
       - "web-ui/frontend/**"
+      - ".github/workflows/frontend-ci.yml"
+
+concurrency:
+  group: frontend-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 defaults:
   run:
@@ -17,6 +23,8 @@ defaults:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -25,5 +33,7 @@ jobs:
           bun-version: latest
 
       - run: bun install --frozen-lockfile
+
+      - run: bun run format:check
 
       - run: bun run build

@@ -132,7 +132,11 @@ def run_pipeline(
                 url, temp_download_dir, config.download.audio_quality
             )
             normalized_url = normalize_bilibili_target(url)
-            bvid = input_bvid or extract_bvid(normalized_url) or extract_bvid(audio_file.name)
+            bvid = (
+                input_bvid
+                or extract_bvid(normalized_url)
+                or extract_bvid(audio_file.name)
+            )
 
         if bvid is None:
             raise ValueError(

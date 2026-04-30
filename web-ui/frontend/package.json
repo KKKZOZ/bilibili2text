@@ -7,7 +7,8 @@
     "dev": "bun ./scripts/dev.js",
     "build": "vite build",
     "preview": "vite preview",
-    "format": "prettier --write \"src/**/*.{vue,js,ts,jsx,tsx,json,css,scss}\""
+    "format": "prettier --write \"{src,scripts}/**/*.{vue,js,ts,jsx,tsx,json,css,scss}\" \"*.{js,json,html}\"",
+    "format:check": "prettier --check \"{src,scripts}/**/*.{vue,js,ts,jsx,tsx,json,css,scss}\" \"*.{js,json,html}\""
   },
   "dependencies": {
     "@fontsource/manrope": "^5.2.6",

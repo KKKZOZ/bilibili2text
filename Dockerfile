@@ -14,12 +14,13 @@ ENV UV_PROJECT_ENVIRONMENT=/opt/venv
 COPY pyproject.toml uv.lock README.md ./
 COPY b2t ./b2t
 COPY web-ui/backend ./web-ui/backend
-RUN uv sync --frozen --no-dev
+RUN uv sync --frozen --no-dev --extra web
 
 FROM python:3.12-slim-bookworm
 
 ENV PYTHONUNBUFFERED=1 \
     PATH=/opt/venv/bin:${PATH} \
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
     FRONTEND_PORT=6010 \
     BACKEND_HOST=127.0.0.1 \
     BACKEND_PORT=8000 \
@@ -49,7 +50,8 @@ COPY config.toml.example ./config.toml.example
 COPY docker/nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY docker/entrypoint.sh /entrypoint.sh
 
-RUN chmod +x /entrypoint.sh
+RUN playwright install chromium \
+    && chmod +x /entrypoint.sh
 
 VOLUME ["/app/transcriptions"]
 EXPOSE 6010

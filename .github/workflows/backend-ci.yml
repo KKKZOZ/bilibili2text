@@ -1,0 +1,57 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "b2t/**"
+      - "web-ui/backend/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "config.toml.example"
+      - "summary_presets.toml"
+      - ".github/workflows/backend-ci.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "b2t/**"
+      - "web-ui/backend/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "config.toml.example"
+      - "summary_presets.toml"
+      - ".github/workflows/backend-ci.yml"
+
+concurrency:
+  group: backend-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install project dependencies
+        run: uv sync --locked --extra web --extra cli
+
+      - name: Smoke import web backend
+        run: uv run python -c "import sys; sys.path.insert(0, 'web-ui'); from backend.main import app; assert app is not None"
+
+      - name: Catch syntax regressions outside test coverage
+        run: uv run python -m compileall b2t web-ui/backend
+
+      - name: Run pytest
+        run: uv run --with pytest pytest -q

@@ -1,6 +1,11 @@
 # bilibili-to-text
 
-Bilibili 视频转文字工具：自动下载音频、语音转录、生成 Markdown/TXT，并通过 LLM 生成结构化总结。提供 CLI 和 Web UI 两种使用方式。
+Bilibili 视频转文字工具：自动下载音频、语音转录、生成 Markdown/TXT，并通过 LLM 生成结构化总结，并导出为 PDF/PNG/HTML。
+
+
+- 提供 CLI 和 Web UI 两种使用方式
+- 提供 Open Public 模式，用户使用自己的 API KEY 进行调用
+- 提供监控功能，自动监控指定 B 站 UP 主视频更新并自动转录，完成之后通过飞书机器人通知用户
 
 ## 功能
 
@@ -9,7 +14,7 @@ Bilibili 视频转文字工具：自动下载音频、语音转录、生成 Mark
   - [Groq](https://console.groq.com/) Whisper 兼容接口
   - 阿里云 DashScope / Qwen ASR
 - 转录结果导出为 Markdown / TXT
-- 使用 LiteLLM 兼容接口对接任意 LLM 生成总结（支持 Groq、百炼、OpenRouter 等）
+- 使用 LiteLLM 兼容接口对接任意 LLM 生成总结
 - 三种产物存储后端：本地磁盘 / MinIO / 阿里云 OSS
 - Web UI（FastAPI 后端 + Vue/Vite 前端）管理历史转录
 - 可选 RAG：检索历史转录内容并问答
