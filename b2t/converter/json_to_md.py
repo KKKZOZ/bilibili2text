@@ -1,4 +1,4 @@
-"""JSON 转录结果转 Markdown"""
+"""JSON transcription result to Markdown"""
 
 import json
 import logging
@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 def ms_to_mmss(milliseconds: int) -> str:
-    """将毫秒转换为 MM:SS 格式"""
+    """Convert milliseconds to MM:SS format"""
     total_seconds = milliseconds // 1000
     minutes = total_seconds // 60
     seconds = total_seconds % 60
@@ -17,10 +17,10 @@ def ms_to_mmss(milliseconds: int) -> str:
 
 
 def _extract_timed_sentences(data: dict) -> list[tuple[int, str]]:
-    """从不同 STT Provider 的 JSON 中提取 (毫秒时间戳, 文本) 列表。"""
+    """Extract (millisecond timestamp, text) list from different STT provider JSON formats."""
     timed_sentences: list[tuple[int, str]] = []
 
-    # Qwen 格式: transcripts[].sentences[]
+    # Qwen format: transcripts[].sentences[]
     transcripts = data.get("transcripts", [])
     if isinstance(transcripts, list) and transcripts:
         for transcript in transcripts:
@@ -39,7 +39,7 @@ def _extract_timed_sentences(data: dict) -> list[tuple[int, str]]:
                     timed_sentences.append((begin_time, text))
         return timed_sentences
 
-    # Groq 格式: segments[]
+    # Groq format: segments[]
     segments = data.get("segments", [])
     if isinstance(segments, list) and segments:
         for segment in segments:
@@ -51,7 +51,7 @@ def _extract_timed_sentences(data: dict) -> list[tuple[int, str]]:
                 timed_sentences.append((int(start_seconds * 1000), text))
         return timed_sentences
 
-    # 兜底：整段文本
+    # Fallback: full text
     text = str(data.get("text", "")).strip()
     if text:
         timed_sentences.append((0, text))
@@ -60,7 +60,7 @@ def _extract_timed_sentences(data: dict) -> list[tuple[int, str]]:
 
 
 def _join_paragraph_texts(parts: list[str]) -> str:
-    """拼接段落文本，避免不同 provider 输出被无空格粘连。"""
+    """Join paragraph text, avoiding different provider outputs being concatenated without spaces."""
     if not parts:
         return ""
 
@@ -91,19 +91,19 @@ def convert_json_to_md(
     output_path: Path | str | None = None,
     min_length: int = 60,
 ) -> Path:
-    """将 JSON 转录结果转换为 Markdown 格式
+    """Convert JSON transcription result to Markdown format
 
-    分段策略：
-    - 默认按照 sentence 分段
-    - 如果句子长度 <= min_length，则合并到下一个句子
+    Segmentation strategy:
+    - By default, split by sentence
+    - If sentence length is <= min_length, merge it with the next sentence
 
     Args:
-        json_path: JSON 文件路径
-        output_path: 输出路径，为 None 时自动生成
-        min_length: 最小句子长度，短句合并阈值
+        json_path: JSON file path
+        output_path: Output path, auto-generated when None
+        min_length: Minimum sentence length, short sentence merge threshold
 
     Returns:
-        生成的 Markdown 文件路径
+        Generated Markdown file path
     """
     json_path = Path(json_path)
 
@@ -122,14 +122,14 @@ def convert_json_to_md(
 
     lines = []
 
-    # 标题
+    # Title
     lines.append(f"{file_name}_原文\n")
 
-    # 日期时间
-    current_time = datetime.now().strftime("%Y年%m月%d日 %H:%M")
+    # Date and time
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
     lines.append(f"{current_time}")
 
-    # 处理转录内容（兼容 Qwen 与 Groq）
+    # Process transcription content (compatible with Qwen and Groq)
     timed_sentences = _extract_timed_sentences(data)
 
     i = 0
@@ -149,7 +149,7 @@ def convert_json_to_md(
                 text = next_text
 
         time_str = ms_to_mmss(start_time)
-        lines.append(f"发言人 {time_str}")
+        lines.append(f"Speaker {time_str}")
         lines.append(_join_paragraph_texts(paragraph_texts))
         lines.append("")
 
@@ -157,5 +157,5 @@ def convert_json_to_md(
 
     output_path.write_text("\n".join(lines), encoding="utf-8")
 
-    logger.info("Markdown 文件已生成: %s", output_path)
+    logger.info("Markdown file generated: %s", output_path)
     return output_path

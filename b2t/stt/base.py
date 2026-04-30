@@ -1,4 +1,4 @@
-"""STT Provider 抽象定义"""
+"""STT Provider abstract definition"""
 
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -8,7 +8,7 @@ ProgressCallback = Callable[[str, str, int], None]
 
 
 class STTProvider(ABC):
-    """统一的语音转录接口。"""
+    """Unified speech transcription interface."""
 
     @abstractmethod
     def transcribe(
@@ -17,5 +17,5 @@ class STTProvider(ABC):
         work_dir: Path,
         progress_callback: ProgressCallback | None = None,
     ) -> Path:
-        """执行转录并返回转录结果文件路径。"""
+        """Run transcription and return the path to the result file."""
         raise NotImplementedError

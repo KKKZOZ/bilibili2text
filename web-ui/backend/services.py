@@ -299,7 +299,7 @@ def _run_summary_only_from_existing(
                 object_key=f"{run_prefix}/{summary_table_md.name}",
             )
 
-        # local backend 仅为总结临时拷贝 markdown，避免污染历史文件列表。
+        # Local backend temporarily copies markdown for summary only, to avoid polluting the history file list.
         if storage_backend.persist_local_outputs:
             markdown_path.unlink(missing_ok=True)
 
@@ -480,7 +480,7 @@ def _record_history(
         return None
 
     try:
-        # 从 results 中提取元信息
+        # Extract metadata from results
         metadata = results.get("_metadata")
         author = metadata.author if metadata else ""
         pubdate = metadata.pubdate if metadata else ""

@@ -1,4 +1,4 @@
-"""获取 Bilibili 视频元信息"""
+"""Fetch Bilibili video metadata"""
 
 from __future__ import annotations
 
@@ -14,33 +14,33 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class VideoMetadata:
-    """Bilibili 视频元信息"""
+    """Bilibili video metadata"""
 
     bvid: str
     title: str
     author: str
     author_uid: int
-    pubdate: str  # ISO 格式日期字符串 (YYYY-MM-DD HH:MM:SS)
-    pubdate_timestamp: int  # Unix 时间戳
+    pubdate: str  # ISO date string (YYYY-MM-DD HH:MM:SS)
+    pubdate_timestamp: int  # Unix timestamp
     description: str
 
 
 async def get_video_metadata_async(bvid: str) -> VideoMetadata:
-    """异步获取视频元信息
+    """Asynchronously fetch video metadata
 
     Args:
-        bvid: Bilibili 视频的 BV 号
+        bvid: Bilibili video BV ID
 
     Returns:
-        VideoMetadata: 视频元信息
+        VideoMetadata: Video metadata
 
     Raises:
-        ValueError: BV 号格式错误
-        httpx.HTTPError: API 请求失败
-        RuntimeError: API 返回错误
+        ValueError: Invalid BV ID format
+        httpx.HTTPError: API request failed
+        RuntimeError: API returned an error
     """
     if not bvid or not bvid.startswith("BV"):
-        raise ValueError(f"无效的 BV 号: {bvid}")
+        raise ValueError(f"Invalid BV ID: {bvid}")
 
     url = f"https://api.bilibili.com/x/web-interface/view?bvid={bvid}"
     headers = {
@@ -48,7 +48,7 @@ async def get_video_metadata_async(bvid: str) -> VideoMetadata:
         "Referer": "https://www.bilibili.com"
     }
 
-    logger.debug("正在获取视频 %s 的元信息...", bvid)
+    logger.debug("Fetching metadata for video %s...", bvid)
 
     async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
         response = await client.get(url, headers=headers)
@@ -58,17 +58,17 @@ async def get_video_metadata_async(bvid: str) -> VideoMetadata:
 
         if data.get("code") != 0:
             error_msg = data.get("message", "未知错误")
-            raise RuntimeError(f"API 返回错误: {error_msg}")
+            raise RuntimeError(f"API returned error: {error_msg}")
 
         video_data = data.get("data")
         if not video_data:
-            raise RuntimeError("API 返回数据为空")
+            raise RuntimeError("API returned empty data")
 
-        # 提取关键信息
+        # Extract key information
         owner = video_data.get("owner", {})
         pubdate_timestamp = video_data.get("pubdate", 0)
 
-        # 转换时间戳为可读格式
+        # Convert timestamp to readable format
         pubdate_readable = ""
         if pubdate_timestamp:
             pubdate_readable = datetime.fromtimestamp(pubdate_timestamp).strftime('%Y-%m-%d %H:%M:%S')
@@ -84,7 +84,7 @@ async def get_video_metadata_async(bvid: str) -> VideoMetadata:
         )
 
         logger.info(
-            "成功获取视频元信息: %s (作者: %s, 发布时间: %s)",
+            "Successfully fetched video metadata: %s (author: %s, publish date: %s)",
             metadata.title,
             metadata.author,
             metadata.pubdate,
@@ -94,18 +94,18 @@ async def get_video_metadata_async(bvid: str) -> VideoMetadata:
 
 
 def get_video_metadata(bvid: str) -> VideoMetadata:
-    """同步获取视频元信息
+    """Synchronously fetch video metadata
 
     Args:
-        bvid: Bilibili 视频的 BV 号
+        bvid: Bilibili video BV ID
 
     Returns:
-        VideoMetadata: 视频元信息
+        VideoMetadata: Video metadata
 
     Raises:
-        ValueError: BV 号格式错误
-        httpx.HTTPError: API 请求失败
-        RuntimeError: API 返回错误或已有事件循环在运行
+        ValueError: Invalid BV ID format
+        httpx.HTTPError: API request failed
+        RuntimeError: API returned an error or event loop is already running
     """
     try:
         asyncio.get_running_loop()

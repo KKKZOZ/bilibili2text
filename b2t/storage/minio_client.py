@@ -1,4 +1,4 @@
-"""MinIO 存储后端。"""
+"""MinIO storage backend."""
 
 from contextlib import contextmanager
 from datetime import timedelta
@@ -39,23 +39,23 @@ class MinIOStorageBackend(PublicURLStorageBackend):
         try:
             exists = self._client.bucket_exists(self._bucket)
         except S3Error as exc:
-            raise RuntimeError(f"检查 MinIO bucket 失败: {exc}") from exc
+            raise RuntimeError(f"Failed to check MinIO bucket: {exc}") from exc
 
         if exists:
             return
 
         if not auto_create:
-            raise RuntimeError(f"MinIO bucket 不存在: {self._bucket}")
+            raise RuntimeError(f"MinIO bucket does not exist: {self._bucket}")
 
         try:
             self._client.make_bucket(self._bucket)
         except S3Error as exc:
-            raise RuntimeError(f"创建 MinIO bucket 失败: {exc}") from exc
+            raise RuntimeError(f"Failed to create MinIO bucket: {exc}") from exc
 
     def _resolve_object_key(self, object_key: str) -> str:
         key = object_key.strip("/")
         if not key:
-            raise ValueError("MinIO object key 不能为空")
+            raise ValueError("MinIO object key cannot be empty")
 
         if self._base_prefix:
             return f"{self._base_prefix}/{key}"
@@ -75,7 +75,7 @@ class MinIOStorageBackend(PublicURLStorageBackend):
     def store_file(self, local_path: Path, *, object_key: str) -> StoredArtifact:
         path = Path(local_path)
         if not path.exists() or not path.is_file():
-            raise FileNotFoundError(f"待上传文件不存在: {path}")
+            raise FileNotFoundError(f"File to upload does not exist: {path}")
 
         resolved_key = self._resolve_object_key(object_key)
         content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
@@ -88,7 +88,7 @@ class MinIOStorageBackend(PublicURLStorageBackend):
                 content_type=content_type,
             )
         except S3Error as exc:
-            raise RuntimeError(f"上传到 MinIO 失败: {exc}") from exc
+            raise RuntimeError(f"Failed to upload to MinIO: {exc}") from exc
 
         return StoredArtifact(
             filename=path.name,
@@ -101,7 +101,7 @@ class MinIOStorageBackend(PublicURLStorageBackend):
         try:
             response = self._client.get_object(self._bucket, storage_key)
         except S3Error as exc:
-            raise FileNotFoundError(f"MinIO 对象不存在: {storage_key}") from exc
+            raise FileNotFoundError(f"MinIO object does not exist: {storage_key}") from exc
 
         try:
             yield response
@@ -110,11 +110,11 @@ class MinIOStorageBackend(PublicURLStorageBackend):
             response.release_conn()
 
     def delete_file(self, storage_key: str) -> None:
-        """删除 MinIO 中的对象。"""
+        """Delete an object from MinIO."""
         try:
             self._delete_object(storage_key)
         except S3Error as exc:
-            raise RuntimeError(f"删除 MinIO 对象失败: {exc}") from exc
+            raise RuntimeError(f"Failed to delete MinIO object: {exc}") from exc
 
     @contextmanager
     def temporary_public_url(
@@ -125,7 +125,7 @@ class MinIOStorageBackend(PublicURLStorageBackend):
     ) -> Iterator[str]:
         file_path = Path(file_path)
         if not file_path.exists() or not file_path.is_file():
-            raise FileNotFoundError(f"待上传文件不存在: {file_path}")
+            raise FileNotFoundError(f"File to upload does not exist: {file_path}")
 
         key = self._resolve_object_key(
             f"{object_key_prefix}/{uuid.uuid4().hex}-{file_path.name}"

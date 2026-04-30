@@ -1,4 +1,4 @@
-"""STT Provider 工厂"""
+"""STT Provider factory"""
 
 from b2t.config import AppConfig
 from b2t.storage.base import StorageBackend
@@ -16,14 +16,14 @@ def create_stt_provider(
     if provider == "qwen":
         if not storage_backend.supports_public_url():
             raise ValueError(
-                "qwen 转录要求用于上传音频的存储支持公网 URL。"
-                "请将当前 stt.profile 对应的 storage_profile（或 storage.backend）设置为 minio 或 alicloud。"
+                "Qwen transcription requires a storage backend that supports public URLs for audio upload. "
+                "Please set the storage_profile for the current stt.profile (or storage.backend) to minio or alicloud."
             )
         return QwenSTTProvider(config.stt, storage_backend)
     if provider == "groq":
         return GroqSTTProvider(config.stt)
 
-    raise ValueError(f"不支持的 stt.provider: {config.stt.provider}，可选值: qwen, groq")
+    raise ValueError(f"Unsupported stt.provider: {config.stt.provider}, supported values: qwen, groq")
 
 
 __all__ = ["STTProvider", "create_stt_provider"]

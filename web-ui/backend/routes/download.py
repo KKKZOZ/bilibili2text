@@ -71,9 +71,9 @@ def download_markdown(download_id: str) -> StreamingResponse:
 @router.post("/api/convert", response_model=ConvertResponse)
 def convert_artifact(payload: ConvertRequest) -> ConvertResponse:
     """
-    在线转换文件格式。
+    Convert file format online.
 
-    支持的转换：
+    Supported conversions:
     - Markdown -> txt, pdf, png, html
     - HTML (fancy) -> png
     """
@@ -82,7 +82,7 @@ def convert_artifact(payload: ConvertRequest) -> ConvertResponse:
     if artifact is None:
         raise HTTPException(status_code=404, detail="下载链接不存在或已过期")
 
-    # 验证目标格式
+    # Validate target format
     try:
         target_format = ConversionFormat(payload.target_format.lower())
     except ValueError:
@@ -91,7 +91,7 @@ def convert_artifact(payload: ConvertRequest) -> ConvertResponse:
             detail=f"不支持的目标格式: {payload.target_format}",
         ) from None
 
-    # 检查源文件格式
+    # Check source file format
     source_suffix = Path(artifact.filename).suffix.lower().lstrip(".")
     _md_suffixes = ("md", "markdown")
     _html_suffixes = ("html", "htm")
@@ -108,7 +108,7 @@ def convert_artifact(payload: ConvertRequest) -> ConvertResponse:
 
     storage_backend = get_storage_backend()
 
-    # 下载源文件到临时目录
+    # Download source file to temporary directory
     with tempfile.TemporaryDirectory(prefix="b2t-convert-") as temp_dir:
         temp_dir_path = Path(temp_dir)
         source_path = temp_dir_path / artifact.filename
@@ -132,7 +132,7 @@ def convert_artifact(payload: ConvertRequest) -> ConvertResponse:
                 detail=f"读取源文件失败: {exc}",
             ) from exc
 
-        # 执行转换
+        # Execute conversion
         try:
             source_kind = classify_artifact_filename(artifact.filename) or ""
             png_is_table = (
@@ -181,7 +181,7 @@ def convert_artifact(payload: ConvertRequest) -> ConvertResponse:
                 detail=f"转换失败: {exc}",
             ) from exc
 
-        # 存储转换后的文件
+        # Store the converted file
         converted_filename = output_path.name
         try:
             converted_artifact = storage_backend.store_file(
@@ -194,7 +194,7 @@ def convert_artifact(payload: ConvertRequest) -> ConvertResponse:
                 detail=f"保存转换结果失败: {exc}",
             ) from exc
 
-    # 注册下载
+    # Register download
     download_id = download_registry.store_artifact(converted_artifact)
 
     return ConvertResponse(

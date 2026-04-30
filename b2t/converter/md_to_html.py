@@ -1,4 +1,4 @@
-"""Markdown 转 HTML（通过 Pandoc）"""
+"""Markdown to HTML conversion (via Pandoc)"""
 
 import logging
 from pathlib import Path
@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 class MarkdownToHtmlConverter:
-    """Markdown 转 HTML 转换器。"""
+    """Markdown to HTML converter."""
 
     def convert(
         self,
@@ -18,22 +18,22 @@ class MarkdownToHtmlConverter:
         **options,
     ) -> Path:
         """
-        使用 pandoc 将 Markdown 转换为 HTML。
+        Convert Markdown to HTML using pandoc.
 
         Args:
-            input_path: Markdown 文件路径
-            output_path: 输出 HTML 路径（可选）
-            **options: 额外选项
-                - standalone: 是否生成独立 HTML（包含 <html>, <head> 等）
+            input_path: Markdown file path
+            output_path: Output HTML path (optional)
+            **options: Extra options
+                - standalone: Whether to generate standalone HTML (includes <html>, <head>, etc.)
 
         Returns:
-            输出 HTML 文件路径
+            Output HTML file path
         """
         if output_path is None:
             output_path = input_path.with_suffix(".html")
 
         if shutil.which("pandoc") is None:
-            raise RuntimeError("未找到 pandoc，请先安装 pandoc 后再试")
+            raise RuntimeError("pandoc not found, please install pandoc first")
 
         standalone = options.get("standalone", True)
 
@@ -60,7 +60,7 @@ class MarkdownToHtmlConverter:
             )
         except subprocess.CalledProcessError as exc:
             detail = exc.stderr.strip() or exc.stdout.strip() or str(exc)
-            raise RuntimeError(f"pandoc HTML 转换失败: {detail}") from exc
+            raise RuntimeError(f"pandoc HTML conversion failed: {detail}") from exc
 
-        logger.info("HTML 文件已生成: %s", output_path)
+        logger.info("HTML file generated: %s", output_path)
         return output_path

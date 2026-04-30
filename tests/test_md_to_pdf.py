@@ -92,4 +92,4 @@ def test_convert_raises_if_pandoc_not_found(tmp_path: Path, monkeypatch) -> None
         MarkdownToPdfConverter().convert(md_path)
         raise AssertionError("expected RuntimeError")
     except RuntimeError as exc:
-        assert "未找到 pandoc" in str(exc)
+        assert "pandoc not found" in str(exc)

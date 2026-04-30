@@ -1,4 +1,4 @@
-"""默认下载实现：yutto Python API。"""
+"""Default download implementation: yutto Python API."""
 
 from b2t.download.yutto_api import download_audio
 

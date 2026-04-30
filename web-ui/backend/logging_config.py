@@ -25,7 +25,7 @@ def _redact_text(message: str) -> str:
 
 
 class _SensitiveDataFilter(logging.Filter):
-    """在日志输出前统一脱敏，确保日志源头就是安全内容。"""
+    """Redact sensitive data uniformly before log output, ensuring the log source is safe content."""
 
     def filter(self, record: logging.LogRecord) -> bool:
         original = record.getMessage()
@@ -71,7 +71,7 @@ class _JobLogHandler(logging.Handler):
 
 
 def _configure_logging() -> None:
-    """统一后端日志格式，包含到秒级时间戳。"""
+    """Unify backend log format with second-level timestamps."""
     formatter = logging.Formatter(fmt=LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
     for logger_name in ("", "uvicorn", "uvicorn.error", "uvicorn.access"):
         target_logger = logging.getLogger(logger_name)
@@ -83,7 +83,7 @@ def _configure_logging() -> None:
             ):
                 handler.addFilter(_SENSITIVE_DATA_FILTER)
 
-    # 任务日志面板依赖 INFO 级别日志；这些 logger 默认可能继承到 WARNING。
+    # The job log panel relies on INFO-level logs; these loggers may default to WARNING via inheritance.
     logging.getLogger("b2t").setLevel(logging.INFO)
     logging.getLogger("dashscope").setLevel(logging.INFO)
     logging.getLogger("httpx").setLevel(logging.INFO)

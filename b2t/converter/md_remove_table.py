@@ -1,4 +1,4 @@
-"""Markdown 移除最后一个表格"""
+"""Markdown - remove the last table"""
 
 import logging
 import re
@@ -10,7 +10,7 @@ TABLE_DELIMITER_CELL_RE = re.compile(r"^:?-{3,}:?$")
 
 
 def _parse_table_cells(line: str) -> list[str]:
-    """将一行 Markdown 表格拆分为单元格。"""
+    """Split a Markdown table row into cells."""
     text = line.strip()
     if "|" not in text:
         return []
@@ -25,7 +25,7 @@ def _parse_table_cells(line: str) -> list[str]:
 
 
 def _is_table_delimiter_line(line: str) -> bool:
-    """判断是否为 Markdown 表格分隔线（如 | --- | :---: |）。"""
+    """Check if a line is a Markdown table separator (e.g., | --- | :---: |)."""
     cells = _parse_table_cells(line)
     if not cells:
         return False
@@ -33,7 +33,7 @@ def _is_table_delimiter_line(line: str) -> bool:
 
 
 def _is_table_content_line(line: str) -> bool:
-    """判断是否为 Markdown 表格内容行（表头/数据行）。"""
+    """Check if a line is a Markdown table content line (header/data row)."""
     cells = _parse_table_cells(line)
     if not cells:
         return False
@@ -41,7 +41,7 @@ def _is_table_content_line(line: str) -> bool:
 
 
 class MarkdownRemoveTableConverter:
-    """Markdown 移除最后一个表格转换器。"""
+    """Markdown converter that removes the last table."""
 
     def convert(
         self,
@@ -50,15 +50,15 @@ class MarkdownRemoveTableConverter:
         **options,
     ) -> Path:
         """
-        从 Markdown 中移除最后一个表格。
+        Remove the last table from Markdown.
 
         Args:
-            input_path: Markdown 文件路径
-            output_path: 输出路径（可选）
-            **options: 额外选项（暂未使用）
+            input_path: Markdown file path
+            output_path: Output path (optional)
+            **options: Extra options (currently unused)
 
         Returns:
-            输出文件路径
+            Output file path
         """
         if output_path is None:
             output_path = input_path.with_stem(f"{input_path.stem}_no_table")
@@ -66,7 +66,7 @@ class MarkdownRemoveTableConverter:
         content = input_path.read_text(encoding="utf-8")
         lines = content.splitlines(keepends=True)
 
-        # 通过“表头行 + 分隔线”识别所有表格块，最后移除末尾那一个完整表格块
+        # Identify all table blocks via “header row + separator line”, then remove the last complete block
         table_blocks: list[tuple[int, int]] = []
         for i in range(len(lines) - 1):
             if not _is_table_content_line(lines[i]):
@@ -80,14 +80,14 @@ class MarkdownRemoveTableConverter:
             table_blocks.append((i, end))
 
         if not table_blocks:
-            # 没有表格，直接复制
-            logger.info("文件中没有找到表格，直接复制")
+            # No table found, copy directly
+            logger.info("No table found in file, copying directly")
             output_path.write_text(content, encoding="utf-8")
             return output_path
 
         table_start, table_end = table_blocks[-1]
 
-        # 向前查找表格标题（可能有）
+        # Look backwards for a table heading (if any)
         actual_start = table_start
         for i in range(table_start - 1, -1, -1):
             line = lines[i].strip()
@@ -97,12 +97,12 @@ class MarkdownRemoveTableConverter:
                 actual_start = i
             break
 
-        # 仅移除最后一个完整表格块（以及紧邻其上的标题）
+        # Only remove the last complete table block (and any heading directly above it)
         result_lines = lines[:actual_start] + lines[table_end:]
         result_content = "".join(result_lines)
         if result_content and not result_content.endswith("\n"):
             result_content += "\n"
 
         output_path.write_text(result_content, encoding="utf-8")
-        logger.info("已移除最后一个表格，输出: %s", output_path)
+        logger.info("Removed last table, output: %s", output_path)
         return output_path

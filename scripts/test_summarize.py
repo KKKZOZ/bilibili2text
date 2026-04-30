@@ -3,7 +3,7 @@ import sys
 import time
 from pathlib import Path
 
-# 允许在 scripts 目录直接运行时也能导入项目内的 b2t 包
+# Allow importing the b2t package from the project when running directly from the scripts directory
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -61,7 +61,7 @@ def _pick_token_count(usage: object | None, keys: tuple[str, ...]) -> int | None
 
 
 def _find_txt_files() -> list[Path]:
-    """查找当前目录及子目录中的 .txt 文件"""
+    """Find .txt files in the current directory and subdirectories"""
     cwd = Path.cwd()
     txt_files = list(cwd.glob("**/*.txt"))
     txt_files = [f for f in txt_files if f.is_file() and ".venv" not in str(f)]
@@ -86,16 +86,16 @@ def _resolve_preset(
 
 
 def _run_interactive_config(config_path: str | None) -> dict[str, str] | None:
-    """使用 questionary 运行交互式配置"""
+    """Run interactive configuration using questionary"""
     console = Console()
     console.print("\n[bold cyan]⚙️  交互式配置[/bold cyan]\n")
 
-    # 加载配置
+    # Load configuration
     config = load_config(config_path)
 
-    # 交互式选择
+    # Interactive selection
     try:
-        # 1. 首先选择输入来源
+        # 1. First select the input source
         input_source = questionary.select(
             "选择输入来源:",
             choices=[
@@ -110,10 +110,10 @@ def _run_interactive_config(config_path: str | None) -> dict[str, str] | None:
             console.print("[yellow]已取消[/yellow]")
             return None
 
-        # 2. 根据来源获取内容
+        # 2. Get content based on source
         content_source = None
         if input_source == "file":
-            # 查找文件
+            # Find files
             txt_files = _find_txt_files()
             if not txt_files:
                 console.print("[red]未找到任何 .txt 文件，请检查当前目录[/red]")
@@ -157,7 +157,7 @@ def _run_interactive_config(config_path: str | None) -> dict[str, str] | None:
 
             console.print(f"\n[green]已输入 {len(content_source)} 个字符[/green]\n")
 
-        # 3. 选择 profile
+        # 3. Select profile
         profile_choices = [
             questionary.Choice(title=f"⚙️  {name}", value=name)
             for name in config.summarize.profiles.keys()
@@ -175,7 +175,7 @@ def _run_interactive_config(config_path: str | None) -> dict[str, str] | None:
             console.print("[yellow]已取消[/yellow]")
             return None
 
-        # 4. 选择 preset
+        # 4. Select preset
         preset_choices = [
             questionary.Choice(
                 title=f"🧪 {RAW_PRESET_LABEL}",
@@ -248,8 +248,8 @@ def main() -> None:
     args = parser.parse_args()
 
     input_file_path: str | None = None
-    input_content: str | None = None  # 终端输入的内容
-    input_source_type: str = "file"  # "file" 或 "terminal"
+    input_content: str | None = None  # Content entered via terminal
+    input_source_type: str = "file"  # "file" or "terminal"
     selected_profile_override: str | None = None
     selected_preset_override: str | None = None
 
@@ -304,7 +304,7 @@ def main() -> None:
             f"summarize.profiles.{selected_profile}.api_key 为空，请先在配置文件中设置"
         )
 
-    # 根据输入来源获取内容
+    # Get content based on input source
     if input_source_type == "file":
         input_path = Path(input_file_path)
         if not input_path.exists():
@@ -327,7 +327,7 @@ def main() -> None:
         prompt_template = config.summary_presets.presets[selected_preset].prompt_template
         prompt_text = prompt_template.format(content=raw_content)
 
-    # 使用 rich 显示配置信息
+    # Display configuration info using rich
     console = Console()
     config_table = Table(title="⚙️  配置信息", show_header=False, border_style="cyan")
     config_table.add_column("项目", style="yellow", width=18)
@@ -395,11 +395,11 @@ def main() -> None:
     elapsed = max(time.perf_counter() - start_time, 1e-9)
     output_chars = len(reasoning_content) + len(answer_content)
 
-    # 使用 rich 显示统计信息
+    # Display statistics using rich
     console = Console()
     print("\n")
 
-    # 创建统计表格
+    # Create statistics table
     stats_table = Table(title="📊 输出统计", show_header=False, border_style="blue")
     stats_table.add_column("项目", style="cyan", width=20)
     stats_table.add_column("值", style="green")
@@ -417,7 +417,7 @@ def main() -> None:
     token_speed = None
     completion_tokens = None
 
-    # 尝试获取 token 信息
+    # Attempt to get token information
     if usage:
         completion_tokens = _pick_token_count(
             usage,
@@ -436,7 +436,7 @@ def main() -> None:
         stats_table.add_row("🚀 输出速度", f"{token_speed:.2f} token/秒")
         stats_table.add_row("🎯 总 Token 数", f"{completion_tokens:,}")
 
-        # 尝试获取输入 token 数
+        # Attempt to get input token count
         prompt_tokens = _pick_token_count(
             usage,
             (
@@ -449,7 +449,7 @@ def main() -> None:
         if prompt_tokens:
             stats_table.add_row("📥 输入 Token 数", f"{prompt_tokens:,}")
 
-        # 尝试获取总 token 数
+        # Attempt to get total token count
         total_tokens = _pick_token_count(
             usage,
             (
@@ -460,14 +460,14 @@ def main() -> None:
         if total_tokens:
             stats_table.add_row("💰 总消耗 Token", f"{total_tokens:,}")
         elif prompt_tokens:
-            # 如果没有 total_tokens，自己计算
+            # If no total_tokens, calculate manually
             total = completion_tokens + prompt_tokens
             stats_table.add_row("💰 总消耗 Token", f"{total:,}")
     else:
-        # 如果没有 token 信息，显示提示
+        # If no token information, show a hint
         stats_table.add_row("ℹ️  Token 统计", "API 未返回 token 信息")
         if usage:
-            # 输出 usage 对象的内容用于调试
+            # Output usage object content for debugging
             usage_dump = None
             if hasattr(usage, "model_dump"):
                 usage_dump = usage.model_dump()  # type: ignore[assignment]

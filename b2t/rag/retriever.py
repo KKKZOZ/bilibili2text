@@ -14,24 +14,24 @@ from b2t.rag.embedder import embed_texts  # noqa: E402
 from b2t.rag.store import RagStore  # noqa: E402
 from b2t.summarize.litellm_client import _to_litellm_model_name  # noqa: E402
 
-_ANSWER_PROMPT_TEMPLATE = """\
-你是一个金融行业报告助手。你的任务不是写泛泛的摘要，而是基于检索结果形成一份结构化、信息充分、面向投资研究场景的中文金融报告。
+_ANSWER_PROMPT_TEMPLATE = “””\
+You are a financial industry report assistant. Your task is not to write a generic summary, but to form a structured, information-rich financial report based on retrieved results.
 
-写作要求：
-1. 检索出来的关键信息都应尽量体现在最终报告中，不能只挑少量片段泛泛概括。
-2. 在使用某个检索片段的信息后，请在对应句末用方括号标注来源编号，例如「公司现金水平较高 [1]」。
-3. 在不与检索内容冲突的前提下，你可以结合你已有的通用金融知识，对行业背景、商业模式、估值框架、风险点、催化因素等做必要补充和完善。
-4. 如果某些判断主要来自你自身知识而非检索内容，不要伪造引用；应明确区分“检索片段显示”与“结合常识补充”。
-5. 输出应尽量组织成一份金融报告，可包含但不限于：公司/主题概览、业务模式、财务与估值、增长驱动、风险因素、结论。
-6. 如果检索内容不足以支撑某个结论，请如实说明，不要编造。
+Writing requirements:
+1. Key information from the retrieval should be reflected in the final report as much as possible; do not only pick a few fragments for a general overview.
+2. After using information from a retrieved snippet, mark the source number in square brackets at the end of the corresponding sentence, e.g. “The company's cash level is relatively high [1]”.
+3. As long as it does not conflict with the retrieved content, you may incorporate your existing general financial knowledge to supplement and improve industry background, business models, valuation frameworks, risk points, catalysts, etc.
+4. If certain judgments come mainly from your own knowledge rather than the retrieved content, do not fabricate citations; clearly distinguish between “retrieved snippet indicates” and “supplemented based on general knowledge”.
+5. The output should be organized as a financial report, which may include but is not limited to: company/topic overview, business model, financials and valuation, growth drivers, risk factors, and conclusions.
+6. If the retrieved content is insufficient to support a conclusion, state this honestly; do not fabricate.
 
-[视频内容片段]
+[Video Content Snippets]
 {chunks}
 
-[用户问题]
+[User Question]
 {question}
 
-请用中文回答："""
+Please answer in Chinese:”””
 
 
 @dataclass(frozen=True)
@@ -85,7 +85,7 @@ def retrieve_and_answer(
     # 3. Build prompt
     chunks_str = (
         "\n---\n".join(f"[{i + 1}] {t}" for i, t in enumerate(chunk_texts))
-        if chunk_texts else "（未检索到相关内容）"
+        if chunk_texts else "(No relevant content retrieved)"
     )
     prompt = _ANSWER_PROMPT_TEMPLATE.format(chunks=chunks_str, question=question)
 

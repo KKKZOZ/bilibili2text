@@ -1,4 +1,4 @@
-"""阿里云 OSS 存储后端。"""
+"""Aliyun OSS storage backend."""
 
 from contextlib import contextmanager
 import mimetypes
@@ -45,14 +45,14 @@ class AlicloudStorageBackend(PublicURLStorageBackend):
             return
 
         if not auto_create:
-            raise RuntimeError(f"阿里云 OSS bucket 不存在: {self._bucket}")
+            raise RuntimeError(f"Aliyun OSS bucket does not exist: {self._bucket}")
 
         self._client.put_bucket(oss.PutBucketRequest(bucket=self._bucket))
 
     def _resolve_object_key(self, object_key: str) -> str:
         key = object_key.strip("/")
         if not key:
-            raise ValueError("OSS object key 不能为空")
+            raise ValueError("OSS object key cannot be empty")
 
         if self._base_prefix:
             return f"{self._base_prefix}/{key}"
@@ -102,7 +102,7 @@ class AlicloudStorageBackend(PublicURLStorageBackend):
     def store_file(self, local_path: Path, *, object_key: str) -> StoredArtifact:
         path = Path(local_path)
         if not path.exists() or not path.is_file():
-            raise FileNotFoundError(f"待上传文件不存在: {path}")
+            raise FileNotFoundError(f"File to upload does not exist: {path}")
 
         resolved_key = self._resolve_object_key(object_key)
         self._upload(path, object_key=resolved_key)
@@ -126,16 +126,16 @@ class AlicloudStorageBackend(PublicURLStorageBackend):
             with temp_path.open("rb") as stream:
                 yield stream
         except Exception as exc:
-            raise FileNotFoundError(f"OSS 对象不存在或不可读: {storage_key}") from exc
+            raise FileNotFoundError(f"OSS object does not exist or is not readable: {storage_key}") from exc
         finally:
             temp_path.unlink(missing_ok=True)
 
     def delete_file(self, storage_key: str) -> None:
-        """删除阿里云 OSS 中的对象。"""
+        """Delete an object from Aliyun OSS."""
         try:
             self._delete_object(storage_key)
         except Exception as exc:
-            raise RuntimeError(f"删除 OSS 对象失败: {exc}") from exc
+            raise RuntimeError(f"Failed to delete OSS object: {exc}") from exc
 
     @contextmanager
     def temporary_public_url(
@@ -146,7 +146,7 @@ class AlicloudStorageBackend(PublicURLStorageBackend):
     ) -> Iterator[str]:
         path = Path(file_path)
         if not path.exists() or not path.is_file():
-            raise FileNotFoundError(f"待上传文件不存在: {path}")
+            raise FileNotFoundError(f"File to upload does not exist: {path}")
 
         temp_prefix = object_key_prefix.strip("/") or self._temporary_prefix or "temp-audio"
         key = self._resolve_object_key(f"{temp_prefix}/{uuid.uuid4().hex}-{path.name}")

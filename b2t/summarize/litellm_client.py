@@ -3,9 +3,10 @@
 import os
 from typing import Any
 
-# 禁止 litellm 在每次调用时从 raw.githubusercontent.com 拉取最新模型定价数据（在网络受限环境下
-# 这个请求会阻塞 30 秒以上才超时）；改用包内自带的本地定价文件。
-# 同时关闭 litellm 默认开启的遥测上报，避免额外出站请求。
+# Prevent litellm from fetching the latest model pricing data from raw.githubusercontent.com
+# on every call (in network-restricted environments this request can block for 30+ seconds
+# before timing out); use the built-in local pricing file instead.
+# Also disable litellm's default telemetry to avoid outbound requests.
 os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "true")
 os.environ.setdefault("LITELLM_TELEMETRY", "false")
 
@@ -42,9 +43,9 @@ def _is_groq_gpt_oss_model(model: str) -> bool:
 def _to_litellm_model_name(model: str, provider: str) -> str:
     normalized = model.strip()
     if not normalized:
-        raise ValueError("模型名不能为空")
+        raise ValueError("Model name cannot be empty")
 
-    # 统一按目标 provider 显式前缀，避免 LiteLLM 错判 provider。
+    # Prefix with provider explicitly to avoid LiteLLM misidentifying the provider.
     if provider == "openrouter":
         if normalized.startswith("openrouter/"):
             return normalized
@@ -59,6 +60,11 @@ def _to_litellm_model_name(model: str, provider: str) -> str:
         if normalized.startswith("groq/"):
             return normalized
         return f"groq/{normalized}"
+
+    if provider == "deepseek":
+        if normalized.startswith("deepseek/"):
+            return normalized
+        return f"deepseek/{normalized}"
 
     return normalized
 
@@ -176,11 +182,14 @@ def _build_extra_body(
     if provider == "bailian":
         return {"enable_thinking": summarize_config.enable_thinking}
 
+    if provider == "deepseek":
+        return {}
+
     if provider == "groq":
-        # Groq reasoning 参数按模型能力启用：
-        # - qwen3: reasoning_effort 支持 none/default/low/medium/high
-        # - gpt-oss: reasoning_effort 支持 low/medium/high
-        # 非 reasoning 模型（如 llama、kimi）不发送 reasoning 参数，避免 400。
+        # Groq reasoning parameters enabled based on model capability:
+        # - qwen3: reasoning_effort supports none/default/low/medium/high
+        # - gpt-oss: reasoning_effort supports low/medium/high
+        # Non-reasoning models (e.g. llama, kimi) should not receive reasoning params to avoid 400.
         extra_body: dict[str, object] = {}
         model_name = selected_model
         if _is_groq_qwen3_model(model_name):
@@ -208,7 +217,7 @@ def stream_summary_completion(
 ) -> object:
     selected_model = (model_override or model_profile.model).strip()
     if not selected_model:
-        raise ValueError("模型名不能为空")
+        raise ValueError("Model name cannot be empty")
 
     kwargs: dict[str, Any] = {
         "model": _to_litellm_model_name(selected_model, model_profile.provider),
@@ -231,8 +240,8 @@ def stream_summary_completion(
     try:
         return completion(**kwargs)
     except Exception as exc:
-        # 某些 Groq 模型会对 include_reasoning / reasoning_effort 返回不支持错误，
-        # 这里做一次自动降级重试，避免整次总结失败。
+        # Some Groq models return unsupported errors for include_reasoning / reasoning_effort,
+        # so we do one automatic retry without those parameters to avoid failing the entire summary.
         if model_profile.provider != "groq":
             raise
 

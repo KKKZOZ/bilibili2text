@@ -1,5 +1,5 @@
 /**
- * 文件相关的工具函数
+ * File-related utility functions
  */
 
 export function resolveFileType(filename, kind) {

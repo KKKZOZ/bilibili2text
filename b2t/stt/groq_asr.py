@@ -1,4 +1,4 @@
-"""Groq Whisper 语音转文字（分块 + 合并）"""
+"""Groq Whisper speech-to-text (chunking + merging)"""
 
 import json
 import logging
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 def _export_chunk(chunk: AudioSegment, temp_path: str, bitrate: str) -> float:
-    """导出单个音频块到 m4a，优先尝试 macOS 硬件编码。"""
+    """Export a single audio chunk to m4a, preferring macOS hardware encoding."""
     export_start = time.time()
     try:
         chunk.export(
@@ -162,7 +162,7 @@ def _normalize_segment(segment: object) -> dict:
 
 
 def merge_transcripts(results: list[tuple[dict, int]]) -> dict:
-    """合并 Groq 分块转录结果。"""
+    """Merge Groq chunked transcription results."""
     logger.info("Merging Groq chunk results...")
 
     has_segments = False
@@ -257,21 +257,21 @@ def merge_transcripts(results: list[tuple[dict, int]]) -> dict:
 
 
 def transcribe_local_audio(audio_path: Path, config: STTConfig) -> dict:
-    """使用 Groq 对本地音频进行分块转录。"""
+    """Transcribe local audio in chunks using Groq."""
     if not config.groq_api_key:
-        raise ValueError("缺少 stt.groq_api_key 配置")
+        raise ValueError("Missing stt.groq_api_key config")
 
     if config.groq_chunk_length <= 0:
-        raise ValueError("stt.groq_chunk_length 必须大于 0")
+        raise ValueError("stt.groq_chunk_length must be greater than 0")
 
     if config.groq_overlap < 0:
-        raise ValueError("stt.groq_overlap 不能小于 0")
+        raise ValueError("stt.groq_overlap must not be negative")
 
     step_seconds = config.groq_chunk_length - config.groq_overlap
     if step_seconds <= 0:
-        raise ValueError("stt.groq_overlap 必须小于 stt.groq_chunk_length")
+        raise ValueError("stt.groq_overlap must be less than stt.groq_chunk_length")
 
-    logger.info("开始使用 Groq 转录音频: %s", audio_path)
+    logger.info("Starting Groq transcription for audio: %s", audio_path)
     client = Groq(api_key=config.groq_api_key, base_url=config.groq_base_url, max_retries=0)
 
     audio = AudioSegment.from_file(audio_path)
@@ -326,7 +326,7 @@ def transcribe_local_audio(audio_path: Path, config: STTConfig) -> dict:
 
 
 class GroqSTTProvider(STTProvider):
-    """Groq STT Provider（本地分块转录）。"""
+    """Groq STT Provider (local chunked transcription)."""
 
     def __init__(self, stt_config: STTConfig) -> None:
         self._stt_config = stt_config
@@ -341,11 +341,11 @@ class GroqSTTProvider(STTProvider):
             if progress_callback is not None:
                 progress_callback(stage, label, progress)
 
-        emit("transcribing", "语音转录", 45)
+        emit("transcribing", "Speech transcription", 45)
         result = transcribe_local_audio(audio_path, self._stt_config)
 
         json_path = work_dir / f"{audio_path.stem}_transcription.json"
-        emit("transcribing", "语音转录", 65)
+        emit("transcribing", "Speech transcription", 65)
         json_path.write_text(
             json.dumps(result, ensure_ascii=False, indent=2),
             encoding="utf-8",

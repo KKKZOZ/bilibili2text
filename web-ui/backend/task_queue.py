@@ -3,9 +3,9 @@
 from concurrent.futures import Future, ThreadPoolExecutor
 import atexit
 
-_main_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="b2t-job")
+_main_executor = ThreadPoolExecutor(max_workers=20, thread_name_prefix="b2t-job")
 _postprocess_executor = ThreadPoolExecutor(
-    max_workers=2,
+    max_workers=8,
     thread_name_prefix="b2t-postprocess",
 )
 

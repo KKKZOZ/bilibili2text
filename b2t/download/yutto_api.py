@@ -1,4 +1,4 @@
-"""使用 yutto Python API 下载 Bilibili 音频（默认实现）"""
+"""Download Bilibili audio using yutto Python API (default implementation)"""
 
 from __future__ import annotations
 
@@ -105,7 +105,7 @@ async def download_audio_minimal_async(
     Returns:
         VideoMetadata if fetch_metadata is True, otherwise None
     """
-    # 获取元信息（如果需要）
+    # Fetch metadata (if needed)
     metadata = None
     if fetch_metadata:
         bvid = extract_bvid(url)
@@ -113,7 +113,7 @@ async def download_audio_minimal_async(
             try:
                 metadata = await get_video_metadata_async(bvid)
             except Exception as e:
-                logger.warning("获取视频元信息失败: %s", e)
+                logger.warning("Failed to fetch video metadata: %s", e)
 
     parser = _build_minimal_parser()
     output_dir_path = Path(output_dir).expanduser()
@@ -181,7 +181,7 @@ def download_audio(
     audio_quality: str = "30216",
     fetch_metadata: bool = True,
 ) -> tuple[Path, VideoMetadata | None]:
-    """使用 yutto API 下载音频文件。
+    """Download audio file using yutto API.
 
     Args:
         url: Bilibili video URL or BV ID
@@ -197,7 +197,7 @@ def download_audio(
     output_dir_path.mkdir(parents=True, exist_ok=True)
 
     normalized_target = normalize_bilibili_target(url)
-    logger.info("正在从 %s 下载音频...", normalized_target)
+    logger.info("Downloading audio from %s...", normalized_target)
 
     existing_files = {path.resolve() for path in _collect_audio_files(output_dir_path)}
     metadata = download_audio_minimal(
@@ -206,7 +206,7 @@ def download_audio(
         audio_quality=audio_quality,
         fetch_metadata=fetch_metadata,
     )
-    logger.info("下载完成")
+    logger.info("Download complete")
 
     audio_files = [
         path
@@ -216,8 +216,8 @@ def download_audio(
     if not audio_files:
         audio_files = _collect_audio_files(output_dir_path)
     if not audio_files:
-        raise FileNotFoundError(f"未找到下载的音频文件: {output_dir_path}")
+        raise FileNotFoundError(f"No downloaded audio files found: {output_dir_path}")
 
     audio_file = audio_files[0]
-    logger.info("音频文件: %s", audio_file)
+    logger.info("Audio file: %s", audio_file)
     return audio_file, metadata

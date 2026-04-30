@@ -95,7 +95,7 @@ web action mode='default':
         fi; \
         if [[ -z "$frontend_pid" ]]; then \
           echo "Starting frontend on :${frontend_port} (mode:${mode}) ..."; \
-          nohup bash -lc 'cd web-ui/frontend && VITE_B2T_WEB_UI_MODE='"'"'"$mode"'"'"' bun run dev' > web-ui/logs/frontend.log 2>&1 & \
+          nohup bash -lc 'cd web-ui/frontend && B2T_WEB_UI_MODE='"'"'"$mode"'"'"' bun run dev' > web-ui/logs/frontend.log 2>&1 & \
         else \
           echo "Frontend already running on :${frontend_port} (pid: ${frontend_pid})"; \
         fi; \

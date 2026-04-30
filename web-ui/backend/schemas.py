@@ -23,6 +23,14 @@ class ProcessRequest(BaseModel):
         default=False,
         description="总结完成后是否自动异步生成 fancy HTML",
     )
+    api_key: str | None = Field(
+        default=None,
+        description="open-public 模式下用户自带的阿里云 DashScope API Key",
+    )
+    deepseek_api_key: str | None = Field(
+        default=None,
+        description="open-public 模式下用户自带的 DeepSeek API Key（可选，用于 LLM/RAG/Fancy HTML）",
+    )
 
 
 class ProcessStartResponse(BaseModel):
@@ -118,16 +126,21 @@ class RuntimeFeaturesResponse(BaseModel):
     allow_delete: bool
     requires_user_api_key: bool
     api_key_configured: bool
+    deepseek_api_key_configured: bool = False
 
 
 class OpenPublicApiKeyStatusResponse(BaseModel):
-    provider: Literal["alibaba"] = "alibaba"
+    provider: Literal["alibaba", "deepseek"] = "alibaba"
     configured: bool
     masked_key: str | None = None
 
 
 class OpenPublicApiKeyUpdateRequest(BaseModel):
-    api_key: str = Field(..., min_length=1, description="阿里云 DashScope API Key")
+    api_key: str = Field(..., min_length=1, description="API Key")
+    provider: Literal["alibaba", "deepseek"] = Field(
+        default="alibaba",
+        description="API Key 对应的服务商",
+    )
 
 
 class HistoryItemResponse(BaseModel):

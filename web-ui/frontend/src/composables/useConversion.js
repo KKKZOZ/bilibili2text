@@ -1,5 +1,5 @@
 /**
- * 文件转换相关的组合式函数
+ * Composable function for file conversion
  */
 import { ref } from 'vue';
 
@@ -40,7 +40,7 @@ export function useConversion() {
         throw new Error(data.detail || '转换失败');
       }
 
-      // 自动下载转换后的文件
+      // Automatically download the converted file
       download(data.download_url, data.filename);
     } catch (err) {
       conversionError.value = err instanceof Error ? err.message : '转换失败';

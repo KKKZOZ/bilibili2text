@@ -1,4 +1,4 @@
-"""CLI 入口。"""
+"""CLI entry point."""
 
 from __future__ import annotations
 
@@ -477,7 +477,7 @@ def _run_pipeline_with_args(args: CLIArgs, console: Console) -> int:
 
     db_dir = config.download.db_dir
     try:
-        # 从 results 中提取元信息
+        # Extract metadata from results
         metadata = results.get("_metadata")
         author = metadata.author if metadata else ""
         pubdate = metadata.pubdate if metadata else ""

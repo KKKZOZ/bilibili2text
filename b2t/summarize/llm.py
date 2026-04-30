@@ -1,4 +1,4 @@
-"""LLM 总结"""
+"""LLM Summarization"""
 
 import logging
 from datetime import datetime
@@ -97,13 +97,13 @@ def export_summary_table_markdown(
     content = summary_path.read_text(encoding="utf-8")
     table_block = extract_markdown_table_block(content, which=which)
     if table_block is None:
-        logger.info("总结中未检测到 Markdown 表格，跳过表格 Markdown 导出")
+        logger.info("No table detected in summary, skipping table Markdown export")
         return None
 
     table_md_path = summary_path.with_name(f"{summary_path.stem}_table.md")
     table_md_path.write_text(table_block, encoding="utf-8")
     format_markdown_with_markdownlint(table_md_path)
-    logger.info("总结表格 Markdown 已生成: %s", table_md_path)
+    logger.info("Summary table Markdown generated: %s", table_md_path)
     return table_md_path
 
 
@@ -119,8 +119,8 @@ def export_summary_table_pdf(
 
     summary_path = Path(summary_path)
     table_pdf_path = summary_path.with_name(f"{summary_path.stem}_table.pdf")
-    markdown_table_to_pdf(table_md_path, table_pdf_path, title="总结表格")
-    logger.info("总结表格 PDF 已生成: %s", table_pdf_path)
+    markdown_table_to_pdf(table_md_path, table_pdf_path, title="Summary Table")
+    logger.info("Summary table PDF generated: %s", table_pdf_path)
     return table_pdf_path
 
 
@@ -129,7 +129,7 @@ def _infer_video_title_from_markdown_path(md_path: Path) -> str:
     if stem.lower().endswith("_transcription"):
         stem = stem[:-14]
     inferred = _BVID_PREFIX_RE.sub("", stem, count=1).strip("_- ")
-    return inferred or stem or "未命名视频"
+    return inferred or stem or "Untitled Video"
 
 
 def _parse_pubdate_datetime(pubdate: str) -> datetime | None:
@@ -159,7 +159,7 @@ def _format_publish_age(
     now: datetime | None = None,
 ) -> str:
     if metadata is None:
-        return "未知"
+        return "Unknown"
 
     pubdate = (metadata.pubdate or "").strip()
     published_at: datetime | None = None
@@ -171,24 +171,24 @@ def _format_publish_age(
         published_at = _parse_pubdate_datetime(pubdate)
 
     if published_at is None:
-        return pubdate or "未知"
+        return pubdate or "Unknown"
 
     current = now or datetime.now()
     delta_seconds = max(0, int((current - published_at).total_seconds()))
     if delta_seconds < 60:
-        relative = "刚刚"
+        relative = "just now"
     elif delta_seconds < 3600:
-        relative = f"{delta_seconds // 60} 分钟前"
+        relative = f"{delta_seconds // 60} minutes ago"
     elif delta_seconds < 86400:
-        relative = f"{delta_seconds // 3600} 小时前"
+        relative = f"{delta_seconds // 3600} hours ago"
     elif delta_seconds < 86400 * 45:
-        relative = f"{delta_seconds // 86400} 天前"
+        relative = f"{delta_seconds // 86400} days ago"
     elif delta_seconds < 86400 * 365:
-        relative = f"{delta_seconds // (86400 * 30)} 个月前"
+        relative = f"{delta_seconds // (86400 * 30)} months ago"
     else:
-        relative = f"{delta_seconds // (86400 * 365)} 年前"
+        relative = f"{delta_seconds // (86400 * 365)} years ago"
 
-    return f"{pubdate or published_at.strftime('%Y-%m-%d %H:%M:%S')}（{relative}）"
+    return f"{pubdate or published_at.strftime('%Y-%m-%d %H:%M:%S')} ({relative})"
 
 
 def _demote_top_level_headings(markdown: str) -> str:
@@ -220,18 +220,18 @@ def post_process_summary_markdown(
     fallback_title: str,
     now: datetime | None = None,
 ) -> str:
-    title = (metadata.title.strip() if metadata else "") or fallback_title.strip() or "未命名视频"
-    author = (metadata.author.strip() if metadata else "") or "未知"
+    title = (metadata.title.strip() if metadata else "") or fallback_title.strip() or "Untitled Video"
+    author = (metadata.author.strip() if metadata else "") or "Unknown"
     publish_age = _format_publish_age(metadata, now=now)
     body = _demote_top_level_headings(summary.strip())
 
     parts = [
         f"# {title}",
         "",
-        "## 关键信息",
+        "## Key Information",
         "",
-        f"- UP主：{author}",
-        f"- 发布时间：{publish_age}",
+        f"- Creator: {author}",
+        f"- Published: {publish_age}",
     ]
     if body:
         parts.extend(["", body])
@@ -246,20 +246,20 @@ def summarize(
     profile: str | None = None,
     metadata: VideoMetadata | None = None,
 ) -> Path:
-    """使用 LLM 对 Markdown 文件进行总结
+    """Summarize a Markdown file using an LLM
 
     Args:
-        md_path: Markdown 文件路径
-        config: 总结配置
-        summary_presets: 总结 preset 配置
-        preset: 可选，覆盖默认 preset 名称
-        profile: 可选，覆盖默认 summarize profile 名称
+        md_path: Markdown file path
+        config: Summarization config
+        summary_presets: Summary preset config
+        preset: Optional, override the default preset name
+        profile: Optional, override the default summary profile name
 
     Returns:
-        生成的总结文件路径
+        Path to the generated summary file
 
     Raises:
-        Exception: API 调用失败时抛出
+        Exception: Raised when the API call fails
     """
     md_path = Path(md_path)
     content = md_path.read_text(encoding="utf-8")
@@ -275,7 +275,7 @@ def summarize(
     model_profile = resolve_summarize_model_profile(config, override=selected_profile)
 
     logger.info(
-        "正在使用 %s 模型进行总结（profile: %s, provider: %s, api_base: %s, preset: %s）...",
+        "Summarizing with %s model (profile: %s, provider: %s, api_base: %s, preset: %s)...",
         model_profile.model,
         selected_profile,
         model_profile.provider,
@@ -285,7 +285,7 @@ def summarize(
 
     if not model_profile.api_key:
         raise ValueError(
-            f"summarize.profiles.{selected_profile}.api_key 为空，请先在配置文件中设置"
+            f"summarize.profiles.{selected_profile}.api_key is empty, please set it in the config file"
         )
 
     stream = stream_summary_completion(
@@ -299,14 +299,14 @@ def summarize(
     print("\n=== reasoning_content (reason_content) ===")
     if reasoning_content:
         print(reasoning_content)
-        logger.info("模型返回 reasoning_content，长度: %d", len(reasoning_content))
+        logger.info("Model returned reasoning_content, length: %d", len(reasoning_content))
     else:
         print("(empty)")
-        logger.info("模型未返回 reasoning_content")
+        logger.info("Model returned no reasoning_content")
     print("=== /reasoning_content ===\n")
 
     if not content.strip():
-        raise ValueError("LLM 未返回 content 字段，无法生成总结")
+        raise ValueError("LLM did not return a content field, cannot generate summary")
     summary = post_process_summary_markdown(
         content,
         metadata=metadata,
@@ -317,5 +317,5 @@ def summarize(
     summary_path.write_text(summary, encoding="utf-8")
     format_markdown_with_markdownlint(summary_path)
 
-    logger.info("总结已保存到: %s", summary_path)
+    logger.info("Summary saved to: %s", summary_path)
     return summary_path

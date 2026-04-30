@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""从 MinIO 下载所有 Markdown 文件，格式化后重新上传"""
+"""Download all Markdown files from MinIO, format them, and re-upload"""
 
 import argparse
 import logging
@@ -7,7 +7,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-# 添加项目根目录到 Python 路径
+# Add the project root directory to the Python path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 def main():
-    """处理 MinIO 中的所有 Markdown 文件"""
+    """Process all Markdown files in MinIO"""
 
     parser = argparse.ArgumentParser(
         description="从 MinIO 下载所有 Markdown 文件，格式化后重新上传",
@@ -68,23 +68,23 @@ def main():
 
     args = parser.parse_args()
 
-    # 配置日志级别
+    # Configure logging level
     log_level = logging.DEBUG if args.debug else logging.INFO
     logging.basicConfig(
         level=log_level,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
-    # 加载配置
+    # Load configuration
     logger.info("加载配置文件...")
     config = load_config()
 
-    # 检查是否使用 MinIO
+    # Check if MinIO is being used
     if config.storage.backend != "minio":
         logger.error(f"当前 storage backend 是 {config.storage.backend}，不是 minio")
         sys.exit(1)
 
-    # 初始化 MinIO 客户端
+    # Initialize MinIO client
     logger.info("连接到 MinIO...")
     minio_backend = MinIOStorageBackend(config.storage.minio)
     logger.info(
@@ -93,10 +93,10 @@ def main():
         f"base_prefix: {config.storage.minio.base_prefix}"
     )
 
-    # 列出所有对象
+    # List all objects
     logger.info("列出 MinIO 中的所有对象...")
     try:
-        # 使用 base_prefix 作为前缀
+        # Use base_prefix as the prefix
         prefix = config.storage.minio.base_prefix.strip("/")
         if prefix:
             prefix = f"{prefix}/"
@@ -107,20 +107,20 @@ def main():
             recursive=True,
         )
 
-        # 筛选出所有匹配的 Markdown 文件
+        # Filter for matching Markdown files
         md_files = []
         for obj in objects:
             object_name = getattr(obj, "object_name", "")
 
-            # 检查后缀
+            # Check suffix
             if not object_name.lower().endswith(args.suffix.lower()):
                 continue
 
-            # 检查前缀（如果指定）
+            # Check prefix (if specified)
             if args.prefix:
-                # 获取相对路径（去掉 base_prefix）
+                # Get relative path (strip base_prefix)
                 relative_path = minio_backend._strip_base_prefix(object_name)
-                # 检查文件名是否包含指定前缀
+                # Check if filename contains the specified prefix
                 if args.prefix.lower() not in relative_path.lower():
                     continue
 
@@ -132,7 +132,7 @@ def main():
             logger.info("没有找到 Markdown 文件，退出")
             return
 
-        # 处理每个文件
+        # Process each file
         processed_count = 0
         error_count = 0
 
@@ -143,7 +143,7 @@ def main():
                 logger.info(f"[{i}/{len(md_files)}] 处理: {object_name}")
 
                 try:
-                    # 下载文件
+                    # Download file
                     filename = Path(object_name).name
                     local_path = tmpdir_path / filename
 
@@ -152,15 +152,15 @@ def main():
                         content = stream.read()
                         local_path.write_bytes(content)
 
-                    # 记录原始内容
+                    # Record original content
                     original_content = local_path.read_text(encoding="utf-8")
                     original_size = len(original_content)
 
-                    # 格式化
-                    logger.debug(f"  格式化中...")
+                    # Format
+                    logger.debug("  格式化中...")
                     format_markdown_with_markdownlint(local_path)
 
-                    # 检查是否有变化
+                    # Check for changes
                     formatted_content = local_path.read_text(encoding="utf-8")
                     formatted_size = len(formatted_content)
 
@@ -168,14 +168,14 @@ def main():
                         logger.info(f"  ✓ 无需修改（{original_size} 字节）")
                         continue
 
-                    # 上传回 MinIO（除非是 dry-run 模式）
+                    # Upload back to MinIO (unless in dry-run mode)
                     if args.dry_run:
                         logger.info(
                             f"  ✓ 已修改但未上传（dry-run）（{original_size} -> {formatted_size} 字节）"
                         )
                     else:
-                        logger.debug(f"  上传回 MinIO...")
-                        # 使用相对路径（去掉 base_prefix），因为 store_file 会自动添加 base_prefix
+                        logger.debug("  上传回 MinIO...")
+                        # Use relative path (strip base_prefix) since store_file automatically adds base_prefix
                         relative_key = minio_backend._strip_base_prefix(object_name)
                         minio_backend.store_file(local_path, object_key=relative_key)
                         logger.info(
@@ -190,11 +190,11 @@ def main():
                     continue
 
                 finally:
-                    # 清理临时文件
+                    # Clean up temporary files
                     if local_path.exists():
                         local_path.unlink()
 
-        # 输出统计
+        # Output statistics
         logger.info("=" * 60)
         if args.dry_run:
             logger.info("处理完成（DRY-RUN 模式，未上传到 MinIO）!")

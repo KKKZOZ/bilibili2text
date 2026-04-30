@@ -1,4 +1,4 @@
-"""TOML 配置加载模块"""
+"""TOML config loading module"""
 
 import os
 import tomllib
@@ -11,11 +11,12 @@ DEFAULT_BILIBILI_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
-_SUPPORTED_SUMMARIZE_PROVIDERS = ("bailian", "openrouter", "groq")
+_SUPPORTED_SUMMARIZE_PROVIDERS = ("bailian", "openrouter", "groq", "deepseek")
 _SUMMARIZE_PROVIDER_DEFAULT_API_BASE: dict[str, str] = {
     "bailian": "https://dashscope.aliyuncs.com/compatible-mode/v1",
     "openrouter": "https://openrouter.ai/api/v1",
     "groq": "https://api.groq.com/openai/v1",
+    "deepseek": "https://api.deepseek.com",
 }
 
 
@@ -1091,18 +1092,18 @@ def build_bilibili_cookie(config: AppConfig) -> str:
 
 
 def load_config(path: str | Path | None = None) -> AppConfig:
-    """加载 TOML 配置文件
+    """Load TOML config file
 
-    查找顺序：显式路径 → B2T_CONFIG 环境变量 → <project-root>/config.toml
+    Lookup order: explicit path -> B2T_CONFIG env var -> <project-root>/config.toml
 
     Args:
-        path: 配置文件路径，为 None 时按查找顺序自动定位
+        path: Config file path. When None, auto-locates using the lookup order.
 
     Returns:
-        AppConfig 实例
+        AppConfig instance
 
     Raises:
-        FileNotFoundError: 配置文件不存在
+        FileNotFoundError: Config file not found
     """
     if path is None:
         env_config = os.environ.get("B2T_CONFIG")

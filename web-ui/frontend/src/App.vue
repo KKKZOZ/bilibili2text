@@ -29,6 +29,23 @@ const runtimeFeatures = ref({
   api_key_configured: true,
 });
 
+const LOCAL_API_KEY_KEY = 'b2t.public-api-key';
+const LOCAL_DEEPSEEK_API_KEY_KEY = 'b2t.public-deepseek-api-key';
+const localApiKeyConfigured = ref(true);
+const localDeepseekApiKeyConfigured = ref(false);
+
+const refreshLocalApiKeyStatus = () => {
+  try {
+    const key = (window.localStorage.getItem(LOCAL_API_KEY_KEY) || '').trim();
+    localApiKeyConfigured.value = key.length > 0;
+    const dsKey = (window.localStorage.getItem(LOCAL_DEEPSEEK_API_KEY_KEY) || '').trim();
+    localDeepseekApiKeyConfigured.value = dsKey.length > 0;
+  } catch {
+    localApiKeyConfigured.value = false;
+    localDeepseekApiKeyConfigured.value = false;
+  }
+};
+
 const isOpenPublic = computed(() => runtimeFeatures.value.mode === 'open-public');
 
 // Active tab detection
@@ -197,7 +214,7 @@ const updateTabIndicator = () => {
 };
 
 const onApiKeyUpdated = async () => {
-  await loadRuntimeFeatures();
+  refreshLocalApiKeyStatus();
   await loadSummaryProfiles();
 };
 
@@ -208,6 +225,7 @@ const navigateTo = (path) => {
 onMounted(() => {
   void nextTick(updateTabIndicator);
   window.addEventListener('resize', updateTabIndicator);
+  refreshLocalApiKeyStatus();
   void (async () => {
     await loadRuntimeFeatures();
     await Promise.all([loadSummaryProfiles(), loadSummaryPresets()]);
@@ -299,7 +317,8 @@ onBeforeUnmount(() => {
         :is-loading-summary-profiles="isLoadingSummaryProfiles"
         :allow-upload="runtimeFeatures.allow_upload_audio"
         :requires-api-key="runtimeFeatures.requires_user_api_key"
-        :api-key-configured="runtimeFeatures.api_key_configured"
+        :api-key-configured="localApiKeyConfigured"
+        :deepseek-api-key-configured="localDeepseekApiKeyConfigured"
         :allow-delete="runtimeFeatures.allow_delete"
         @update:selected-summary-preset="selectedSummaryPreset = $event"
         @update:selected-summary-profile="selectedSummaryProfile = $event"

@@ -1,4 +1,4 @@
-"""主流程编排"""
+"""Main pipeline orchestration"""
 
 import logging
 import shutil
@@ -23,13 +23,13 @@ logger = logging.getLogger(__name__)
 
 
 def _extract_summary_table(summary_path: Path) -> Path | None:
-    """从总结 Markdown 中提取最后一个表格，保存为单独的文件。
+    """Extract the last table from summary Markdown and save it as a separate file.
 
     Args:
-        summary_path: 总结 Markdown 文件路径
+        summary_path: Summary Markdown file path
 
     Returns:
-        表格文件路径，如果没有表格则返回 None
+        Table file path, or None if no table was found
     """
     content = summary_path.read_text(encoding="utf-8")
     table_content = extract_markdown_table_block(content, which="last")
@@ -37,10 +37,10 @@ def _extract_summary_table(summary_path: Path) -> Path | None:
         logger.info("总结中没有找到表格")
         return None
 
-    # 保存表格文件
+    # Save table file
     table_path = summary_path.with_stem(f"{summary_path.stem}_table")
     table_path.write_text(table_content, encoding="utf-8")
-    logger.info("已提取表格到: %s", table_path)
+    logger.info("Saved table to: %s", table_path)
     return table_path
 
 
@@ -66,28 +66,28 @@ def run_pipeline(
     storage_backend: "StorageBackend | None" = None,
     stt_storage_backend: "StorageBackend | None" = None,
 ) -> dict[str, StoredArtifact]:
-    """执行完整的转录流程
+    """Run the full transcription pipeline
 
-    流程：获取音频文件（下载或本地上传）→ 转录 → 总结
+    Pipeline: obtain audio (download or local upload) -> transcribe -> summarize
 
     Args:
-        url: Bilibili 视频 URL（audio_path 为空时必填）
-        config: 应用配置
-        audio_path: 本地音频路径（传入时将跳过下载步骤）
-        input_bvid: 可选 BV 号，优先于从 URL/文件名提取
-        skip_summary: 是否跳过 LLM 总结
-        summary_preset: 总结 preset 名称，为 None 时使用配置默认值
-        summary_profile: 总结模型 profile 名称，为 None 时使用配置默认值
-        output_dir: 输出根目录，为 None 时使用配置中的 download.output_dir
-        progress_callback: 阶段进度回调，参数为 (stage_key, stage_label, progress_percent)
+        url: Bilibili video URL (required when audio_path is None)
+        config: Application config
+        audio_path: Local audio path (skip download when provided)
+        input_bvid: Optional BV ID, takes priority over URL/filename extraction
+        skip_summary: Whether to skip LLM summarization
+        summary_preset: Summary preset name, uses config default when None
+        summary_profile: Summary model profile name, uses config default when None
+        output_dir: Output root directory, uses config download.output_dir when None
+        progress_callback: Stage progress callback with (stage_key, stage_label, progress_percent)
 
     Returns:
-        包含各阶段输出文件的存储信息：
-        - "audio": 音频文件
-        - "json": 转录 JSON
-        - "markdown": 原文 Markdown
-        - "summary": 总结 Markdown（跳过总结时不包含）
-        - "summary_table_md": 总结表格 Markdown（存在表格时包含）
+        Storage info for output files from each stage:
+        - "audio": Audio file
+        - "json": Transcription JSON
+        - "markdown": Original Markdown
+        - "summary": Summary Markdown (excluded when skip_summary is True)
+        - "summary_table_md": Summary table Markdown (included when table exists)
     """
     results: dict[str, StoredArtifact] = {}
     local_results: dict[str, Path] = {}
@@ -138,16 +138,16 @@ def run_pipeline(
                 "或上传形如 `BV号_视频标题.xxx` 的音频文件。"
             )
 
-        # 记录元信息
+        # Record metadata
         if metadata:
-            logger.info("视频作者: %s, 发布时间: %s", metadata.author, metadata.pubdate)
-            results["_metadata"] = metadata  # 临时存储元信息，供后续使用
+            logger.info("Video author: %s, publish date: %s", metadata.author, metadata.pubdate)
+            results["_metadata"] = metadata  # Temporarily store metadata for later use
 
-        # 创建专属工作目录
+        # Create workflow directory
         work_dir = transcribe_root / _ensure_bvid_prefixed_name(audio_file.stem, bvid)
         work_dir.mkdir(exist_ok=True)
 
-        # 移动音频到工作目录
+        # Move audio to work directory
         audio_filename = _ensure_bvid_prefixed_name(audio_file.name, bvid)
         new_audio_path = work_dir / audio_filename
         if use_local_audio:
@@ -155,9 +155,9 @@ def run_pipeline(
         else:
             shutil.move(str(audio_file), new_audio_path)
         local_results["audio"] = new_audio_path
-        logger.info("工作目录: %s", work_dir)
+        logger.info("Work directory: %s", work_dir)
 
-        # 2. 转录（provider 内部处理各自细节，例如 Qwen 的 OSS 上传）
+        # 2. Transcribe (each provider handles its own details, e.g. Qwen's OSS upload)
         stt_provider = create_stt_provider(config, stt_storage_backend)
         json_path = stt_provider.transcribe(
             new_audio_path,
@@ -166,16 +166,16 @@ def run_pipeline(
         )
         local_results["json"] = json_path
 
-        # 3. JSON → Markdown
-        emit_progress("converting", "生成 Markdown", 80)
-        logger.info("=== 生成 Markdown 文件 ===")
+        # 3. JSON -> Markdown
+        emit_progress("converting", "Generating Markdown", 80)
+        logger.info("=== Generating Markdown ===")
         md_path = convert_json_to_md(json_path, min_length=config.converter.min_length)
         local_results["markdown"] = md_path
 
-        # 4. LLM 总结
+        # 4. LLM Summarization
         if not skip_summary:
-            emit_progress("summarizing", "LLM 整理总结", 90)
-            logger.info("=== 生成总结 ===")
+            emit_progress("summarizing", "LLM summarization", 90)
+            logger.info("=== Generating summary ===")
             summary_path = summarize(
                 md_path,
                 config.summarize,
@@ -186,7 +186,7 @@ def run_pipeline(
             )
             local_results["summary"] = summary_path
 
-            # 提取总结中的表格为单独的 Markdown 文件
+            # Extract summary table as a separate Markdown file
             summary_table_md_path = _extract_summary_table(summary_path)
             if summary_table_md_path is not None:
                 local_results["summary_table_md"] = summary_table_md_path
@@ -207,10 +207,10 @@ def run_pipeline(
         )
 
     finally:
-        # 清理临时下载目录
+        # Clean up temp download directory
         if temp_download_dir.exists():
             shutil.rmtree(temp_download_dir)
-        # MinIO backend 下使用临时目录，流程结束后清理全部本地文件
+        # When using MinIO backend with temp directory, clean up all local files after pipeline
         if not storage_backend.persist_local_outputs and transcribe_root.exists():
             shutil.rmtree(transcribe_root, ignore_errors=True)
 

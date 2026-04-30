@@ -1,4 +1,4 @@
-"""Markdown 转 TXT（通过 pandoc）"""
+"""Markdown to TXT conversion (via pandoc)"""
 
 import logging
 from pathlib import Path
@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 class MarkdownToTextConverter:
-    """Markdown 转 TXT 转换器。"""
+    """Markdown to TXT converter."""
 
     def convert(
         self,
@@ -17,12 +17,12 @@ class MarkdownToTextConverter:
         output_path: Path | None = None,
         **options,
     ) -> Path:
-        """使用 pandoc 将 Markdown 转换为纯文本 TXT。"""
+        """Convert Markdown to plain text TXT using pandoc."""
         if output_path is None:
             output_path = input_path.with_suffix(".txt")
 
         if shutil.which("pandoc") is None:
-            raise RuntimeError("未找到 pandoc，请先安装 pandoc 后再试")
+            raise RuntimeError("pandoc not found, please install pandoc first")
 
         try:
             subprocess.run(
@@ -42,9 +42,9 @@ class MarkdownToTextConverter:
             )
         except subprocess.CalledProcessError as exc:
             detail = exc.stderr.strip() or exc.stdout.strip() or str(exc)
-            raise RuntimeError(f"pandoc 转换失败: {detail}") from exc
+            raise RuntimeError(f"pandoc conversion failed: {detail}") from exc
 
-        logger.info("TXT 文件已生成: %s", output_path)
+        logger.info("TXT file generated: %s", output_path)
         return output_path
 
 
@@ -53,9 +53,9 @@ def convert_md_to_txt(
     output_path: Path | str | None = None,
 ) -> Path:
     """
-    使用 pandoc 将 Markdown 转换为纯文本 TXT。
+    Convert Markdown to plain text TXT using pandoc.
 
-    这是一个遗留的便捷函数，内部使用 MarkdownToTextConverter。
+    This is a legacy convenience function that uses MarkdownToTextConverter internally.
     """
     converter = MarkdownToTextConverter()
     return converter.convert(

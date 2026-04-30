@@ -1,4 +1,4 @@
-"""本地文件系统存储后端。"""
+"""Local filesystem storage backend."""
 
 from contextlib import contextmanager
 from pathlib import Path
@@ -27,7 +27,7 @@ class LocalStorageBackend(StorageBackend):
     def store_file(self, local_path: Path, *, object_key: str) -> StoredArtifact:
         path = Path(local_path).resolve()
         if not path.exists() or not path.is_file():
-            raise FileNotFoundError(f"本地文件不存在: {path}")
+            raise FileNotFoundError(f"Local file does not exist: {path}")
 
         return StoredArtifact(
             filename=path.name,
@@ -39,13 +39,13 @@ class LocalStorageBackend(StorageBackend):
     def open_stream(self, storage_key: str) -> Iterator[BinaryIO]:
         path = Path(storage_key)
         if not path.exists() or not path.is_file():
-            raise FileNotFoundError(f"本地文件不存在: {path}")
+            raise FileNotFoundError(f"Local file does not exist: {path}")
 
         with path.open("rb") as stream:
             yield stream
 
     def delete_file(self, storage_key: str) -> None:
-        """删除本地文件。"""
+        """Delete a local file."""
         path = Path(storage_key)
         if path.exists() and path.is_file():
             path.unlink()

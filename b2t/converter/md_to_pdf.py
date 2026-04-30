@@ -1,4 +1,4 @@
-"""Markdown 转 PDF（通过 Pandoc + Playwright，避免 LaTeX）"""
+"""Markdown to PDF conversion (via Pandoc + Playwright, avoids LaTeX)"""
 
 import logging
 from pathlib import Path
@@ -78,7 +78,7 @@ HTML_TEMPLATE = r"""<!doctype html>
 
 
 class MarkdownToPdfConverter:
-    """Markdown 转 PDF 转换器。"""
+    """Markdown to PDF converter."""
 
     def convert(
         self,
@@ -87,18 +87,18 @@ class MarkdownToPdfConverter:
         **options,
     ) -> Path:
         """
-        使用 pandoc 将 Markdown 转为 HTML，再用 Playwright 生成 PDF。
+        Convert Markdown to HTML using pandoc, then generate a PDF with Playwright.
 
         Args:
-            input_path: Markdown 文件路径
-            output_path: 输出 PDF 路径（可选）
-            **options: 额外选项
+            input_path: Markdown file path
+            output_path: Output PDF path (optional)
+            **options: Extra options
 
         Returns:
-            输出 PDF 文件路径
+            Output PDF file path
         """
         if not input_path.exists():
-            raise FileNotFoundError(f"Markdown 文件不存在: {input_path}")
+            raise FileNotFoundError(f"Markdown file does not exist: {input_path}")
 
         input_path = input_path.expanduser().resolve()
         if output_path is None:
@@ -107,7 +107,7 @@ class MarkdownToPdfConverter:
             output_path = output_path.expanduser().resolve()
 
         if shutil.which("pandoc") is None:
-            raise RuntimeError("未找到 pandoc，请先安装 pandoc 后再试")
+            raise RuntimeError("pandoc not found, please install pandoc first")
 
         css_url = options.get("css_url", GITHUB_CSS_URL)
 
@@ -123,7 +123,7 @@ class MarkdownToPdfConverter:
             html_content=full_html,
             output_path=output_path,
         )
-        logger.info("PDF 文件已生成: %s", output_path)
+        logger.info("PDF file generated: %s", output_path)
         return output_path
 
     def _run_pandoc(self, md_path: Path) -> str:
@@ -142,7 +142,7 @@ class MarkdownToPdfConverter:
             return proc.stdout
         except subprocess.CalledProcessError as exc:
             detail = exc.stderr.strip() or exc.stdout.strip() or str(exc)
-            raise RuntimeError(f"pandoc PDF 转换失败: {detail}") from exc
+            raise RuntimeError(f"pandoc PDF conversion failed: {detail}") from exc
 
     def _normalize_markdown_for_tables(self, content: str) -> str:
         trailing_newline = content.endswith("\n")
@@ -194,4 +194,4 @@ class MarkdownToPdfConverter:
                 )
                 browser.close()
         except Exception as exc:
-            raise RuntimeError(f"Playwright PDF 渲染失败: {exc}") from exc
+            raise RuntimeError(f"Playwright PDF rendering failed: {exc}") from exc

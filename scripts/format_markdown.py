@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""格式化 Markdown 文件的命令行工具"""
+"""Command-line tool for formatting Markdown files"""
 
 import argparse
 import sys
 from pathlib import Path
 
-# 添加项目根目录到 Python 路径
+# Add the project root directory to the Python path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
@@ -59,7 +59,7 @@ def main():
     if not args.files and not args.directory:
         parser.error("必须指定文件或目录")
 
-    # 格式化指定的文件
+    # Format specified files
     if args.files:
         for file_path in args.files:
             path = Path(file_path)
@@ -70,7 +70,7 @@ def main():
             print(f"格式化: {file_path}")
             format_markdown_with_markdownlint(path)
 
-    # 批量格式化目录
+    # Batch format directory
     if args.directory:
         directory = Path(args.directory)
         if not directory.exists():

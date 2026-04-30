@@ -124,6 +124,8 @@ const job = ref({
 let pollTimer = null;
 const maxPollErrors = 3;
 const ACTIVE_JOB_IDS_KEY = 'b2t.active-job-ids';
+const LOCAL_API_KEY_KEY = 'b2t.public-api-key';
+const LOCAL_DEEPSEEK_API_KEY_KEY = 'b2t.public-deepseek-api-key';
 const uploadAccept = '.aac,.flac,.m4a,.mp3,.ogg,.opus,.wav,.webm';
 const uploadFilenamePattern = /^(BV[0-9A-Za-z]{10})_.+\.(aac|flac|m4a|mp3|ogg|opus|wav|webm)$/i;
 
@@ -187,6 +189,22 @@ const pickApiError = (resp, data, fallbackMessage) => {
     return data.detail;
   }
   return `${fallbackMessage}（HTTP ${resp.status}）`;
+};
+
+const getLocalApiKey = () => {
+  try {
+    return (window.localStorage.getItem(LOCAL_API_KEY_KEY) || '').trim();
+  } catch {
+    return '';
+  }
+};
+
+const getLocalDeepseekApiKey = () => {
+  try {
+    return (window.localStorage.getItem(LOCAL_DEEPSEEK_API_KEY_KEY) || '').trim();
+  } catch {
+    return '';
+  }
 };
 
 const isRunning = computed(
@@ -416,6 +434,11 @@ const submit = async () => {
       if (!skipSummary) {
         formData.append('auto_generate_fancy_html', String(autoGenerateFancyHtml.value));
       }
+      if (props.requiresApiKey) {
+        formData.append('api_key', getLocalApiKey());
+        const dsKey = getLocalDeepseekApiKey();
+        if (dsKey) formData.append('deepseek_api_key', dsKey);
+      }
       resp = await fetch('/api/process/upload', {
         method: 'POST',
         body: formData,
@@ -441,6 +464,8 @@ const submit = async () => {
               ? null
               : props.selectedSummaryProfile,
           auto_generate_fancy_html: skipSummary ? false : autoGenerateFancyHtml.value,
+          api_key: props.requiresApiKey ? getLocalApiKey() : null,
+          deepseek_api_key: props.requiresApiKey ? getLocalDeepseekApiKey() || null : null,
         }),
       });
     }
@@ -552,11 +577,11 @@ onBeforeUnmount(() => {
                 id="video-url"
                 v-model="url"
                 type="text"
-                placeholder="https://www.bilibili.com/video/BV..."
+                placeholder="https://www.bilibili.com/video/BV... 或 b23.tv/..."
               />
             </div>
-            <p class="input-example">
-              示例 URL:
+            <div class="input-example">
+              <span>示例：</span>
               <a
                 href="https://www.bilibili.com/video/BV1R9i4BoE7H"
                 target="_blank"
@@ -564,7 +589,15 @@ onBeforeUnmount(() => {
               >
                 https://www.bilibili.com/video/BV1R9i4BoE7H
               </a>
-            </p>
+              <a
+                href="https://b23.tv/2cvz6sn"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                https://b23.tv/2cvz6sn
+              </a>
+              <span>【第1173日投资记录：稍微回血，伊利业绩大放异彩，基本确定把蒙牛卖飞了……-哔哩哔哩】 https://b23.tv/2cvz6sn</span>
+            </div>
           </template>
 
           <template v-else>
@@ -986,6 +1019,9 @@ onBeforeUnmount(() => {
   font-size: 0.84rem;
   color: var(--text-muted);
   line-height: 1.5;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .input-example a {

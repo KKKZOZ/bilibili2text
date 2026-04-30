@@ -1,4 +1,4 @@
-"""Storage backend 工厂。"""
+"""Storage backend factory."""
 
 from pathlib import Path
 
@@ -24,8 +24,8 @@ def _create_backend_from_storage_section(
     if backend == "alicloud":
         return AlicloudStorageBackend(alicloud_config)
     raise ValueError(
-        "不支持的 storage.backend: "
-        f"{backend_name}，可选值: local, minio, alicloud"
+        "Unsupported storage.backend: "
+        f"{backend_name}, supported values: local, minio, alicloud"
     )
 
 

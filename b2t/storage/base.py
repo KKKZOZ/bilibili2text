@@ -1,4 +1,4 @@
-"""Storage backend 抽象定义。"""
+"""Storage backend abstract definition."""
 
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
@@ -8,7 +8,7 @@ from typing import BinaryIO, Iterator
 
 
 def classify_artifact_filename(filename: str) -> str | None:
-    """根据文件名推断产物类型键。"""
+    """Infer artifact type key from filename."""
     lowered = filename.lower()
 
     if lowered.endswith("_summary_fancy.html"):
@@ -38,7 +38,7 @@ def classify_artifact_filename(filename: str) -> str | None:
 
 @dataclass(frozen=True)
 class StoredArtifact:
-    """统一描述已落库文件。"""
+    """Unified description of a stored file."""
 
     filename: str
     storage_key: str
@@ -46,42 +46,42 @@ class StoredArtifact:
 
 
 class StorageBackend(ABC):
-    """统一的文件存储接口。"""
+    """Unified file storage interface."""
 
     backend_name: str
     persist_local_outputs: bool
 
     @abstractmethod
     def store_file(self, local_path: Path, *, object_key: str) -> StoredArtifact:
-        """将本地文件写入后端并返回存储信息。"""
+        """Write a local file to the backend and return storage info."""
         raise NotImplementedError
 
     @contextmanager
     @abstractmethod
     def open_stream(self, storage_key: str) -> Iterator[BinaryIO]:
-        """按 storage_key 打开一个可读取的二进制流。"""
+        """Open a readable binary stream by storage_key."""
         raise NotImplementedError
 
     def delete_file(self, storage_key: str) -> None:
-        """删除指定的文件。"""
+        """Delete the specified file."""
         raise NotImplementedError
 
     def find_existing_transcription(
         self,
         bvid: str,
     ) -> dict[str, StoredArtifact] | None:
-        """按 BV 号查找已存在的转录结果。"""
+        """Find existing transcription results by BV ID."""
         return None
 
     def list_existing_transcription_artifacts(
         self,
         bvid: str,
     ) -> list[StoredArtifact]:
-        """按 BV 号列出已存在的转录相关文件。"""
+        """List existing transcription-related files by BV ID."""
         return []
 
     def supports_public_url(self) -> bool:
-        """是否支持为本地文件生成可公网访问的 URL。"""
+        """Whether the backend supports generating publicly accessible URLs for local files."""
         return False
 
     @contextmanager
@@ -91,14 +91,14 @@ class StorageBackend(ABC):
         *,
         object_key_prefix: str = "temp-audio",
     ) -> Iterator[str]:
-        """临时上传本地文件并返回公网 URL；退出上下文时清理。"""
+        """Temporarily upload a local file and return a public URL; cleans up on context exit."""
         raise RuntimeError(
-            f"{self.backend_name} backend 不支持公网 URL 上传"
+            f"{self.backend_name} backend does not support public URL upload"
         )
 
 
 class PublicURLStorageBackend(StorageBackend, ABC):
-    """支持临时公网 URL 的存储抽象。"""
+    """Storage abstraction supporting temporary public URLs."""
 
     def supports_public_url(self) -> bool:
         return True

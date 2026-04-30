@@ -307,7 +307,7 @@ def delete_history_artifact(run_id: str, download_id: str) -> HistoryDetailRespo
     if target_artifact is None:
         raise HTTPException(status_code=404, detail="文件不属于该历史记录")
 
-    # 允许删除总结 Markdown（会级联删除派生文件）或单独删除 fancy HTML。
+    # Allow deleting summary Markdown (cascading to derived files) or deleting fancy HTML individually.
     if target_artifact.kind not in ("summary", "summary_fancy_html"):
         raise HTTPException(status_code=400, detail="仅支持删除总结 Markdown 或 Fancy HTML 文件")
 

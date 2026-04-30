@@ -18,7 +18,7 @@ def select_index_artifact(detail) -> tuple[object, str]:
         for artifact in detail.artifacts:
             if artifact.kind == kind:
                 return artifact, kind
-    raise ValueError(f"run_id={detail.run_id} 没有可索引的 markdown 或 summary 文件")
+    raise ValueError(f"run_id={detail.run_id} has no indexable markdown or summary file")
 
 
 def index_run(
@@ -36,7 +36,7 @@ def index_run(
     """
     detail = history_db.get_run_detail(run_id)
     if detail is None:
-        raise ValueError(f"run_id={run_id} 不存在于历史数据库")
+        raise ValueError(f"run_id={run_id} does not exist in history database")
 
     target_artifact, preferred_kind = select_index_artifact(detail)
 
@@ -57,14 +57,14 @@ def index_run(
     )
 
     if not chunks:
-        logger.warning("run_id=%s 切分后得到 0 个 chunk，跳过索引", run_id)
+        logger.warning("run_id=%s resulted in 0 chunks after splitting, skipping indexing", run_id)
         return 0
 
     texts = [chunk.text for chunk in chunks]
     embeddings = embed_texts(texts, config=rag_config.embedding)
     store.upsert_chunks(chunks, embeddings)
 
-    logger.info("run_id=%s 索引完成，共 %d 个 chunk", run_id, len(chunks))
+    logger.info("run_id=%s indexing complete, %d chunks total", run_id, len(chunks))
     return len(chunks)
 
 
@@ -95,7 +95,7 @@ def index_all_runs(
                 )
                 results[item.run_id] = count
             except Exception as exc:
-                logger.warning("索引 run_id=%s 失败: %s", item.run_id, exc)
+                logger.warning("Indexing run_id=%s failed: %s", item.run_id, exc)
                 results[item.run_id] = str(exc)
 
         if not page_result.has_more:

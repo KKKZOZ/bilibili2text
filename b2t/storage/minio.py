@@ -1,4 +1,4 @@
-"""兼容导入：请改用 b2t.storage.minio_client。"""
+"""Compatibility import: use b2t.storage.minio_client instead."""
 
 from b2t.storage.minio_client import MinIOStorageBackend
 

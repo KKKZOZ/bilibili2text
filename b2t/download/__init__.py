@@ -1,4 +1,4 @@
-"""下载模块。"""
+"""Download module."""
 
 from b2t.download.yutto_api import download_audio
 

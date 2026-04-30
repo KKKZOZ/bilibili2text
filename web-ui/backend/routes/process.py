@@ -77,9 +77,17 @@ def _validate_upload_filename(filename: str) -> tuple[str, str]:
     return safe_name, bvid
 
 
-def _ensure_runtime_ready() -> None:
+def _ensure_runtime_ready(
+    api_key: str | None = None,
+    deepseek_api_key: str | None = None,
+    summary_profile: str | None = None,
+) -> None:
     try:
-        get_runtime_app_config(require_public_api_key=True)
+        config = get_runtime_app_config(
+            require_public_api_key=True,
+            api_key=api_key,
+            deepseek_api_key=deepseek_api_key,
+        )
     except FileNotFoundError as exc:
         raise HTTPException(
             status_code=503,
@@ -93,15 +101,33 @@ def _ensure_runtime_ready() -> None:
             detail=f"初始化配置失败: {exc}",
         ) from exc
 
+    # Validate that the selected profile has a usable API key.
+    profile_name = summary_profile or config.summarize.profile
+    profile = config.summarize.profiles.get(profile_name)
+    if profile is not None and not profile.api_key.strip():
+        provider_label = "DeepSeek" if profile.provider.strip().lower() == "deepseek" else profile.provider
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"模型 {profile_name}（{provider_label}）需要 API Key，"
+                "但你未提供。请在「API Key」页面配置对应的 Key 后再试。"
+            ),
+        )
+
 
 @router.post("/api/process", response_model=ProcessStartResponse)
 def process_video(payload: ProcessRequest) -> ProcessStartResponse:
-    _ensure_runtime_ready()
     if not payload.url.strip():
         raise HTTPException(status_code=400, detail="URL 不能为空")
 
     summary_preset = _clean_optional_text(payload.summary_preset)
     summary_profile = _clean_optional_text(payload.summary_profile)
+
+    _ensure_runtime_ready(
+        api_key=_clean_optional_text(payload.api_key),
+        deepseek_api_key=_clean_optional_text(payload.deepseek_api_key),
+        summary_profile=summary_profile,
+    )
 
     job = _create_job(
         skip_summary=payload.skip_summary,
@@ -117,6 +143,8 @@ def process_video(payload: ProcessRequest) -> ProcessStartResponse:
         summary_preset=summary_preset,
         summary_profile=summary_profile,
         auto_generate_fancy_html=payload.auto_generate_fancy_html,
+        api_key=_clean_optional_text(payload.api_key),
+        deepseek_api_key=_clean_optional_text(payload.deepseek_api_key),
     )
 
     return ProcessStartResponse(job_id=str(job["job_id"]))
@@ -129,13 +157,19 @@ def process_uploaded_audio(
     summary_preset: str | None = Form(default=None),
     summary_profile: str | None = Form(default=None),
     auto_generate_fancy_html: bool = Form(default=False),
+    api_key: str | None = Form(default=None),
+    deepseek_api_key: str | None = Form(default=None),
 ) -> ProcessStartResponse:
     if not is_upload_enabled():
         raise HTTPException(
             status_code=403,
             detail="open-public 模式不允许直接上传音频文件，请改为输入视频 URL 或 BV 号",
         )
-    _ensure_runtime_ready()
+    _ensure_runtime_ready(
+        api_key=_clean_optional_text(api_key),
+        deepseek_api_key=_clean_optional_text(deepseek_api_key),
+        summary_profile=_clean_optional_text(summary_profile),
+    )
 
     safe_filename, bvid = _validate_upload_filename(file.filename or "")
     cleaned_summary_preset = _clean_optional_text(summary_preset)
@@ -176,6 +210,8 @@ def process_uploaded_audio(
         summary_preset=cleaned_summary_preset,
         summary_profile=cleaned_summary_profile,
         auto_generate_fancy_html=auto_generate_fancy_html,
+        api_key=_clean_optional_text(api_key),
+        deepseek_api_key=_clean_optional_text(deepseek_api_key),
     )
 
     return ProcessStartResponse(job_id=str(job["job_id"]))

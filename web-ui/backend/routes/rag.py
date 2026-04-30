@@ -26,7 +26,7 @@ from backend.schemas_rag import (
 )
 from backend.dependencies import get_history_db, get_rag_store, get_storage_backend
 from backend.download_registry import download_registry
-from backend.settings import get_app_config
+from backend.settings import get_runtime_app_config
 
 router = APIRouter(prefix="/api/rag", tags=["rag"])
 logger = logging.getLogger(__name__)
@@ -44,7 +44,7 @@ def _shanghai_now() -> datetime:
 
 
 def _require_rag_enabled() -> None:
-    config = get_app_config()
+    config = get_runtime_app_config()
     if not config.rag.enabled:
         raise HTTPException(
             status_code=503,
@@ -54,7 +54,7 @@ def _require_rag_enabled() -> None:
 
 @router.get("/authors", response_model=RagAuthorsResponse)
 def rag_authors() -> RagAuthorsResponse:
-    """Return UP主 list that have indexed content."""
+    """Return the list of content creators that have indexed content."""
     _require_rag_enabled()
     store = get_rag_store()
     history_db = get_history_db()
@@ -76,7 +76,7 @@ def rag_authors() -> RagAuthorsResponse:
 async def rag_query_stream(question: str, filter_authors: str = "", llm_profile: str = "") -> StreamingResponse:
     """Stream RAG query progress as Server-Sent Events."""
     _require_rag_enabled()
-    config = get_app_config()
+    config = get_runtime_app_config()
     store = get_rag_store()
     history_db = get_history_db()
 
@@ -251,7 +251,7 @@ async def rag_query_stream(question: str, filter_authors: str = "", llm_profile:
 def rag_query(request: RagQueryRequest) -> RagQueryResponse:
     """Answer a question using RAG over indexed video transcripts."""
     _require_rag_enabled()
-    config = get_app_config()
+    config = get_runtime_app_config()
     store = get_rag_store()
 
     try:
@@ -286,7 +286,7 @@ def rag_query(request: RagQueryRequest) -> RagQueryResponse:
 def rag_index_run(run_id: str, request: RagIndexRequest) -> RagIndexResponse:
     """Index a single run into the RAG store."""
     _require_rag_enabled()
-    config = get_app_config()
+    config = get_runtime_app_config()
     store = get_rag_store()
     history_db = get_history_db()
     storage_backend = get_storage_backend()
@@ -314,7 +314,7 @@ def rag_index_run(run_id: str, request: RagIndexRequest) -> RagIndexResponse:
 def rag_index_all(request: RagIndexRequest) -> RagIndexAllResponse:
     """Index all runs in history (synchronous, runs in thread pool)."""
     _require_rag_enabled()
-    config = get_app_config()
+    config = get_runtime_app_config()
     store = get_rag_store()
     history_db = get_history_db()
     storage_backend = get_storage_backend()
@@ -359,7 +359,7 @@ def rag_index_all(request: RagIndexRequest) -> RagIndexAllResponse:
 @router.get("/status", response_model=RagStatusResponse)
 def rag_status() -> RagStatusResponse:
     """Return RAG index status."""
-    config = get_app_config()
+    config = get_runtime_app_config()
     if not config.rag.enabled:
         return RagStatusResponse(
             enabled=False,

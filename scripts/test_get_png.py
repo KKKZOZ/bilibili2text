@@ -17,7 +17,7 @@ import sys
 import subprocess
 from pathlib import Path
 
-# 允许在 scripts 目录直接运行时也能导入项目内的 b2t 包
+# Allow importing the b2t package from the project when running directly from the scripts directory
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))

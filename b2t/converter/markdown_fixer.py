@@ -1,39 +1,39 @@
-"""Markdown 文件修复工具，自动处理常见的格式问题"""
+"""Markdown file fixer that automatically handles common formatting issues"""
 
 from pathlib import Path
 
 
 class MarkdownFixer:
-    """修复常见的 Markdown 格式问题"""
+    """Fix common Markdown formatting issues"""
 
     @staticmethod
     def fix_table_spacing(content: str) -> str:
         """
-        确保表格前后有空行。
+        Ensure there are blank lines before and after tables.
 
         Args:
-            content: Markdown 文本内容
+            content: Markdown text content
 
         Returns:
-            修复后的 Markdown 文本
+            Fixed Markdown text
         """
         lines = content.splitlines()
         fixed_lines = []
 
         for i, line in enumerate(lines):
-            # 检查当前行是否是表格的开始
+            # Check if current line is the start of a table
             if line.strip().startswith('|') and i + 1 < len(lines):
                 next_line = lines[i + 1].strip()
-                # 检查下一行是否是表格分隔符（包含 |--- 或 |:--）
+                # Check if next line is a table separator (contains |--- or |:--)
                 if next_line.startswith('|') and ('---' in next_line or ':--' in next_line):
-                    # 这是表格的开始，检查上一行是否为空
+                    # This is a table start, check if previous line is not empty
                     if i > 0 and fixed_lines and fixed_lines[-1].strip() != '':
-                        # 在表格前添加空行
+                        # Add a blank line before the table
                         fixed_lines.append('')
 
             fixed_lines.append(line)
 
-        # 保持原始的尾部换行符
+        # Preserve original trailing newline
         result = '\n'.join(fixed_lines)
         if content.endswith('\n') and not result.endswith('\n'):
             result += '\n'
@@ -43,14 +43,14 @@ class MarkdownFixer:
     @staticmethod
     def fix_file(input_path: Path, output_path: Path | None = None) -> Path:
         """
-        修复 Markdown 文件。
+        Fix a Markdown file.
 
         Args:
-            input_path: 输入文件路径
-            output_path: 输出文件路径（如果为 None，则覆盖原文件）
+            input_path: Input file path
+            output_path: Output file path (if None, overwrites the original file)
 
         Returns:
-            输出文件路径
+            Output file path
         """
         if output_path is None:
             output_path = input_path

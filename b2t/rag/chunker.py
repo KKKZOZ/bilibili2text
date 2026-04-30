@@ -5,9 +5,9 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class Chunk:
-    text: str           # 头部带 "【title】\n" 前缀
+    text: str           # Prefixed with "【title】\n" at the head
     run_id: str
-    kind: str           # "summary" 或 "markdown"
+    kind: str           # "summary" or "markdown"
     title: str
     bvid: str
     chunk_index: int

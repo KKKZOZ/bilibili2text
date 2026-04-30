@@ -1,4 +1,4 @@
-"""Markdown 转 PNG（通过 Pandoc + Playwright）"""
+"""Markdown to PNG conversion (via Pandoc + Playwright)"""
 
 import hashlib
 import logging
@@ -315,7 +315,7 @@ _CHROMIUM_WORKER = _ChromiumWorker()
 
 
 class MarkdownToPngConverter:
-    """Markdown 转 PNG 转换器（生成移动端长截图）。"""
+    """Markdown to PNG converter (generates mobile-friendly long screenshots)."""
 
     def __init__(
         self,
@@ -325,13 +325,13 @@ class MarkdownToPngConverter:
         css_url: str = GITHUB_CSS_URL,
     ):
         """
-        初始化转换器。
+        Initialize the converter.
 
         Args:
-            width: 视口宽度（像素）
-            height: 视口高度（像素）
-            dpr: 设备像素比（用于 retina 显示）
-            css_url: CSS 样式表 URL
+            width: Viewport width (pixels)
+            height: Viewport height (pixels)
+            dpr: Device pixel ratio (for retina display)
+            css_url: CSS stylesheet URL
         """
         self.width = width
         self.height = height
@@ -346,26 +346,26 @@ class MarkdownToPngConverter:
         **options,
     ) -> Path:
         """
-        将 Markdown 转换为 PNG 长截图。
+        Convert Markdown to a PNG long screenshot.
 
         Args:
-            input_path: Markdown 文件路径
-            output_path: 输出 PNG 路径（可选）
-            is_table: 是否为表格 Markdown（为 True 时使用更宽画布）
-            **options: 额外选项
-                - width: 视口宽度
-                - height: 视口高度
-                - dpr: 设备像素比
-                - css_url: CSS 样式表 URL
-                - keep_html: 是否保留中间 HTML 文件
-                - max_full_page_height: 单次 full_page 截图最大 CSS 高度
-                - tile_height: 分片截图时每片 CSS 高度
+            input_path: Markdown file path
+            output_path: Output PNG path (optional)
+            is_table: Whether it is a table Markdown (uses wider canvas when True)
+            **options: Extra options
+                - width: Viewport width
+                - height: Viewport height
+                - dpr: Device pixel ratio
+                - css_url: CSS stylesheet URL
+                - keep_html: Whether to keep the intermediate HTML file
+                - max_full_page_height: Max CSS height for single full_page screenshot
+                - tile_height: CSS height per tile for tiled screenshots
 
         Returns:
-            输出 PNG 文件路径
+            Output PNG file path
         """
         if not input_path.exists():
-            raise FileNotFoundError(f"Markdown 文件不存在: {input_path}")
+            raise FileNotFoundError(f"Markdown file does not exist: {input_path}")
 
         input_path = input_path.expanduser().resolve()
         if output_path is None:
@@ -373,7 +373,7 @@ class MarkdownToPngConverter:
         else:
             output_path = output_path.expanduser().resolve()
 
-        # 提取选项
+        # Extract options
         width = 1200 if is_table else options.get("width", self.width)
         height = options.get("height", self.height)
         dpr = options.get("dpr", self.dpr)
@@ -383,19 +383,19 @@ class MarkdownToPngConverter:
         tile_height = options.get("tile_height", 1800)
         reuse_browser = options.get("reuse_browser", True)
 
-        # 生成中间 HTML
+        # Generate intermediate HTML
         html_path = output_path.with_suffix(".html")
         body_html = self._run_pandoc(input_path)
 
-        # 处理 CSS href（优先本地缓存，避免每次访问外网）
+        # Resolve CSS href (prefer local cache to avoid external requests)
         css_href = self._resolve_css_href(css_url)
 
-        # 生成完整 HTML
+        # Generate full HTML
         full_html = HTML_TEMPLATE.format(css_href=css_href, body_html=body_html)
         html_path.write_text(full_html, encoding="utf-8")
 
         try:
-            # 渲染 HTML -> PNG
+            # Render HTML -> PNG
             self._render_html_to_png(
                 html_path,
                 output_path,
@@ -407,17 +407,17 @@ class MarkdownToPngConverter:
                 reuse_browser=reuse_browser,
             )
 
-            logger.info("PNG 文件已生成: %s", output_path)
+            logger.info("PNG file generated: %s", output_path)
             return output_path
         finally:
-            # 清理中间 HTML 文件（除非要求保留）
+            # Clean up intermediate HTML file (unless keep_html is set)
             if not keep_html and html_path.exists():
                 html_path.unlink()
 
     def _run_pandoc(self, md_path: Path) -> str:
-        """使用 pandoc 将 Markdown 转换为 HTML fragment。"""
+        """Convert Markdown to an HTML fragment using pandoc."""
         if shutil.which("pandoc") is None:
-            raise RuntimeError("未找到 pandoc，请先安装 pandoc 后再试")
+            raise RuntimeError("pandoc not found, please install pandoc first")
 
         markdown_content = md_path.read_text(encoding="utf-8")
         normalized_content = self._normalize_markdown_for_tables(markdown_content)
@@ -434,7 +434,7 @@ class MarkdownToPngConverter:
             return proc.stdout
         except subprocess.CalledProcessError as exc:
             detail = exc.stderr.strip() or exc.stdout.strip() or str(exc)
-            raise RuntimeError(f"pandoc 转换失败: {detail}") from exc
+            raise RuntimeError(f"pandoc conversion failed: {detail}") from exc
 
     def _normalize_markdown_for_tables(self, content: str) -> str:
         """Normalize common full-width table characters before pandoc parsing."""
@@ -479,7 +479,7 @@ class MarkdownToPngConverter:
                 cached = self._download_css_to_cache(requested)
                 if cached is not None:
                     return cached.resolve().as_uri()
-                logger.warning("远程 CSS 不可用，已回退到内置本地样式")
+                logger.warning("Remote CSS unavailable, falling back to built-in local styles")
                 return self._ensure_fallback_css().resolve().as_uri()
             return requested
         return self._ensure_fallback_css().resolve().as_uri()
@@ -495,13 +495,13 @@ class MarkdownToPngConverter:
             with urlopen(css_url, timeout=8) as response:
                 css_content = response.read()
             if not css_content:
-                raise ValueError("CSS 文件内容为空")
+                raise ValueError("CSS file content is empty")
             temp_path = target_path.with_suffix(".tmp")
             temp_path.write_bytes(css_content)
             temp_path.replace(target_path)
             return target_path
         except (URLError, TimeoutError, ValueError, OSError) as exc:
-            logger.warning("下载 Markdown CSS 失败: %s", exc)
+            logger.warning("Failed to download Markdown CSS: %s", exc)
             return None
 
     def _ensure_fallback_css(self) -> Path:
@@ -562,7 +562,7 @@ class MarkdownToPngConverter:
         tile_height: int,
         reuse_browser: bool,
     ) -> None:
-        """使用 Playwright 渲染 HTML 为 PNG。"""
+        """Render HTML to PNG using Playwright."""
         try:
             if reuse_browser:
                 _CHROMIUM_WORKER.submit(
@@ -595,7 +595,7 @@ class MarkdownToPngConverter:
                 finally:
                     browser.close()
         except Exception as exc:
-            raise RuntimeError(f"Playwright 渲染失败: {exc}") from exc
+            raise RuntimeError(f"Playwright rendering failed: {exc}") from exc
 
     def _capture_tiled_png(
         self,
@@ -666,7 +666,7 @@ class MarkdownToPngConverter:
 
 
 class HtmlToPngConverter:
-    """已渲染 HTML 文件转 PNG（桌面视角，适用于 fancy HTML 等页面）。"""
+    """Convert pre-rendered HTML files to PNG (desktop view, suitable for fancy HTML pages)."""
 
     def __init__(
         self,
@@ -685,7 +685,7 @@ class HtmlToPngConverter:
         **options,
     ) -> Path:
         if not input_path.exists():
-            raise FileNotFoundError(f"HTML 文件不存在: {input_path}")
+            raise FileNotFoundError(f"HTML file does not exist: {input_path}")
 
         input_path = input_path.expanduser().resolve()
         if output_path is None:
@@ -728,9 +728,9 @@ class HtmlToPngConverter:
                     finally:
                         browser.close()
         except Exception as exc:
-            raise RuntimeError(f"Playwright 渲染失败: {exc}") from exc
+            raise RuntimeError(f"Playwright rendering failed: {exc}") from exc
 
-        logger.info("Fancy HTML PNG 已生成: %s", output_path)
+        logger.info("Fancy HTML PNG generated: %s", output_path)
         return output_path
 
     def _render(
@@ -842,7 +842,7 @@ class HtmlToPngConverter:
 
                     const labelEl = document.createElement('div');
                     labelEl.className = 'mobile-table-label';
-                    labelEl.textContent = headers[index] || `列${index + 1}`;
+                    labelEl.textContent = headers[index] || `Column ${index + 1}`;
 
                     const valueEl = document.createElement('div');
                     valueEl.className = 'mobile-table-value';
@@ -869,15 +869,15 @@ class HtmlToPngConverter:
 
 
 def warmup_png_renderer() -> None:
-    """预热 PNG 渲染器（启动并常驻一个 Chromium 实例）。"""
-    # 预下载 CSS 到本地缓存，避免首次转换等待外网。
+    """Warm up the PNG renderer (launches a persistent Chromium instance)."""
+    # Pre-download CSS to local cache to avoid waiting for external requests on first conversion.
     try:
         MarkdownToPngConverter()._resolve_css_href(GITHUB_CSS_URL)
     except Exception as exc:  # noqa: BLE001
-        logger.warning("预热本地 CSS 缓存失败: %s", exc)
+        logger.warning("Failed to warm up local CSS cache: %s", exc)
     _CHROMIUM_WORKER.start()
 
 
 def shutdown_png_renderer() -> None:
-    """关闭常驻 PNG 渲染器。"""
+    """Shut down the persistent PNG renderer."""
     _CHROMIUM_WORKER.stop()

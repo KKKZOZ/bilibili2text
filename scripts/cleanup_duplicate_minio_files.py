@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""清理 MinIO 中路径错误的重复文件（b2t/b2t/ 路径）"""
+"""Clean up duplicate files with incorrect paths in MinIO (b2t/b2t/ path)"""
 
 import argparse
 import logging
 import sys
 from pathlib import Path
 
-# 添加项目根目录到 Python 路径
+# Add the project root directory to the Python path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 def main():
-    """清理 MinIO 中的重复文件"""
+    """Clean up duplicate files in MinIO"""
 
     parser = argparse.ArgumentParser(
         description="清理 MinIO 中路径错误的重复文件（b2t/b2t/ 路径）",
@@ -37,23 +37,23 @@ def main():
 
     args = parser.parse_args()
 
-    # 配置日志级别
+    # Configure logging level
     log_level = logging.DEBUG if args.debug else logging.INFO
     logging.basicConfig(
         level=log_level,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
-    # 加载配置
+    # Load configuration
     logger.info("加载配置文件...")
     config = load_config()
 
-    # 检查是否使用 MinIO
+    # Check if MinIO is being used
     if config.storage.backend != "minio":
         logger.error(f"当前 storage backend 是 {config.storage.backend}，不是 minio")
         sys.exit(1)
 
-    # 初始化 MinIO 客户端
+    # Initialize MinIO client
     logger.info("连接到 MinIO...")
     minio_backend = MinIOStorageBackend(config.storage.minio)
     logger.info(
@@ -62,10 +62,10 @@ def main():
         f"base_prefix: {config.storage.minio.base_prefix}"
     )
 
-    # 查找重复的文件
+    # Find duplicate files
     logger.info("查找路径错误的重复文件...")
     try:
-        # 查找 b2t/b2t/ 路径下的所有文件
+        # Find all files under the b2t/b2t/ path
         duplicate_prefix = f"{config.storage.minio.base_prefix}/{config.storage.minio.base_prefix}/"
 
         objects = minio_backend._client.list_objects(
@@ -86,7 +86,7 @@ def main():
             logger.info("没有找到重复文件")
             return
 
-        # 显示要删除的文件
+        # Display files to be deleted
         logger.info("=" * 60)
         logger.info("将要删除的文件:")
         for i, object_name in enumerate(duplicate_files, 1):
@@ -98,14 +98,14 @@ def main():
             logger.info(f"如需删除，请运行: python {sys.argv[0]}")
             return
 
-        # 确认删除
+        # Confirm deletion
         logger.info("=" * 60)
         response = input(f"确认删除这 {len(duplicate_files)} 个文件？(yes/no): ")
         if response.lower() not in ["yes", "y"]:
             logger.info("取消删除")
             return
 
-        # 删除文件
+        # Delete files
         logger.info("开始删除...")
         deleted_count = 0
         error_count = 0
@@ -119,7 +119,7 @@ def main():
                 logger.error(f"  ✗ 删除失败: {e}")
                 error_count += 1
 
-        # 输出统计
+        # Output statistics
         logger.info("=" * 60)
         logger.info("清理完成!")
         logger.info(f"  总文件数: {len(duplicate_files)}")

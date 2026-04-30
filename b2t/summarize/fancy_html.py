@@ -66,14 +66,14 @@ _ALLOWED_CLASSES = {
 
 _DROP_CONTENT_TAGS = {"script", "style", "iframe", "object", "embed"}
 
-FANCY_HTML_PROMPT = """请将下面的总结 Markdown 改写为一个"受限 HTML fragment"，注入到固定模板中展示为精排文章页面。
+FANCY_HTML_PROMPT = """Please rewrite the following summary Markdown as a "restricted HTML fragment" to be injected into a fixed template for display as a well-formatted article page.
 
-═══ 硬性规则 ═══
-1. 只输出 HTML fragment，不得包含 ```、<!doctype>、<html>、<head>、<body>、<script>、<style>。
-2. 只能使用这些标签：
+=== Hard Rules ===
+1. Only output an HTML fragment. Do NOT include ```, <!doctype>, <html>, <head>, <body>, <script>, or <style>.
+2. Only use these tags:
    div, section, h1, h2, h3, p, ul, ol, li, strong, em, blockquote, span,
    table, thead, tbody, tr, th, td, hr, br
-3. 只能使用这些 class（其余全部无效，会被过滤）：
+3. Only use these classes (all others are invalid and will be filtered):
    hero, hero-kicker, hero-title, hero-dek,
    section, section-title, section-body,
    lead, eyebrow,
@@ -81,64 +81,64 @@ FANCY_HTML_PROMPT = """请将下面的总结 Markdown 改写为一个"受限 HTM
    cards, card, card-title, card-body,
    quote, quote-source,
    table-wrap
-4. 禁止内联样式、事件属性、外链资源、自定义属性。
-5. 不得补造事实，不得引入 Markdown 中没有的信息。
+4. Do NOT use inline styles, event attributes, external resources, or custom attributes.
+5. Do NOT fabricate facts. Do NOT introduce information not present in the Markdown.
 
-═══ 组件规范 ═══
+=== Component Specification ===
 
-【hero】—— 必须有且只有一个，置于最顶部
-结构：
+[hero] - Must have exactly one, placed at the very top
+Structure:
   <div class="hero">
-    <span class="hero-kicker">主题标签（如"技术分析 · AI模型"）</span>
-    <h1 class="hero-title">核心结论或主标题（从原文提炼）</h1>
-    <p class="hero-dek">1-2 句概括全文要点的导言</p>
+    <span class="hero-kicker">Theme tag (e.g. "Technical Analysis - AI Model")</span>
+    <h1 class="hero-title">Core conclusion or main title (extracted from the source)</h1>
+    <p class="hero-dek">1-2 sentence introduction summarizing the article's key points</p>
   </div>
 
-【section】—— 主要正文容器，每个 Markdown 一级/二级标题对应一个 section
-结构：
+[section] - Main content container. Each Markdown H1/H2 heading corresponds to one section.
+Structure:
   <section class="section">
-    <h2 class="section-title">标题</h2>
+    <h2 class="section-title">Title</h2>
     <div class="section-body">
-      <p>正文段落……</p>
+      <p>Body paragraph...</p>
     </div>
   </section>
 
-【callout】—— 用于"核心结论 / 风险提示 / 操作要点 / 关键提醒"，每份内容至少 1 个
-- callout-insight：技术洞察、核心结论（蓝色左边框）
-- callout-warning：风险提醒、注意事项（橙色左边框）
-- callout-neutral：补充说明、背景信息（灰色左边框）
-结构：
+[callout] - Used for "core conclusions / risk alerts / action items / key reminders". At least 1 per document.
+- callout-insight: Technical insight, core conclusion (blue left border)
+- callout-warning: Risk reminder, caution (orange left border)
+- callout-neutral: Supplementary info, background (gray left border)
+Structure:
   <div class="callout callout-insight">
-    <p class="callout-title">标题（简短，可选）</p>
-    <div class="callout-body"><p>内容……</p></div>
+    <p class="callout-title">Title (short, optional)</p>
+    <div class="callout-body"><p>Content...</p></div>
   </div>
 
-【cards】—— 只用于 2-4 个并列短项目（如对比项、分类列表）
-- 单个 card 内文字要极短，不超过 3 行
-- 全文最多出现 1-2 次 cards 容器
-结构：
+[cards] - Only for 2-4 short parallel items (e.g., comparisons, category lists)
+- Text within a single card must be very short, no more than 3 lines
+- Use at most 1-2 cards containers per document
+Structure:
   <div class="cards">
-    <div class="card"><p class="card-title">标题</p><div class="card-body"><p>简短说明</p></div></div>
+    <div class="card"><p class="card-title">Title</p><div class="card-body"><p>Brief description</p></div></div>
     ...
   </div>
 
-【quote】—— 只用于值得单独突出的一句精彩判断
-【table】—— 原文有表格时保留，外层加 <div class="table-wrap">
+[quote] - Only for a single remarkable statement worth highlighting
+[table] - Preserve tables from the source; wrap with <div class="table-wrap">
 
-═══ 排版原则 ═══
-- 段落优先：连续分析、推理、计划必须用 section + p，不要强行转成卡片
-- 列表使用：ul/ol 适合 4 个以上并列短项；3 个以内用句子描述
-- 有序列表 ol 用于有先后顺序或步骤的内容；无序列表 ul 用于无顺序要求的并列项
-- 禁止全局卡片化：多数 section 不能是 cards，至少 2 个以上 section 以段落为主
-- 整体风格：专业文章感，层次分明，不像卡片看板
+=== Layout Principles ===
+- Paragraph-first: Continuous analysis, reasoning, and plans must use section + p, not be forced into cards
+- Lists: ul/ol for 4+ parallel short items; use sentence descriptions for 3 or fewer
+- Ordered list ol for sequential or step-by-step content; unordered list ul for non-sequential parallel items
+- No global cardification: Most sections should NOT be cards. At least 2+ sections should be paragraph-based.
+- Overall style: Professional article feel, well-structured, not like a card dashboard
 
-总结 Markdown 如下：
+Summary Markdown follows:
 
 {content}
 """
 
 HTML_TEMPLATE = """<!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -655,7 +655,7 @@ def _fallback_fragment(summary_markdown: str) -> str:
     )
     return rendered or (
         '<section class="section"><div class="section-body">'
-        "<p>该总结未能生成 fancy HTML，已回退为纯文本摘要。</p>"
+        "<p>The summary could not generate fancy HTML; falling back to plain text excerpt.</p>"
         "</div></section>"
     )
 
@@ -684,12 +684,12 @@ def generate_fancy_summary_html(
     )
     if not model_profile.api_key:
         raise ValueError(
-            f"summarize.profiles.{selected_profile}.api_key 为空，请先在配置文件中设置"
+            f"summarize.profiles.{selected_profile}.api_key is empty, please set it in the config file"
         )
 
     prompt = FANCY_HTML_PROMPT.format(content=summary_markdown)
     logger.info(
-        "正在为总结生成 fancy HTML（profile: %s, provider: %s, model: %s, api_base: %s）",
+        "Generating fancy HTML from summary (profile: %s, provider: %s, model: %s, api_base: %s)",
         selected_profile,
         model_profile.provider,
         model_profile.model,
@@ -704,7 +704,7 @@ def generate_fancy_summary_html(
     _, fragment = collect_stream_result(stream)
     safe_fragment = sanitize_fragment(fragment)
     if not safe_fragment:
-        logger.warning("LLM 未返回合法 fancy HTML fragment，回退为纯文本布局")
+        logger.warning("LLM did not return a valid fancy HTML fragment, falling back to plain text layout")
         safe_fragment = _fallback_fragment(summary_markdown)
 
     title = _extract_title(summary_markdown, fallback_title=summary_path.stem)
@@ -714,5 +714,5 @@ def generate_fancy_summary_html(
     )
     output_path = summary_path.with_name(f"{summary_path.stem}_fancy.html")
     output_path.write_text(full_html, encoding="utf-8")
-    logger.info("Fancy HTML 已保存到: %s", output_path)
+    logger.info("Fancy HTML saved to: %s", output_path)
     return output_path

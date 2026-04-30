@@ -16,7 +16,7 @@ try:
     from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 except ImportError as exc:  # pragma: no cover - handled in CLI usage
     raise SystemExit(
-        "未安装 reportlab。请先执行: uv add reportlab 或 pip install reportlab"
+        "reportlab is not installed. Please run: uv add reportlab or pip install reportlab"
     ) from exc
 
 
@@ -47,11 +47,11 @@ def parse_markdown_table(md_text: str) -> list[list[str]]:
     table_lines = [line for line in lines if "|" in line]
 
     if len(table_lines) < 2:
-        raise ValueError("未检测到有效 Markdown 表格")
+        raise ValueError("No valid Markdown table detected")
 
     rows = [_split_table_row(line) for line in table_lines]
     if len(rows[0]) < 1:
-        raise ValueError("表头为空")
+        raise ValueError("Header is empty")
 
     align_index = 1 if len(rows) > 1 and all(ALIGNMENT_RE.match(c) for c in rows[1]) else -1
     if align_index == 1:
@@ -67,7 +67,7 @@ def parse_markdown_table(md_text: str) -> list[list[str]]:
         normalized.append(row)
 
     if len(normalized) < 2:
-        raise ValueError("表格至少需要表头和一行数据")
+        raise ValueError("Table needs at least a header and one data row")
 
     return normalized
 
@@ -173,23 +173,23 @@ def markdown_table_to_pdf(md_path: Path, output_path: Path, title: str | None = 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="把只包含一个 Markdown 表格的 .md 文件导出为美观 PDF 表格（reportlab）"
+        description="Export a .md file containing a single Markdown table to a styled PDF table (reportlab)"
     )
     parser.add_argument("input", help="输入 Markdown 文件路径")
     parser.add_argument(
         "-o",
         "--output",
-        help="输出 PDF 路径（默认与输入同名 .pdf）",
+        help="Output PDF path (defaults to same name as input with .pdf)",
         default=None,
     )
-    parser.add_argument("--title", help="PDF 标题（可选）", default=None)
+    parser.add_argument("--title", help="PDF title (optional)", default=None)
     args = parser.parse_args()
 
     md_path = Path(args.input).expanduser().resolve()
     if not md_path.exists():
-        raise SystemExit(f"输入文件不存在: {md_path}")
+        raise SystemExit(f"Input file does not exist: {md_path}")
     if md_path.suffix.lower() != ".md":
-        raise SystemExit("输入文件必须是 .md")
+        raise SystemExit("Input file must be .md")
 
     output_path = (
         Path(args.output).expanduser().resolve()
@@ -198,7 +198,7 @@ def main() -> None:
     )
 
     result = markdown_table_to_pdf(md_path, output_path, title=args.title)
-    print(f"PDF 已生成: {result}")
+    print(f"PDF generated: {result}")
 
 
 if __name__ == "__main__":

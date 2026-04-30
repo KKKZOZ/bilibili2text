@@ -1,4 +1,3 @@
-from pathlib import Path
 from types import SimpleNamespace
 
 from b2t.config import STTConfig

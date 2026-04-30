@@ -1,56 +1,56 @@
 ## bilibili-to-text Web UI
 
-Web UI 由 FastAPI 后端和 Vue/Vite 前端组成。完整的从 clone 到运行流程见根目录 [README.md](../README.md)。
+The Web UI consists of a FastAPI backend and a Vue/Vite frontend. See the root [README.md](../README.md) for the complete clone-to-run workflow.
 
-### 目录结构
+### Directory Structure
 
-- `backend/`：FastAPI 接口与任务队列
-- `frontend/`：Vue + Vite 前端，使用 Bun 管理依赖
+- `backend/`: FastAPI API routes and task queue
+- `frontend/`: Vue + Vite frontend, using Bun for dependency management
 
-### 配置
+### Configuration
 
-Web UI 使用项目根目录的：
+The Web UI uses the following files from the project root:
 
 - `config.toml`
 - `summary_presets.toml`
 
-先在根目录复制配置模板：
+First, copy the configuration template in the project root:
 
 ```bash
 cp config.toml.example config.toml
 ```
 
-默认建议先使用 `Groq + local storage` 跑通本地流程。DashScope/Qwen ASR 需要 MinIO 或 Alibaba Cloud OSS 提供公网临时音频 URL。
+It is recommended to start with `Groq + local storage` to get the local workflow running. DashScope/Qwen ASR requires MinIO or Alibaba Cloud OSS to provide public temporary audio URLs.
 
-### 一键启动
+### One-Click Start
 
-在项目根目录执行：
+Run the following in the project root:
 
 ```bash
 just web on
 ```
 
-默认访问：
+Access by default at:
 
 ```text
 http://127.0.0.1:6010
 ```
 
-停止：
+To stop:
 
 ```bash
 just web off
 ```
 
-### 手动启动
+### Manual Start
 
-后端：
+Backend:
 
 ```bash
 uv run uvicorn backend.main:app --app-dir web-ui --host 0.0.0.0 --port 8000 --reload
 ```
 
-前端：
+Frontend:
 
 ```bash
 cd web-ui/frontend
@@ -58,23 +58,23 @@ bun install
 bun run dev
 ```
 
-如果后端端口不是 `8000`：
+If the backend port is not `8000`:
 
 ```bash
 bun run dev --backend-port 8001
 ```
 
-### open-public 模式
+### Open-Public Mode
 
 ```bash
 just web-open-public on
 ```
 
-该模式会禁用上传音频、删除历史、本地项目 API Key，并要求用户在页面里输入自己的 DashScope API Key。由于该模式使用 Qwen ASR，本地 `config.toml` 仍需要配置可用的 MinIO 或 Alibaba Cloud OSS。
+This mode disables audio upload, history deletion, and local project API Keys, and requires users to enter their own DashScope API Key on the page. Since this mode uses Qwen ASR, the local `config.toml` still requires a working MinIO or Alibaba Cloud OSS configuration.
 
 ### Docker
 
-在项目根目录执行：
+Run the following in the project root:
 
 ```bash
 docker build -t bilibili-to-text:latest .

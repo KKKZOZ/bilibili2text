@@ -1,123 +1,140 @@
 <script setup>
 import { onMounted, ref } from 'vue';
-import { AlertCircle, CheckCircle2, KeyRound, LoaderCircle, Shield } from 'lucide-vue-next';
+import { AlertCircle, CheckCircle2, KeyRound, Shield, Info } from 'lucide-vue-next';
 
 const emit = defineEmits(['apiKeyUpdated']);
 
-const apiKeyInput = ref('');
-const configured = ref(false);
-const maskedKey = ref('');
-const loading = ref(false);
-const saving = ref(false);
-const clearing = ref(false);
-const error = ref('');
-const success = ref('');
+const LOCAL_API_KEY_KEY = 'b2t.public-api-key';
+const LOCAL_DEEPSEEK_API_KEY_KEY = 'b2t.public-deepseek-api-key';
 
-const parseJsonSafely = async (resp, fallbackMessage) => {
-  const raw = await resp.text();
-  if (!raw) {
-    return null;
-  }
+// Aliyun key state
+const aliyunKeyInput = ref('');
+const aliyunConfigured = ref(false);
+const aliyunMaskedKey = ref('');
+const aliyunError = ref('');
+const aliyunSuccess = ref('');
+
+// DeepSeek key state
+const deepseekKeyInput = ref('');
+const deepseekConfigured = ref(false);
+const deepseekMaskedKey = ref('');
+const deepseekError = ref('');
+const deepseekSuccess = ref('');
+
+const maskKey = (key) => {
+  if (!key) return '';
+  if (key.length <= 8) return '*'.repeat(key.length);
+  return `${key.slice(0, 4)}${'*'.repeat(key.length - 8)}${key.slice(-4)}`;
+};
+
+const loadStatus = () => {
   try {
-    return JSON.parse(raw);
+    const aliyunKey = (window.localStorage.getItem(LOCAL_API_KEY_KEY) || '').trim();
+    aliyunConfigured.value = aliyunKey.length > 0;
+    aliyunMaskedKey.value = aliyunKey ? maskKey(aliyunKey) : '';
+
+    const dsKey = (window.localStorage.getItem(LOCAL_DEEPSEEK_API_KEY_KEY) || '').trim();
+    deepseekConfigured.value = dsKey.length > 0;
+    deepseekMaskedKey.value = dsKey ? maskKey(dsKey) : '';
   } catch {
-    throw new Error(`${fallbackMessage}（服务返回了非 JSON 响应，HTTP ${resp.status}）`);
+    aliyunError.value = '读取本地存储失败';
   }
 };
 
-const pickApiError = (resp, data, fallbackMessage) => {
-  if (
-    data &&
-    typeof data === 'object' &&
-    typeof data.detail === 'string' &&
-    data.detail.trim()
-  ) {
-    return data.detail;
+const validateKey = (key, label) => {
+  if (!key.startsWith('sk-')) {
+    return `${label} API Key 格式不正确，应以 sk- 开头`;
   }
-  return `${fallbackMessage}（HTTP ${resp.status}）`;
-};
-
-const applyStatus = (data) => {
-  configured.value = Boolean(data?.configured);
-  maskedKey.value = typeof data?.masked_key === 'string' ? data.masked_key : '';
-};
-
-const loadStatus = async () => {
-  loading.value = true;
-  error.value = '';
-  try {
-    const resp = await fetch('/api/open-public/api-key');
-    const data = await parseJsonSafely(resp, '获取 API Key 状态失败');
-    if (!resp.ok) {
-      throw new Error(pickApiError(resp, data, '获取 API Key 状态失败'));
-    }
-    applyStatus(data);
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : '获取 API Key 状态失败';
-  } finally {
-    loading.value = false;
+  if (key.length < 20) {
+    return `${label} API Key 长度不足，请检查是否完整`;
   }
+  return '';
 };
 
-const saveApiKey = async () => {
-  const apiKey = apiKeyInput.value.trim();
+const saveAliyunKey = () => {
+  const apiKey = aliyunKeyInput.value.trim();
   if (!apiKey) {
-    error.value = '请输入 API Key';
-    success.value = '';
+    aliyunError.value = '请输入 API Key';
+    aliyunSuccess.value = '';
     return;
   }
-
-  saving.value = true;
-  error.value = '';
-  success.value = '';
+  const validationError = validateKey(apiKey, '阿里云');
+  if (validationError) {
+    aliyunError.value = validationError;
+    aliyunSuccess.value = '';
+    return;
+  }
+  aliyunError.value = '';
+  aliyunSuccess.value = '';
   try {
-    const resp = await fetch('/api/open-public/api-key', {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ api_key: apiKey }),
-    });
-    const data = await parseJsonSafely(resp, '保存 API Key 失败');
-    if (!resp.ok) {
-      throw new Error(pickApiError(resp, data, '保存 API Key 失败'));
-    }
-    applyStatus(data);
-    apiKeyInput.value = '';
-    success.value = 'API Key 已更新。后续转录和总结将使用该 Key。';
+    window.localStorage.setItem(LOCAL_API_KEY_KEY, apiKey);
+    aliyunConfigured.value = true;
+    aliyunMaskedKey.value = maskKey(apiKey);
+    aliyunKeyInput.value = '';
+    aliyunSuccess.value = '阿里云 API Key 已更新。';
     emit('apiKeyUpdated');
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : '保存 API Key 失败';
-  } finally {
-    saving.value = false;
+  } catch {
+    aliyunError.value = '保存失败，请检查浏览器存储权限';
   }
 };
 
-const clearApiKey = async () => {
-  clearing.value = true;
-  error.value = '';
-  success.value = '';
+const clearAliyunKey = () => {
+  aliyunError.value = '';
+  aliyunSuccess.value = '';
   try {
-    const resp = await fetch('/api/open-public/api-key', {
-      method: 'DELETE',
-    });
-    const data = await parseJsonSafely(resp, '清除 API Key 失败');
-    if (!resp.ok) {
-      throw new Error(pickApiError(resp, data, '清除 API Key 失败'));
-    }
-    applyStatus(data);
-    apiKeyInput.value = '';
-    success.value = 'API Key 已清除。未重新设置前无法提交任务。';
+    window.localStorage.removeItem(LOCAL_API_KEY_KEY);
+    aliyunConfigured.value = false;
+    aliyunMaskedKey.value = '';
+    aliyunSuccess.value = '阿里云 API Key 已清除。';
     emit('apiKeyUpdated');
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : '清除 API Key 失败';
-  } finally {
-    clearing.value = false;
+  } catch {
+    aliyunError.value = '清除失败，请检查浏览器存储权限';
+  }
+};
+
+const saveDeepseekKey = () => {
+  const apiKey = deepseekKeyInput.value.trim();
+  if (!apiKey) {
+    deepseekError.value = '请输入 API Key';
+    deepseekSuccess.value = '';
+    return;
+  }
+  const validationError = validateKey(apiKey, 'DeepSeek');
+  if (validationError) {
+    deepseekError.value = validationError;
+    deepseekSuccess.value = '';
+    return;
+  }
+  deepseekError.value = '';
+  deepseekSuccess.value = '';
+  try {
+    window.localStorage.setItem(LOCAL_DEEPSEEK_API_KEY_KEY, apiKey);
+    deepseekConfigured.value = true;
+    deepseekMaskedKey.value = maskKey(apiKey);
+    deepseekKeyInput.value = '';
+    deepseekSuccess.value = 'DeepSeek API Key 已更新。后续 LLM 总结、知识库问答和 Fancy HTML 将使用该 Key。';
+    emit('apiKeyUpdated');
+  } catch {
+    deepseekError.value = '保存失败，请检查浏览器存储权限';
+  }
+};
+
+const clearDeepseekKey = () => {
+  deepseekError.value = '';
+  deepseekSuccess.value = '';
+  try {
+    window.localStorage.removeItem(LOCAL_DEEPSEEK_API_KEY_KEY);
+    deepseekConfigured.value = false;
+    deepseekMaskedKey.value = '';
+    deepseekSuccess.value = 'DeepSeek API Key 已清除。LLM 功能将回退使用阿里云。';
+    emit('apiKeyUpdated');
+  } catch {
+    deepseekError.value = '清除失败，请检查浏览器存储权限';
   }
 };
 
 onMounted(() => {
-  void loadStatus();
+  loadStatus();
 });
 </script>
 
@@ -129,35 +146,43 @@ onMounted(() => {
           <Shield :size="14" />
           <span>open-public</span>
         </div>
-        <h2>阿里云 API Key</h2>
-        <p>当前模式仅支持阿里云 DashScope。转录和总结都会使用这里设置的同一个 Key。</p>
+        <h2>API Key 配置</h2>
+        <p>
+          语音识别（ASR）需要<strong>阿里云 DashScope</strong> API Key，<strong>必须配置</strong>。
+          如需使用 DeepSeek 模型进行 LLM 总结、知识库问答或 Fancy HTML 生成，可<strong>额外配置</strong> DeepSeek API Key，
+          然后在转录页面模型下拉框中切换到 DeepSeek 模型。
+        </p>
       </header>
 
-      <div v-if="loading" class="settings-loading">
-        <LoaderCircle :size="16" class="spin" />
-        <span>正在加载配置...</span>
+      <div class="privacy-notice">
+        <Info :size="16" />
+        <span><strong>隐私提示：</strong>本网站不会将您的 API Key 上传至服务器。所有 Key 仅存储在您浏览器的本地存储（localStorage）中，只有您的浏览器可以直接访问。</span>
       </div>
 
-      <template v-else>
+      <!-- Aliyun Section -->
+      <div class="provider-section">
+        <h3 class="provider-title">阿里云 DashScope <span class="required-badge">必填</span></h3>
+        <p class="provider-desc">语音识别（ASR）依赖阿里云，无此 Key 无法提交转录任务。</p>
+
         <div class="status-row">
           <span class="status-label">当前状态</span>
-          <span :class="['status-pill', configured ? 'ok' : 'missing']">
-            <CheckCircle2 v-if="configured" :size="14" />
+          <span :class="['status-pill', aliyunConfigured ? 'ok' : 'missing']">
+            <CheckCircle2 v-if="aliyunConfigured" :size="14" />
             <AlertCircle v-else :size="14" />
-            <span>{{ configured ? '已配置' : '未配置' }}</span>
+            <span>{{ aliyunConfigured ? '已配置' : '未配置' }}</span>
           </span>
         </div>
 
-        <p v-if="configured && maskedKey" class="status-note">
-          已保存 Key：<code>{{ maskedKey }}</code>
+        <p v-if="aliyunConfigured && aliyunMaskedKey" class="status-note">
+          已保存 Key：<code>{{ aliyunMaskedKey }}</code>
         </p>
 
-        <label for="open-public-api-key" class="field-label">DashScope API Key</label>
+        <label for="aliyun-api-key" class="field-label">DashScope API Key</label>
         <div class="field-row">
           <KeyRound :size="16" />
           <input
-            id="open-public-api-key"
-            v-model="apiKeyInput"
+            id="aliyun-api-key"
+            v-model="aliyunKeyInput"
             type="password"
             placeholder="请输入 sk-... 格式的 API Key"
             autocomplete="off"
@@ -165,30 +190,85 @@ onMounted(() => {
         </div>
 
         <div class="actions">
-          <button class="submit" type="button" :disabled="saving" @click="saveApiKey">
-            <LoaderCircle v-if="saving" :size="16" class="spin" />
-            <span>{{ saving ? '保存中...' : '保存 API Key' }}</span>
+          <button class="submit" type="button" @click="saveAliyunKey">
+            <span>{{ aliyunConfigured ? '更新' : '保存' }}</span>
           </button>
           <button
             class="clear-button"
             type="button"
-            :disabled="clearing || !configured"
-            @click="clearApiKey"
+            :disabled="!aliyunConfigured"
+            @click="clearAliyunKey"
           >
-            <LoaderCircle v-if="clearing" :size="16" class="spin" />
-            <span>{{ clearing ? '清除中...' : '清除已保存 Key' }}</span>
+            <span>清除</span>
           </button>
         </div>
-      </template>
 
-      <p v-if="error" class="inline-error">
-        <AlertCircle :size="16" />
-        <span>{{ error }}</span>
-      </p>
-      <p v-if="success" class="success-note">
-        <CheckCircle2 :size="16" />
-        <span>{{ success }}</span>
-      </p>
+        <p v-if="aliyunError" class="inline-error">
+          <AlertCircle :size="16" />
+          <span>{{ aliyunError }}</span>
+        </p>
+        <p v-if="aliyunSuccess" class="success-note">
+          <CheckCircle2 :size="16" />
+          <span>{{ aliyunSuccess }}</span>
+        </p>
+      </div>
+
+      <!-- DeepSeek Section -->
+      <div class="provider-section">
+        <h3 class="provider-title">DeepSeek <span class="optional-badge">可选</span></h3>
+        <p class="provider-desc">配置后可在转录页面的模型下拉框中选择 DeepSeek 模型，用于 LLM 总结、知识库问答和 Fancy HTML。</p>
+
+        <div class="status-row">
+          <span class="status-label">当前状态</span>
+          <span :class="['status-pill', deepseekConfigured ? 'ok' : 'missing']">
+            <CheckCircle2 v-if="deepseekConfigured" :size="14" />
+            <AlertCircle v-else :size="14" />
+            <span>{{ deepseekConfigured ? '已配置' : '未配置' }}</span>
+          </span>
+        </div>
+
+        <p v-if="deepseekConfigured && deepseekMaskedKey" class="status-note">
+          已保存 Key：<code>{{ deepseekMaskedKey }}</code>
+        </p>
+        <p v-else class="status-note">
+          未配置时将使用阿里云 Key 进行 LLM 调用。
+        </p>
+
+        <label for="deepseek-api-key" class="field-label">DeepSeek API Key</label>
+        <div class="field-row">
+          <KeyRound :size="16" />
+          <input
+            id="deepseek-api-key"
+            v-model="deepseekKeyInput"
+            type="password"
+            placeholder="请输入 sk-... 格式的 API Key"
+            autocomplete="off"
+          />
+        </div>
+
+        <div class="actions">
+          <button class="submit" type="button" @click="saveDeepseekKey">
+            <span>{{ deepseekConfigured ? '更新' : '保存' }}</span>
+          </button>
+          <button
+            class="clear-button"
+            type="button"
+            :disabled="!deepseekConfigured"
+            @click="clearDeepseekKey"
+          >
+            <span>清除</span>
+          </button>
+        </div>
+
+        <p v-if="deepseekError" class="inline-error">
+          <AlertCircle :size="16" />
+          <span>{{ deepseekError }}</span>
+        </p>
+        <p v-if="deepseekSuccess" class="success-note">
+          <CheckCircle2 :size="16" />
+          <span>{{ deepseekSuccess }}</span>
+        </p>
+      </div>
     </article>
   </section>
 </template>
@@ -219,6 +299,25 @@ onMounted(() => {
   max-width: 68ch;
 }
 
+.privacy-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px 18px;
+  border-radius: 14px;
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  color: #0369a1;
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+
+.privacy-notice svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: #0284c7;
+}
+
 .settings-badge {
   display: inline-flex;
   align-items: center;
@@ -234,12 +333,56 @@ onMounted(() => {
   text-transform: uppercase;
 }
 
-.settings-loading {
-  display: inline-flex;
+.provider-section {
+  padding: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.7) 0%, rgba(248, 253, 255, 0.5) 100%);
+  box-shadow: 0 8px 24px -8px rgba(15, 23, 42, 0.05);
+  display: grid;
+  gap: 12px;
+}
+
+.provider-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #0f172a;
+  display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.required-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #fef2f2;
+  color: #b91c1c;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border: 1px solid #fca5a5;
+}
+
+.optional-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #ecfeff;
+  color: #0f766e;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border: 1px solid #99f6e4;
+}
+
+.provider-desc {
+  margin: 0;
+  font-size: 0.86rem;
   color: var(--text-muted);
-  min-height: 44px;
 }
 
 .status-row {
@@ -334,17 +477,17 @@ onMounted(() => {
 }
 
 .clear-button {
-  margin-top: 8px;
+  margin-top: 12px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  border-radius: 13px;
-  font-size: 0.9rem;
+  gap: 10px;
+  border-radius: 16px;
+  font-size: 1rem;
   font-weight: 700;
   cursor: pointer;
-  min-height: 46px;
-  padding: 0 16px;
+  min-height: 52px;
+  padding: 0 24px;
   border: 1px solid #fecaca;
   color: #b91c1c;
   background: #fff1f2;
@@ -375,6 +518,10 @@ onMounted(() => {
 @media (max-width: 640px) {
   .panel-settings {
     padding: 22px;
+  }
+
+  .provider-section {
+    padding: 18px;
   }
 
   .actions {

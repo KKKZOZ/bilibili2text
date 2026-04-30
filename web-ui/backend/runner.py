@@ -48,6 +48,8 @@ def _run_job(
     summary_preset: str | None,
     summary_profile: str | None,
     auto_generate_fancy_html: bool,
+    api_key: str | None = None,
+    deepseek_api_key: str | None = None,
 ) -> None:
     normalized_url = (url or "").strip()
     normalized_audio_path = (input_audio_path or "").strip()
@@ -60,7 +62,7 @@ def _run_job(
         upload_temp_dir = Path(normalized_audio_path).expanduser().resolve().parent
 
     try:
-        config = get_runtime_app_config(require_public_api_key=True)
+        config = get_runtime_app_config(require_public_api_key=True, api_key=api_key, deepseek_api_key=deepseek_api_key)
         storage_backend = get_storage_backend()
         stt_storage_backend = get_stt_storage_backend()
     except FileNotFoundError as exc:
@@ -189,7 +191,7 @@ def _run_job(
             )
             return
 
-        # 提取元信息
+        # Extract metadata
         metadata = results.get("_metadata")
         metadata_fields = {}
         if metadata:
