@@ -83,6 +83,18 @@ macOS 使用 Homebrew 安装系统依赖：
 brew install ffmpeg pandoc
 ```
 
+Linux (Debian/Ubuntu) 使用 apt 安装系统依赖：
+
+```bash
+sudo apt install ffmpeg pandoc
+```
+
+安装 Playwright Chromium（导出 PDF/PNG 需要）：
+
+```bash
+playwright install chromium
+```
+
 ## 快速开始
 
 ### 1. 克隆仓库并安装依赖
