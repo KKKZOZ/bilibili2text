@@ -1,8 +1,8 @@
-import { createRouter, createWebHashHistory } from 'vue-router';
-import ProcessView from './components/ProcessView.vue';
-import HistoryView from './components/HistoryView.vue';
-import RagView from './components/RagView.vue';
-import PublicApiKeyView from './components/PublicApiKeyView.vue';
+import { createRouter, createWebHashHistory } from 'vue-router'
+import ProcessView from './components/ProcessView.vue'
+import HistoryView from './components/HistoryView.vue'
+import RagView from './components/RagView.vue'
+import PublicApiKeyView from './components/PublicApiKeyView.vue'
 
 export default createRouter({
   history: createWebHashHistory(),
@@ -12,6 +12,6 @@ export default createRouter({
     { path: '/process/:jobId', component: ProcessView },
     { path: '/history', component: HistoryView },
     { path: '/rag', component: RagView },
-    { path: '/settings', component: PublicApiKeyView },
-  ],
-});
+    { path: '/settings', component: PublicApiKeyView }
+  ]
+})

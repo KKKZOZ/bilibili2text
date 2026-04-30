@@ -6,11 +6,13 @@
   "scripts": {
     "dev": "bun ./scripts/dev.js",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "format": "prettier --write \"src/**/*.{vue,js,ts,jsx,tsx,json,css,scss}\""
   },
   "dependencies": {
     "@fontsource/manrope": "^5.2.6",
     "lucide-vue-next": "^0.542.0",
+    "prettier": "^3.8.3",
     "vue": "^3.5.21",
     "vue-router": "^5.0.3"
   },
