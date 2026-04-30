@@ -45,6 +45,12 @@ def test_run_pandoc_uses_pipe_tables_and_parent_cwd(
     assert len(calls) == 1
 
     cmd, kwargs = calls[0]
-    assert cmd == ["pandoc", "-f", "markdown+pipe_tables", "-t", "html"]
+    assert cmd == [
+        "pandoc",
+        "-f",
+        "markdown+pipe_tables+lists_without_preceding_blankline",
+        "-t",
+        "html",
+    ]
     assert kwargs.get("cwd") == str(md_path.parent)
     assert kwargs.get("input") == "| 列1 | 列2 |\n| --- | --- |\n| A | B |\n"

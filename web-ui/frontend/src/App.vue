@@ -471,13 +471,24 @@
 
     .tab-bar {
       width: 100%;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+
+    .tab-bar::-webkit-scrollbar {
+      display: none;
     }
 
     .tab-button {
-      flex: 1;
+      flex: 1 0 auto;
       justify-content: center;
-      padding: 9px 12px;
+      min-width: 0;
+      padding: 9px 10px;
       font-size: 0.84rem;
+    }
+
+    .tab-button span {
+      white-space: nowrap;
     }
   }
 </style>

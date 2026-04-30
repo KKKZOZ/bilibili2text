@@ -1558,10 +1558,12 @@
   }
 
   .rag-history-markdown :deep(table) {
+    display: block;
     width: 100%;
+    max-width: 100%;
     border-collapse: collapse;
     margin: 0.9em 0;
-    overflow: hidden;
+    overflow-x: auto;
     border-radius: 12px;
     border: 1px solid rgba(148, 163, 184, 0.24);
   }
@@ -1913,9 +1915,20 @@
       align-items: stretch;
     }
 
+    .history-type-tabs {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .history-type-tab {
+      justify-content: center;
+      padding-inline: 8px;
+    }
+
     .history-search-row {
       max-width: none;
       min-width: 0;
+      width: 100%;
     }
 
     .panel-history {
@@ -1949,7 +1962,20 @@
     }
 
     .delete-button {
-      align-self: flex-end;
+      justify-content: center;
+      width: 100%;
+    }
+
+    .history-regenerate {
+      padding: 12px;
+    }
+
+    .rag-history-preview {
+      padding: 16px;
+    }
+
+    .rag-history-sources-grid {
+      grid-template-columns: 1fr;
     }
   }
   /* ─── Active jobs ────────────────────────────────────────────── */

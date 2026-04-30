@@ -6,6 +6,9 @@ import shutil
 import subprocess
 
 logger = logging.getLogger(__name__)
+PANDOC_MARKDOWN_FORMAT = (
+    "markdown+pipe_tables+lists_without_preceding_blankline"
+)
 
 
 class MarkdownToHtmlConverter:
@@ -41,7 +44,7 @@ class MarkdownToHtmlConverter:
             "pandoc",
             str(input_path),
             "-f",
-            "markdown",
+            PANDOC_MARKDOWN_FORMAT,
             "-t",
             "html",
             "-o",

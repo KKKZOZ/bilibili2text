@@ -1450,8 +1450,39 @@
   }
 
   @media (max-width: 640px) {
+    .panel-main,
+    .panel-download,
+    .panel-log {
+      padding: 20px;
+    }
+
     .header h1 {
       font-size: 1.7rem;
+    }
+
+    .input-row,
+    .upload-row {
+      padding-inline: 14px;
+    }
+
+    .input-mode-tabs {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      width: 100%;
+    }
+
+    .input-mode-button {
+      justify-content: center;
+      padding: 0 12px;
+    }
+
+    .process-summary-config {
+      padding: 18px;
+    }
+
+    .log-view {
+      height: 240px;
+      padding: 14px;
     }
   }
 </style>

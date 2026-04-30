@@ -329,6 +329,10 @@
   }
 
   @media (max-width: 640px) {
+    .panel-progress {
+      padding: 18px;
+    }
+
     .progress-header {
       flex-direction: column;
     }

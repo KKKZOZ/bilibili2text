@@ -37,6 +37,9 @@ TABLE_DASH_TRANSLATION = str.maketrans(
         "\u00a0": " ",
     }
 )
+PANDOC_MARKDOWN_FORMAT = (
+    "markdown+pipe_tables+lists_without_preceding_blankline"
+)
 
 HTML_TEMPLATE = r"""<!doctype html>
 <html>
@@ -424,7 +427,7 @@ class MarkdownToPngConverter:
 
         try:
             proc = subprocess.run(
-                ["pandoc", "-f", "markdown+pipe_tables", "-t", "html"],
+                ["pandoc", "-f", PANDOC_MARKDOWN_FORMAT, "-t", "html"],
                 check=True,
                 capture_output=True,
                 text=True,

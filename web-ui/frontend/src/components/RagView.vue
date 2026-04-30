@@ -993,10 +993,12 @@
   }
 
   .answer-text :deep(table) {
+    display: block;
     width: 100%;
+    max-width: 100%;
     border-collapse: collapse;
     margin: 0.9em 0;
-    overflow: hidden;
+    overflow-x: auto;
     border-radius: 12px;
     border: 1px solid rgba(148, 163, 184, 0.24);
   }
@@ -1689,9 +1691,57 @@
 
   /* ─── Responsive ────────────────────────────────────────────────── */
   @media (max-width: 640px) {
+    .search-panel,
+    .answer-panel {
+      padding: 20px;
+    }
+
+    .filters-row,
+    .llm-profile-row {
+      align-items: stretch;
+      flex-direction: column;
+    }
+
+    .llm-profile-row {
+      flex-basis: auto;
+      min-width: 0;
+      width: 100%;
+    }
+
+    .author-filter,
+    .author-filter-toggle,
+    .author-list {
+      width: 100%;
+    }
+
+    .author-list {
+      min-width: 0;
+    }
+
+    .answer-header-row,
+    .answer-dl-actions {
+      align-items: stretch;
+      flex-direction: column;
+    }
+
+    .answer-dl-btn {
+      justify-content: center;
+      width: 100%;
+    }
+
     .sources-grid {
       grid-template-columns: 1fr;
     }
+
+    .source-title {
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+
+    .source-card-top {
+      align-items: flex-start;
+    }
+
     .search-submit {
       align-self: stretch;
     }

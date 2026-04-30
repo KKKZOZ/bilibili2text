@@ -71,7 +71,13 @@ def test_convert_uses_pandoc_html_then_playwright_pdf(
     assert result == output_path
     assert len(calls) == 1
     pandoc_cmd, run_kwargs = calls[0]
-    assert pandoc_cmd == ["pandoc", "-f", "markdown+pipe_tables", "-t", "html"]
+    assert pandoc_cmd == [
+        "pandoc",
+        "-f",
+        "markdown+pipe_tables+lists_without_preceding_blankline",
+        "-t",
+        "html",
+    ]
     assert run_kwargs.get("input") == "| 列1 | 列2 |\n| --- | --- |\n| A | B |\n"
     assert run_kwargs.get("cwd") == str(md_path.parent.resolve())
     assert run_kwargs.get("check") is True

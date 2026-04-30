@@ -338,7 +338,33 @@ body {
 /* ─── Responsive (global) ────────────────────────────────────── */
 
 @media (max-width: 640px) {
+  .panel {
+    border-radius: 22px;
+  }
+
   .submit {
+    width: 100%;
+  }
+
+  .modal-overlay {
+    align-items: flex-end;
+    padding: 16px;
+  }
+
+  .modal-content {
+    width: 100%;
+    max-width: 100%;
+    padding: 20px;
+  }
+
+  .modal-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cancel-button,
+  .confirm-delete-button {
+    justify-content: center;
     width: 100%;
   }
 }
