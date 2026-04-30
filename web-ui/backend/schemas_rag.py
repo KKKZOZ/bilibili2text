@@ -5,6 +5,10 @@ from pydantic import BaseModel, Field
 
 class RagQueryRequest(BaseModel):
     question: str = Field(..., min_length=1, max_length=1000)
+    filter_authors: list[str] = Field(default_factory=list)
+    llm_profile: str | None = None
+    api_key: str | None = None
+    deepseek_api_key: str | None = None
 
 
 class RagSourceItem(BaseModel):

@@ -20,6 +20,17 @@
     Users
   } from 'lucide-vue-next'
 
+  const LOCAL_API_KEY_KEY = 'b2t.public-api-key'
+  const LOCAL_DEEPSEEK_API_KEY_KEY = 'b2t.public-deepseek-api-key'
+
+  const readLocalStorage = (key) => {
+    try {
+      return (window.localStorage.getItem(key) || '').trim()
+    } catch {
+      return ''
+    }
+  }
+
   // ─── Query state ──────────────────────────────────────────────────
   const question = ref('')
   const answer = ref('')
@@ -120,7 +131,24 @@
   const showIndexedFiles = ref(false)
 
   // ─── Query ────────────────────────────────────────────────────────
-  const submitQuery = () => {
+  const handleSseEvent = (payload) => {
+    if (payload.message) queryStageMessage.value = payload.message
+    if (payload.sources) sources.value = payload.sources
+
+    if (payload.stage === 'done') {
+      answer.value = payload.answer || ''
+      answerDownloadId.value = payload.download_id || ''
+      answerFilename.value = payload.filename || 'rag_answer.md'
+      isQuerying.value = false
+      queryStageMessage.value = ''
+    } else if (payload.stage === 'error') {
+      queryError.value = payload.message || '查询失败'
+      isQuerying.value = false
+      queryStageMessage.value = ''
+    }
+  }
+
+  const submitQuery = async () => {
     const q = question.value.trim()
     if (!q) return
 
@@ -133,49 +161,67 @@
     hasQueried.value = true
     queryStageMessage.value = ''
 
-    const params = new URLSearchParams({ question: q })
-    if (selectedAuthors.value.length > 0) {
-      params.set('filter_authors', selectedAuthors.value.join(','))
-    }
-    if (selectedLlmProfile.value) {
-      params.set('llm_profile', selectedLlmProfile.value)
-    }
-    const url = `/api/rag/query-stream?${params}`
-    const es = new EventSource(url)
+    try {
+      const resp = await fetch('/api/rag/query-stream', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          question: q,
+          filter_authors: selectedAuthors.value,
+          llm_profile: selectedLlmProfile.value || null,
+          api_key: readLocalStorage(LOCAL_API_KEY_KEY) || null,
+          deepseek_api_key:
+            readLocalStorage(LOCAL_DEEPSEEK_API_KEY_KEY) || null
+        })
+      })
 
-    es.onmessage = (event) => {
-      let data
-      try {
-        data = JSON.parse(event.data)
-      } catch {
-        return
+      if (!resp.ok || !resp.body) {
+        let message = `查询失败（HTTP ${resp.status}）`
+        try {
+          const data = await resp.json()
+          if (data?.detail) {
+            message = data.detail
+          }
+        } catch {}
+        throw new Error(message)
       }
 
-      if (data.message) queryStageMessage.value = data.message
-      if (data.sources) sources.value = data.sources
+      const reader = resp.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
 
-      if (data.stage === 'done') {
-        answer.value = data.answer || ''
-        answerDownloadId.value = data.download_id || ''
-        answerFilename.value = data.filename || 'rag_answer.md'
-        isQuerying.value = false
-        queryStageMessage.value = ''
-        es.close()
-      } else if (data.stage === 'error') {
-        queryError.value = data.message || '查询失败'
-        isQuerying.value = false
-        queryStageMessage.value = ''
-        es.close()
+      while (true) {
+        const { value, done } = await reader.read()
+        buffer += decoder.decode(value || new Uint8Array(), { stream: !done })
+
+        let eventBoundary = buffer.indexOf('\n\n')
+        while (eventBoundary !== -1) {
+          const rawEvent = buffer.slice(0, eventBoundary)
+          buffer = buffer.slice(eventBoundary + 2)
+
+          for (const line of rawEvent.split('\n')) {
+            if (!line.startsWith('data: ')) continue
+            try {
+              handleSseEvent(JSON.parse(line.slice(6)))
+            } catch {}
+          }
+
+          eventBoundary = buffer.indexOf('\n\n')
+        }
+
+        if (done) break
       }
-    }
 
-    es.onerror = () => {
       if (isQuerying.value) {
-        queryError.value = '连接失败，请检查后端服务'
-        isQuerying.value = false
-        queryStageMessage.value = ''
+        throw new Error('连接中断，请重试')
       }
-      es.close()
+    } catch (err) {
+      queryError.value =
+        err instanceof Error ? err.message : '连接失败，请检查后端服务'
+      isQuerying.value = false
+      queryStageMessage.value = ''
     }
   }
 

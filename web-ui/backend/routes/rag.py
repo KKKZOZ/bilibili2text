@@ -74,24 +74,59 @@ def rag_authors() -> RagAuthorsResponse:
 
 @router.get("/query-stream")
 async def rag_query_stream(
-    question: str, filter_authors: str = "", llm_profile: str = ""
+    question: str,
+    filter_authors: str = "",
+    llm_profile: str = "",
+    api_key: str = "",
+    deepseek_api_key: str = "",
+) -> StreamingResponse:
+    authors = [a.strip() for a in filter_authors.split(",") if a.strip()]
+    return _rag_query_stream_impl(
+        question=question,
+        filter_authors=authors,
+        llm_profile=llm_profile,
+        api_key=api_key,
+        deepseek_api_key=deepseek_api_key,
+    )
+
+
+@router.post("/query-stream")
+async def rag_query_stream_post(payload: RagQueryRequest) -> StreamingResponse:
+    return _rag_query_stream_impl(
+        question=payload.question,
+        filter_authors=payload.filter_authors,
+        llm_profile=(payload.llm_profile or "").strip(),
+        api_key=(payload.api_key or "").strip(),
+        deepseek_api_key=(payload.deepseek_api_key or "").strip(),
+    )
+
+
+def _rag_query_stream_impl(
+    *,
+    question: str,
+    filter_authors: list[str],
+    llm_profile: str,
+    api_key: str,
+    deepseek_api_key: str,
 ) -> StreamingResponse:
     """Stream RAG query progress as Server-Sent Events."""
     _require_rag_enabled()
-    config = get_runtime_app_config()
+    config = get_runtime_app_config(
+        api_key=api_key.strip(),
+        deepseek_api_key=deepseek_api_key.strip(),
+    )
     store = get_rag_store()
     history_db = get_history_db()
 
     # Build ChromaDB where filter from author list
     where_filter: dict | None = None
-    if filter_authors.strip():
-        authors = [a.strip() for a in filter_authors.split(",") if a.strip()]
-        if authors:
-            run_ids = history_db.get_run_ids_for_authors(authors)
-            if run_ids:
-                where_filter = {"run_id": {"$in": run_ids}}
-            else:
-                where_filter = {"run_id": {"$in": ["__no_match__"]}}
+    authors = [a.strip() for a in filter_authors if a.strip()]
+    if authors:
+        run_ids = history_db.get_run_ids_for_authors(authors)
+        if run_ids:
+            where_filter = {"run_id": {"$in": run_ids}}
+        else:
+            where_filter = {"run_id": {"$in": ["__no_match__"]}}
 
     async def _generate():
         from b2t.rag.embedder import embed_texts  # noqa: PLC0415
