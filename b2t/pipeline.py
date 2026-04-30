@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from b2t.config import AppConfig
 from b2t.converter.json_to_md import convert_json_to_md
-from b2t.download.yutto_cli import extract_bvid
+from b2t.download.yutto_cli import extract_bvid, normalize_bilibili_target
 from b2t.download.yutto import download_audio
 from b2t.storage import (
     StorageBackend,
@@ -131,7 +131,8 @@ def run_pipeline(
             audio_file, metadata = download_audio(
                 url, temp_download_dir, config.download.audio_quality
             )
-            bvid = input_bvid or extract_bvid(url) or extract_bvid(audio_file.name)
+            normalized_url = normalize_bilibili_target(url)
+            bvid = input_bvid or extract_bvid(normalized_url) or extract_bvid(audio_file.name)
 
         if bvid is None:
             raise ValueError(

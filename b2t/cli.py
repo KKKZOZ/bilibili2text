@@ -12,7 +12,7 @@ from rich.console import Console
 from rich.table import Table
 
 from b2t.config import load_config
-from b2t.download.yutto_cli import extract_bvid
+from b2t.download.yutto_cli import extract_bvid, normalize_bilibili_target
 from b2t.history import HistoryDB, record_pipeline_run
 from b2t.monitor import BilibiliMonitorService
 from b2t.pipeline import run_pipeline
@@ -463,7 +463,7 @@ def _run_pipeline_with_args(args: CLIArgs, console: Console) -> int:
     console.print("[bold #16a34a]完成[/bold #16a34a]")
     _print_results(console, results)
 
-    bvid = extract_bvid(args.url)
+    bvid = extract_bvid(normalize_bilibili_target(args.url))
     if bvid is None:
         return 0
 
