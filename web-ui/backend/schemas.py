@@ -80,7 +80,9 @@ class ProcessStatusResponse(BaseModel):
     summary_preset: str | None = None
     summary_profile: str | None = None
     auto_generate_fancy_html: bool = False
-    fancy_html_status: Literal["idle", "pending", "running", "succeeded", "failed"] = "idle"
+    fancy_html_status: Literal["idle", "pending", "running", "succeeded", "failed"] = (
+        "idle"
+    )
     fancy_html_error: str | None = None
     already_transcribed: bool = False
     notice: str | None = None
@@ -181,7 +183,9 @@ class HistoryDetailResponse(BaseModel):
     has_summary: bool
     artifacts: list[HistoryDetailArtifactResponse]
     record_type: str = "transcription"
-    fancy_html_status: Literal["idle", "pending", "running", "succeeded", "failed"] = "idle"
+    fancy_html_status: Literal["idle", "pending", "running", "succeeded", "failed"] = (
+        "idle"
+    )
     fancy_html_error: str | None = None
 
 
@@ -219,7 +223,9 @@ class GenerateFancyHtmlResponse(BaseModel):
 
 
 class ConvertRequest(BaseModel):
-    download_id: str = Field(..., description="下载 ID（来自 all_downloads 或 history 详情）")
+    download_id: str = Field(
+        ..., description="下载 ID（来自 all_downloads 或 history 详情）"
+    )
     target_format: str = Field(..., description="目标格式：txt, pdf, png, html")
     render_mode: Literal["desktop", "mobile"] | None = Field(
         default=None,

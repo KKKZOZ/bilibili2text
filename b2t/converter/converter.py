@@ -72,9 +72,7 @@ def get_converter(
 
             return MarkdownRemoveTableConverter()
 
-    raise ValueError(
-        f"Unsupported conversion: {source} -> {target_format.value}"
-    )
+    raise ValueError(f"Unsupported conversion: {source} -> {target_format.value}")
 
 
 def convert_file(

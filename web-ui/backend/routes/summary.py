@@ -35,8 +35,14 @@ def generate_fancy_html(payload: GenerateFancyHtmlRequest) -> GenerateFancyHtmlR
 
     if source_artifact is None:
         raise HTTPException(status_code=404, detail="下载链接不存在或已过期")
-    if classify_artifact_filename(source_artifact.filename) not in ("summary", "rag_answer"):
-        raise HTTPException(status_code=400, detail="仅支持基于总结 Markdown 或知识库回答生成 fancy HTML")
+    if classify_artifact_filename(source_artifact.filename) not in (
+        "summary",
+        "rag_answer",
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="仅支持基于总结 Markdown 或知识库回答生成 fancy HTML",
+        )
 
     try:
         config = get_runtime_app_config(require_public_api_key=True)
@@ -102,7 +108,9 @@ def generate_fancy_html(payload: GenerateFancyHtmlRequest) -> GenerateFancyHtmlR
             _RAG_FANCY_EXECUTOR.submit(_run_in_background)
             history_detail = db.get_run_detail(run_id)
             return GenerateFancyHtmlResponse(
-                history_detail=_to_history_detail_response(history_detail) if history_detail is not None else None,
+                history_detail=_to_history_detail_response(history_detail)
+                if history_detail is not None
+                else None,
             )
 
     try:

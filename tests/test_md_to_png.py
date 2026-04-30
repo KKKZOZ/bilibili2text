@@ -9,11 +9,7 @@ from b2t.converter.md_to_png import MarkdownToPngConverter
 
 def test_normalize_markdown_for_tables_rewrites_fullwidth_table_chars() -> None:
     converter = MarkdownToPngConverter()
-    source = (
-        "｜ 列1 ｜ 列2 ｜\n"
-        "｜ －－－－ ｜ ：———： ｜\n"
-        "｜ 值A ｜ 值B ｜\n"
-    )
+    source = "｜ 列1 ｜ 列2 ｜\n｜ －－－－ ｜ ：———： ｜\n｜ 值A ｜ 值B ｜\n"
 
     normalized = converter._normalize_markdown_for_tables(source)
 
@@ -26,9 +22,13 @@ def test_run_pandoc_uses_pipe_tables_and_parent_cwd(
     tmp_path: Path, monkeypatch
 ) -> None:
     md_path = tmp_path / "input.md"
-    md_path.write_text("｜ 列1 ｜ 列2 ｜\n｜ --- ｜ --- ｜\n｜ A ｜ B ｜\n", encoding="utf-8")
+    md_path.write_text(
+        "｜ 列1 ｜ 列2 ｜\n｜ --- ｜ --- ｜\n｜ A ｜ B ｜\n", encoding="utf-8"
+    )
 
-    monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/pandoc" if name == "pandoc" else None)
+    monkeypatch.setattr(
+        shutil, "which", lambda name: "/usr/bin/pandoc" if name == "pandoc" else None
+    )
 
     calls: list[tuple[list[str], dict[str, object]]] = []
 

@@ -479,7 +479,9 @@ class MarkdownToPngConverter:
                 cached = self._download_css_to_cache(requested)
                 if cached is not None:
                     return cached.resolve().as_uri()
-                logger.warning("Remote CSS unavailable, falling back to built-in local styles")
+                logger.warning(
+                    "Remote CSS unavailable, falling back to built-in local styles"
+                )
                 return self._ensure_fallback_css().resolve().as_uri()
             return requested
         return self._ensure_fallback_css().resolve().as_uri()

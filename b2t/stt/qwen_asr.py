@@ -54,11 +54,18 @@ class QwenSTTProvider(STTProvider):
             )
 
         file_size_mb = audio_path.stat().st_size / 1024 / 1024
-        logger.info("Uploading audio to storage backend: %s (%.1f MB)", audio_path.name, file_size_mb)
+        logger.info(
+            "Uploading audio to storage backend: %s (%.1f MB)",
+            audio_path.name,
+            file_size_mb,
+        )
         t0 = time.perf_counter()
         with self._storage_backend.temporary_public_url(audio_path) as audio_url:
             upload_elapsed = time.perf_counter() - t0
-            logger.info("Audio uploaded in %.1f seconds, submitting Dashscope transcription task", upload_elapsed)
+            logger.info(
+                "Audio uploaded in %.1f seconds, submitting Dashscope transcription task",
+                upload_elapsed,
+            )
             emit("transcribing", "Speech transcription", 50)
             response = self._submit_task(audio_url)
 
@@ -142,7 +149,9 @@ class QwenSTTProvider(STTProvider):
                 if isinstance(transcription_url, str) and transcription_url:
                     return transcription_url
 
-        raise RuntimeError("Transcription succeeded but no transcription_url was returned")
+        raise RuntimeError(
+            "Transcription succeeded but no transcription_url was returned"
+        )
 
     def _download_result(self, url: str, output_path: Path | str) -> Path:
         """Download transcription result JSON file."""

@@ -105,9 +105,7 @@ class FeishuNotifier:
     def send_system_notification(self, level: str, title: str, content: str) -> bool:
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         markdown_content = (
-            f"**级别**: {level}\n\n"
-            f"**内容**\n{content}\n\n"
-            f"**时间**: {timestamp}"
+            f"**级别**: {level}\n\n**内容**\n{content}\n\n**时间**: {timestamp}"
         )
         return self.send_card(title, markdown_content)
 

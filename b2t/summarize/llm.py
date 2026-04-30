@@ -23,9 +23,7 @@ from b2t.summarize.litellm_client import (
 logger = logging.getLogger(__name__)
 
 TABLE_ROW_RE = re.compile(r"^\s*\|?.*\|.*\|?\s*$")
-TABLE_SEPARATOR_RE = re.compile(
-    r"^\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?\s*$"
-)
+TABLE_SEPARATOR_RE = re.compile(r"^\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?\s*$")
 _BVID_PREFIX_RE = re.compile(r"^(BV[0-9A-Za-z]{10})[_-]?", re.IGNORECASE)
 
 
@@ -220,7 +218,11 @@ def post_process_summary_markdown(
     fallback_title: str,
     now: datetime | None = None,
 ) -> str:
-    title = (metadata.title.strip() if metadata else "") or fallback_title.strip() or "Untitled Video"
+    title = (
+        (metadata.title.strip() if metadata else "")
+        or fallback_title.strip()
+        or "Untitled Video"
+    )
     author = (metadata.author.strip() if metadata else "") or "Unknown"
     publish_age = _format_publish_age(metadata, now=now)
     body = _demote_top_level_headings(summary.strip())
@@ -299,7 +301,9 @@ def summarize(
     print("\n=== reasoning_content (reason_content) ===")
     if reasoning_content:
         print(reasoning_content)
-        logger.info("Model returned reasoning_content, length: %d", len(reasoning_content))
+        logger.info(
+            "Model returned reasoning_content, length: %d", len(reasoning_content)
+        )
     else:
         print("(empty)")
         logger.info("Model returned no reasoning_content")

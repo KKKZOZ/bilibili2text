@@ -4,6 +4,7 @@ import os
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 DEFAULT_SUMMARY_PRESETS_FILE = "summary_presets.toml"
 DEFAULT_STT_PROFILE = "qwen"
@@ -129,6 +130,7 @@ class SummarizeModelProfile:
     api_base: str = ""
     providers: tuple[str, ...] = ()
 
+
 @dataclass(frozen=True)
 class SummarizeConfig:
     profile: str = ""
@@ -253,13 +255,10 @@ def _load_summarize_config(raw_summarize: dict) -> SummarizeConfig:
         "preset",
         "presets_file",
     }
-    unknown_top_level_fields = sorted(
-        set(summarize.keys()) - allowed_top_level_fields
-    )
+    unknown_top_level_fields = sorted(set(summarize.keys()) - allowed_top_level_fields)
     if unknown_top_level_fields:
         raise ValueError(
-            "summarize 包含未知字段: "
-            f"{', '.join(unknown_top_level_fields)}"
+            f"summarize 包含未知字段: {', '.join(unknown_top_level_fields)}"
         )
 
     profile = summarize.get("profile")
@@ -269,9 +268,7 @@ def _load_summarize_config(raw_summarize: dict) -> SummarizeConfig:
 
     raw_profiles = summarize.get("profiles")
     if not isinstance(raw_profiles, dict) or not raw_profiles:
-        raise ValueError(
-            "summarize.profiles 必须在配置文件中显式声明为非空 TOML 表"
-        )
+        raise ValueError("summarize.profiles 必须在配置文件中显式声明为非空 TOML 表")
 
     profiles: dict[str, SummarizeModelProfile] = {}
     for name, value in raw_profiles.items():
@@ -302,9 +299,7 @@ def _load_summarize_config(raw_summarize: dict) -> SummarizeConfig:
         provider = raw_provider.strip().lower()
         if provider not in _SUPPORTED_SUMMARIZE_PROVIDERS:
             available = ", ".join(_SUPPORTED_SUMMARIZE_PROVIDERS)
-            raise ValueError(
-                f"summarize.profiles.{key}.provider 仅支持 {available}"
-            )
+            raise ValueError(f"summarize.profiles.{key}.provider 仅支持 {available}")
 
         raw_model = entry.get("model")
         if not isinstance(raw_model, str):
@@ -365,9 +360,7 @@ def _load_summarize_config(raw_summarize: dict) -> SummarizeConfig:
 
     if profile not in profiles:
         available = ", ".join(profiles.keys())
-        raise ValueError(
-            f"summarize.profile `{profile}` 不存在，可选值: {available}"
-        )
+        raise ValueError(f"summarize.profile `{profile}` 不存在，可选值: {available}")
 
     enable_thinking = summarize.get("enable_thinking", True)
     if not isinstance(enable_thinking, bool):
@@ -417,7 +410,9 @@ def resolve_rag_llm_profile(
     config: "AppConfig",
     override: str | None = None,
 ) -> SummarizeModelProfile:
-    selected_profile = (override or config.rag.llm_profile or config.summarize.profile).strip()
+    selected_profile = (
+        override or config.rag.llm_profile or config.summarize.profile
+    ).strip()
     profile = config.summarize.profiles.get(selected_profile)
     if profile is None:
         available = ", ".join(config.summarize.profiles.keys())
@@ -439,9 +434,7 @@ def _load_fancy_html_config(
     allowed_fields = {"profile"}
     unknown_fields = sorted(set(fancy_html.keys()) - allowed_fields)
     if unknown_fields:
-        raise ValueError(
-            "fancy_html 包含未知字段: " f"{', '.join(unknown_fields)}"
-        )
+        raise ValueError(f"fancy_html 包含未知字段: {', '.join(unknown_fields)}")
 
     raw_profile = fancy_html.get("profile")
     if not isinstance(raw_profile, str) or not raw_profile.strip():
@@ -450,9 +443,7 @@ def _load_fancy_html_config(
 
     if profile not in summarize.profiles:
         available = ", ".join(summarize.profiles.keys())
-        raise ValueError(
-            f"fancy_html.profile `{profile}` 不存在，可选值: {available}"
-        )
+        raise ValueError(f"fancy_html.profile `{profile}` 不存在，可选值: {available}")
 
     return FancyHtmlConfig(profile=profile)
 
@@ -472,9 +463,7 @@ def _load_stt_profile(
     allowed_fields = set(STTProfile.__dataclass_fields__.keys())
     unknown_fields = sorted(set(normalized.keys()) - allowed_fields)
     if unknown_fields:
-        raise ValueError(
-            f"{section_name} 包含未知字段: {', '.join(unknown_fields)}"
-        )
+        raise ValueError(f"{section_name} 包含未知字段: {', '.join(unknown_fields)}")
 
     default_profile = STTProfile()
     merged: dict[str, object] = {}
@@ -510,9 +499,7 @@ def _load_stt_profile(
 
     provider = str(merged["provider"]).strip().lower()
     if provider not in {"qwen", "groq"}:
-        raise ValueError(
-            f"{section_name}.provider 仅支持 qwen 或 groq"
-        )
+        raise ValueError(f"{section_name}.provider 仅支持 qwen 或 groq")
     merged["provider"] = provider
 
     if not str(merged["language"]).strip():
@@ -642,13 +629,9 @@ def _load_storage_config(raw_storage: dict) -> StorageConfig:
     if not isinstance(minio.auto_create_bucket, bool):
         raise ValueError("storage.minio.auto_create_bucket 必须是布尔值")
     if not isinstance(minio.temporary_url_expire_seconds, int):
-        raise ValueError(
-            "storage.minio.temporary_url_expire_seconds 必须是整数秒"
-        )
+        raise ValueError("storage.minio.temporary_url_expire_seconds 必须是整数秒")
     if minio.temporary_url_expire_seconds <= 0:
-        raise ValueError(
-            "storage.minio.temporary_url_expire_seconds 必须大于 0"
-        )
+        raise ValueError("storage.minio.temporary_url_expire_seconds 必须大于 0")
 
     string_fields = {
         "storage.minio.endpoint": minio.endpoint,
@@ -783,7 +766,7 @@ def _load_rag_config(raw_rag: dict, *, base_dir: Path) -> RagConfig:
     }
     unknown_fields = sorted(set(raw_rag.keys()) - allowed_fields)
     if unknown_fields:
-        raise ValueError("rag 包含未知字段: " f"{', '.join(unknown_fields)}")
+        raise ValueError(f"rag 包含未知字段: {', '.join(unknown_fields)}")
 
     enabled = raw_rag.get("enabled", False)
     if not isinstance(enabled, bool):
@@ -856,7 +839,7 @@ def _load_feishu_config(raw_feishu: dict) -> FeishuConfig:
     }
     unknown_fields = sorted(set(raw_feishu.keys()) - allowed_fields)
     if unknown_fields:
-        raise ValueError("feishu 包含未知字段: " f"{', '.join(unknown_fields)}")
+        raise ValueError(f"feishu 包含未知字段: {', '.join(unknown_fields)}")
 
     config = FeishuConfig(**raw_feishu)
 
@@ -934,7 +917,7 @@ def _load_monitor_config(raw_monitor: dict, *, base_dir: Path) -> MonitorConfig:
     }
     unknown_fields = sorted(set(raw_monitor.keys()) - allowed_fields)
     if unknown_fields:
-        raise ValueError("monitor 包含未知字段: " f"{', '.join(unknown_fields)}")
+        raise ValueError(f"monitor 包含未知字段: {', '.join(unknown_fields)}")
 
     enabled = raw_monitor.get("enabled", False)
     if not isinstance(enabled, bool):
@@ -943,9 +926,7 @@ def _load_monitor_config(raw_monitor: dict, *, base_dir: Path) -> MonitorConfig:
     raw_state_file = raw_monitor.get("state_file", MonitorConfig.state_file)
     if not isinstance(raw_state_file, str) or not raw_state_file.strip():
         raise ValueError("monitor.state_file 必须是非空字符串")
-    state_file = str(
-        _resolve_relative_path(raw_state_file.strip(), base_dir=base_dir)
-    )
+    state_file = str(_resolve_relative_path(raw_state_file.strip(), base_dir=base_dir))
 
     raw_user_agent = raw_monitor.get("user_agent", DEFAULT_BILIBILI_USER_AGENT)
     if not isinstance(raw_user_agent, str) or not raw_user_agent.strip():
@@ -979,7 +960,9 @@ def _load_monitor_config(raw_monitor: dict, *, base_dir: Path) -> MonitorConfig:
     raw_summary_preset = raw_monitor.get("summary_preset")
     if raw_summary_preset is not None and not isinstance(raw_summary_preset, str):
         raise ValueError("monitor.summary_preset 必须是字符串")
-    summary_preset = raw_summary_preset.strip() if isinstance(raw_summary_preset, str) else None
+    summary_preset = (
+        raw_summary_preset.strip() if isinstance(raw_summary_preset, str) else None
+    )
     if summary_preset == "":
         summary_preset = None
 
@@ -1020,9 +1003,7 @@ def _load_monitor_config(raw_monitor: dict, *, base_dir: Path) -> MonitorConfig:
 
         interval = raw_creator.get("check_interval", default_check_interval)
         if not isinstance(interval, int) or interval <= 0:
-            raise ValueError(
-                f"monitor.creators[{index}].check_interval 必须是正整数"
-            )
+            raise ValueError(f"monitor.creators[{index}].check_interval 必须是正整数")
 
         creators.append(
             MonitorCreatorConfig(
@@ -1063,7 +1044,7 @@ def _load_bilibili_config(raw_bilibili: dict) -> BilibiliConfig:
     }
     unknown_fields = sorted(set(raw_bilibili.keys()) - allowed_fields)
     if unknown_fields:
-        raise ValueError("bilibili 包含未知字段: " f"{', '.join(unknown_fields)}")
+        raise ValueError(f"bilibili 包含未知字段: {', '.join(unknown_fields)}")
 
     normalized: dict[str, str] = {}
     for field_name in allowed_fields:
@@ -1201,4 +1182,150 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         feishu=feishu_config,
         monitor=monitor_config,
         bilibili=bilibili_config,
+    )
+
+
+def create_app_config(
+    *,
+    stt_api_key: str = "",
+    stt_provider: str = "qwen",
+    summarize_api_key: str = "",
+    summarize_base_url: str = "",
+    summarize_model: str = "",
+    summarize_provider: str = "",
+    summary_presets: dict[str, SummaryPreset] | None = None,
+    output_dir: str | Path | None = None,
+    **kwargs: Any,
+) -> AppConfig:
+    """Create an ``AppConfig`` programmatically without any config file.
+
+    This is the primary entry point for using **b2t** as a library.  It builds a
+    ready-to-use configuration entirely from Python parameters — no TOML files,
+    no file I/O.
+
+    Minimal usage::
+
+        from b2t import create_app_config, run_pipeline
+
+        config = create_app_config(stt_api_key="sk-...")
+        results = run_pipeline("https://www.bilibili.com/video/BV...", config)
+
+    Args:
+        stt_api_key: DashScope API key for ASR (required for the default
+            ``qwen`` STT provider).
+        stt_provider: STT provider name (``"qwen"`` or ``"groq"``).
+        summarize_api_key: API key for LLM summarization.
+        summarize_base_url: Custom API base URL for summarization.
+        summarize_model: Model name for summarization (e.g. ``"deepseek-chat"``).
+        summarize_provider: Provider for summarization
+            (``"bailian"``, ``"deepseek"``, ``"openrouter"``, or ``"groq"``).
+        summary_presets: Optional dict of :class:`SummaryPreset` overrides.
+            When omitted, a minimal default preset is provided.
+        output_dir: Output directory for transcriptions and summaries.
+            Defaults to ``./transcriptions``.
+        **kwargs: Additional keyword arguments (ignored; allows forward
+            compatibility).
+
+    Returns:
+        A fully-initialized :class:`AppConfig`.
+    """
+    if summary_presets is None:
+        summary_presets = {
+            "default": SummaryPreset(
+                label="Default",
+                prompt_template=(
+                    "Summarize the following transcript in Markdown. "
+                    "Extract key points, decisions, and conclusions. "
+                    "Group related topics together.\n\n{content}"
+                ),
+            ),
+        }
+
+    # Build STT config
+    stt_profiles = _default_stt_profiles()
+    profile_key = stt_provider.strip().lower()
+    if profile_key not in stt_profiles:
+        raise ValueError(
+            f"Unsupported stt_provider: {stt_provider!r}, must be 'qwen' or 'groq'"
+        )
+
+    stt_profile = stt_profiles[profile_key]
+    if stt_api_key:
+        stt_profile = STTProfile(
+            provider=stt_profile.provider,
+            language=stt_profile.language,
+            storage_profile=stt_profile.storage_profile,
+            qwen_api_key=stt_api_key
+            if profile_key == "qwen"
+            else stt_profile.qwen_api_key,
+            qwen_model=stt_profile.qwen_model,
+            qwen_base_url=stt_profile.qwen_base_url,
+            groq_api_key=stt_api_key
+            if profile_key == "groq"
+            else stt_profile.groq_api_key,
+            groq_model=stt_profile.groq_model,
+            groq_base_url=stt_profile.groq_base_url,
+            groq_chunk_length=stt_profile.groq_chunk_length,
+            groq_overlap=stt_profile.groq_overlap,
+            groq_bitrate=stt_profile.groq_bitrate,
+        )
+
+    stt_profiles[profile_key] = stt_profile
+    stt_config = STTConfig(
+        profile=profile_key,
+        profiles=stt_profiles,
+        provider=stt_profile.provider,
+        language=stt_profile.language,
+        storage_profile=stt_profile.storage_profile,
+        qwen_api_key=stt_profile.qwen_api_key,
+        qwen_model=stt_profile.qwen_model,
+        qwen_base_url=stt_profile.qwen_base_url,
+        groq_api_key=stt_profile.groq_api_key,
+        groq_model=stt_profile.groq_model,
+        groq_base_url=stt_profile.groq_base_url,
+        groq_chunk_length=stt_profile.groq_chunk_length,
+        groq_overlap=stt_profile.groq_overlap,
+        groq_bitrate=stt_profile.groq_bitrate,
+    )
+
+    # Build summarization config
+    summarize_provider = summarize_provider.strip().lower() or (
+        "deepseek" if summarize_api_key else "bailian"
+    )
+    summarize_model = summarize_model.strip() or (
+        "deepseek-chat" if summarize_provider == "deepseek" else "qwen-plus"
+    )
+    summarize_api_base = summarize_base_url.strip()
+
+    default_summarize_profile = SummarizeModelProfile(
+        provider=summarize_provider,
+        model=summarize_model,
+        api_key=summarize_api_key or stt_api_key,
+        api_base=summarize_api_base,
+    )
+    summarize_config = SummarizeConfig(
+        profile="default",
+        profiles={"default": default_summarize_profile},
+    )
+
+    # Build remaining configs with defaults
+    output_dir_resolved = str(Path(output_dir or DownloadConfig.output_dir))
+    preset_default = next(iter(summary_presets.keys()))
+
+    return AppConfig(
+        download=DownloadConfig(output_dir=output_dir_resolved),
+        storage=StorageConfig(),
+        stt=stt_config,
+        summarize=summarize_config,
+        fancy_html=FancyHtmlConfig(profile="default"),
+        summary_presets=SummaryPresetsConfig(
+            default=preset_default,
+            presets=summary_presets,
+            source_path=Path("."),
+        ),
+        converter=ConverterConfig(),
+        rag=RagConfig(),
+        feishu=FeishuConfig(),
+        monitor=MonitorConfig(),
+        bilibili=BilibiliConfig(),
     )

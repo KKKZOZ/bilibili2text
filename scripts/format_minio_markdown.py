@@ -7,10 +7,6 @@ import sys
 import tempfile
 from pathlib import Path
 
-# Add the project root directory to the Python path
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
-
 from b2t.config import load_config
 from b2t.converter.markdown_formatter import format_markdown_with_markdownlint
 from b2t.storage.minio_client import MinIOStorageBackend

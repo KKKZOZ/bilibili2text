@@ -1,0 +1,3 @@
+include summary_presets.toml
+include config.toml.example
+include README.md

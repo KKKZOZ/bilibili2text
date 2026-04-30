@@ -14,7 +14,7 @@ from backend.settings import get_app_config
 _storage_backend: StorageBackend | None = None
 _stt_storage_backend: StorageBackend | None = None
 _history_db: HistoryDB | None = None
-_rag_store: "RagStore | None" = None
+_rag_store: "RagStore | None" = None  # noqa: F821
 _rag_store_lock = Lock()
 
 
@@ -40,7 +40,7 @@ def get_history_db() -> HistoryDB:
     return _history_db
 
 
-def get_rag_store() -> "RagStore":
+def get_rag_store() -> "RagStore":  # noqa: F821
     global _rag_store
     if _rag_store is not None:
         return _rag_store

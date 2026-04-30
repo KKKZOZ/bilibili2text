@@ -23,7 +23,9 @@ def create_stt_provider(
     if provider == "groq":
         return GroqSTTProvider(config.stt)
 
-    raise ValueError(f"Unsupported stt.provider: {config.stt.provider}, supported values: qwen, groq")
+    raise ValueError(
+        f"Unsupported stt.provider: {config.stt.provider}, supported values: qwen, groq"
+    )
 
 
 __all__ = ["STTProvider", "create_stt_provider"]

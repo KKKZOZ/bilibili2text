@@ -316,7 +316,10 @@ def _run_fancy_html_only_from_summary(
     config: AppConfig,
     summary_profile: str | None,
 ) -> StoredArtifact:
-    if classify_artifact_filename(summary_artifact.filename) not in ("summary", "rag_answer"):
+    if classify_artifact_filename(summary_artifact.filename) not in (
+        "summary",
+        "rag_answer",
+    ):
         raise ValueError("仅支持基于总结 Markdown 或知识库回答生成 fancy HTML")
 
     cleanup_temp_dir: tempfile.TemporaryDirectory | None = None
@@ -485,9 +488,7 @@ def _record_history(
         author = metadata.author if metadata else ""
         pubdate = metadata.pubdate if metadata else ""
         has_summary = "summary" in {
-            key: value
-            for key, value in results.items()
-            if not key.startswith("_")
+            key: value for key, value in results.items() if not key.startswith("_")
         }
         resolved_preset, resolved_profile = _resolve_summary_selection(
             config=config,

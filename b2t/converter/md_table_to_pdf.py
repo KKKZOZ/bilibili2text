@@ -13,7 +13,13 @@ try:
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.cidfonts import UnicodeCIDFont
-    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from reportlab.platypus import (
+        Paragraph,
+        SimpleDocTemplate,
+        Spacer,
+        Table,
+        TableStyle,
+    )
 except ImportError as exc:  # pragma: no cover - handled in CLI usage
     raise SystemExit(
         "reportlab is not installed. Please run: uv add reportlab or pip install reportlab"
@@ -53,7 +59,9 @@ def parse_markdown_table(md_text: str) -> list[list[str]]:
     if len(rows[0]) < 1:
         raise ValueError("Header is empty")
 
-    align_index = 1 if len(rows) > 1 and all(ALIGNMENT_RE.match(c) for c in rows[1]) else -1
+    align_index = (
+        1 if len(rows) > 1 and all(ALIGNMENT_RE.match(c) for c in rows[1]) else -1
+    )
     if align_index == 1:
         rows.pop(1)
 
@@ -92,7 +100,9 @@ def _build_col_widths(rows: list[list[str]], available_width: float) -> list[flo
     return widths
 
 
-def markdown_table_to_pdf(md_path: Path, output_path: Path, title: str | None = None) -> Path:
+def markdown_table_to_pdf(
+    md_path: Path, output_path: Path, title: str | None = None
+) -> Path:
     md_text = md_path.read_text(encoding="utf-8")
     rows = parse_markdown_table(md_text)
 
@@ -140,7 +150,9 @@ def markdown_table_to_pdf(md_path: Path, output_path: Path, title: str | None = 
     table_data: list[list[Paragraph]] = []
     for row_index, row in enumerate(rows):
         p_style = header_style if row_index == 0 else cell_style
-        table_data.append([Paragraph(cell.replace("\n", "<br/>"), p_style) for cell in row])
+        table_data.append(
+            [Paragraph(cell.replace("\n", "<br/>"), p_style) for cell in row]
+        )
 
     col_widths = _build_col_widths(rows, available_width)
     table = Table(table_data, colWidths=col_widths, repeatRows=1)
@@ -149,7 +161,12 @@ def markdown_table_to_pdf(md_path: Path, output_path: Path, title: str | None = 
             [
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1F6FEB")),
                 ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F6F8FA")]),
+                (
+                    "ROWBACKGROUNDS",
+                    (0, 1),
+                    (-1, -1),
+                    [colors.white, colors.HexColor("#F6F8FA")],
+                ),
                 ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#D0D7DE")),
                 ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor("#8C959F")),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),

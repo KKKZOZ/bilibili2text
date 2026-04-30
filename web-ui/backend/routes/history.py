@@ -115,7 +115,9 @@ def list_history(
             detail=f"历史数据库初始化失败: {exc}",
         ) from exc
 
-    result = db.list_runs(page=page, page_size=page_size, search=search, record_type=record_type)
+    result = db.list_runs(
+        page=page, page_size=page_size, search=search, record_type=record_type
+    )
     return HistoryListResponse(
         items=[
             HistoryItemResponse(
@@ -301,7 +303,11 @@ def delete_history_artifact(run_id: str, download_id: str) -> HistoryDetailRespo
         raise HTTPException(status_code=404, detail="文件下载链接不存在或已过期")
 
     target_artifact = next(
-        (item for item in detail.artifacts if item.storage_key == target_stored.storage_key),
+        (
+            item
+            for item in detail.artifacts
+            if item.storage_key == target_stored.storage_key
+        ),
         None,
     )
     if target_artifact is None:
@@ -309,7 +315,9 @@ def delete_history_artifact(run_id: str, download_id: str) -> HistoryDetailRespo
 
     # Allow deleting summary Markdown (cascading to derived files) or deleting fancy HTML individually.
     if target_artifact.kind not in ("summary", "summary_fancy_html"):
-        raise HTTPException(status_code=400, detail="仅支持删除总结 Markdown 或 Fancy HTML 文件")
+        raise HTTPException(
+            status_code=400, detail="仅支持删除总结 Markdown 或 Fancy HTML 文件"
+        )
 
     if target_artifact.kind == "summary_fancy_html":
         storage_keys_to_delete = {target_artifact.storage_key}
@@ -337,7 +345,9 @@ def delete_history_artifact(run_id: str, download_id: str) -> HistoryDetailRespo
     download_registry.remove_artifacts_by_storage_keys(storage_keys_to_delete)
 
     remained_artifacts = [
-        item for item in detail.artifacts if item.storage_key not in storage_keys_to_delete
+        item
+        for item in detail.artifacts
+        if item.storage_key not in storage_keys_to_delete
     ]
     has_summary = any(
         item.kind

@@ -1,29 +1,37 @@
 [project]
 name = "bilibili-to-text"
 version = "0.1.0"
-description = "Bilibili 视频转文字工具：下载音频 → 转录 → Markdown → LLM 总结"
+description = "Bilibili video to text: download audio → transcribe → Markdown → LLM summarization"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "alibabacloud-oss-v2>=1.2.4",
     "chromadb>=0.6.0",
     "dashscope>=1.25.12",
-    "fastapi>=0.116.1",
     "groq>=1.0.0",
     "httpx>=0.28.1",
     "litellm>=1.74.9",
     "minio>=7.2.12",
     "openai>=2.17.0",
-    "python-multipart>=0.0.20",
     "pydub>=0.25.1",
-    "questionary>=2.0.0",
-    "rich>=13.7.1",
     "reportlab>=4.4.9",
     "requests>=2.31.0",
-    "textual>=0.45.1",
-    "uvicorn>=0.35.0",
+    "rich>=13.7.1",
     "yutto>=2.1.1",
-    "pytest-playwright>=0.7.2",
+]
+
+[project.optional-dependencies]
+cli = [
+    "questionary>=2.0.0",
+    "textual>=0.45.1",
+]
+web = [
+    "fastapi>=0.116.1",
+    "python-multipart>=0.0.20",
+    "uvicorn>=0.35.0",
+]
+all = [
+    "bilibili-to-text[cli,web]",
 ]
 
 [tool.setuptools.packages.find]

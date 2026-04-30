@@ -62,7 +62,11 @@ def _run_job(
         upload_temp_dir = Path(normalized_audio_path).expanduser().resolve().parent
 
     try:
-        config = get_runtime_app_config(require_public_api_key=True, api_key=api_key, deepseek_api_key=deepseek_api_key)
+        config = get_runtime_app_config(
+            require_public_api_key=True,
+            api_key=api_key,
+            deepseek_api_key=deepseek_api_key,
+        )
         storage_backend = get_storage_backend()
         stt_storage_backend = get_stt_storage_backend()
     except FileNotFoundError as exc:

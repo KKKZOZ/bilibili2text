@@ -112,8 +112,7 @@ def convert_json_to_md(
 
     if output_path is None:
         output_path = (
-            json_path.parent
-            / f"{json_path.stem.replace('_transcription', '')}.md"
+            json_path.parent / f"{json_path.stem.replace('_transcription', '')}.md"
         )
     else:
         output_path = Path(output_path)

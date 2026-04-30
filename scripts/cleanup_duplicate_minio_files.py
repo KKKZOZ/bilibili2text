@@ -4,11 +4,6 @@
 import argparse
 import logging
 import sys
-from pathlib import Path
-
-# Add the project root directory to the Python path
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
 
 from b2t.config import load_config
 from b2t.storage.minio_client import MinIOStorageBackend
@@ -66,7 +61,9 @@ def main():
     logger.info("查找路径错误的重复文件...")
     try:
         # Find all files under the b2t/b2t/ path
-        duplicate_prefix = f"{config.storage.minio.base_prefix}/{config.storage.minio.base_prefix}/"
+        duplicate_prefix = (
+            f"{config.storage.minio.base_prefix}/{config.storage.minio.base_prefix}/"
+        )
 
         objects = minio_backend._client.list_objects(
             bucket_name=config.storage.minio.bucket,

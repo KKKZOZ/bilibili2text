@@ -18,7 +18,9 @@ def select_index_artifact(detail) -> tuple[object, str]:
         for artifact in detail.artifacts:
             if artifact.kind == kind:
                 return artifact, kind
-    raise ValueError(f"run_id={detail.run_id} has no indexable markdown or summary file")
+    raise ValueError(
+        f"run_id={detail.run_id} has no indexable markdown or summary file"
+    )
 
 
 def index_run(
@@ -57,7 +59,9 @@ def index_run(
     )
 
     if not chunks:
-        logger.warning("run_id=%s resulted in 0 chunks after splitting, skipping indexing", run_id)
+        logger.warning(
+            "run_id=%s resulted in 0 chunks after splitting, skipping indexing", run_id
+        )
         return 0
 
     texts = [chunk.text for chunk in chunks]

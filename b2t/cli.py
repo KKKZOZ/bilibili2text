@@ -109,9 +109,7 @@ def _build_script_parser() -> argparse.ArgumentParser:
         "-c", "--config", default=None, help="配置文件路径（默认 ./config.toml）"
     )
     parser.add_argument("-o", "--output", default=None, help="输出目录")
-    parser.add_argument(
-        "--no-summary", action="store_true", help="跳过 LLM 总结步骤"
-    )
+    parser.add_argument("--no-summary", action="store_true", help="跳过 LLM 总结步骤")
     parser.add_argument(
         "--summary-preset",
         default=None,
@@ -122,9 +120,7 @@ def _build_script_parser() -> argparse.ArgumentParser:
         default=None,
         help="指定总结模型 profile 名称（默认使用配置中的 summarize.profile）",
     )
-    parser.add_argument(
-        "-v", "--verbose", action="store_true", help="显示详细日志"
-    )
+    parser.add_argument("-v", "--verbose", action="store_true", help="显示详细日志")
     return parser
 
 
@@ -148,9 +144,7 @@ def _build_monitor_parser() -> argparse.ArgumentParser:
         default=0,
         help="测试用：回填最近前 N 个尚未总结过的视频",
     )
-    parser.add_argument(
-        "-v", "--verbose", action="store_true", help="显示详细日志"
-    )
+    parser.add_argument("-v", "--verbose", action="store_true", help="显示详细日志")
     return parser
 
 
@@ -416,9 +410,7 @@ def _run_interactive_mode(console: Console) -> CLIArgs | None:
     return result
 
 
-def _print_results(
-    console: Console, results: dict[str, StoredArtifact]
-) -> None:
+def _print_results(console: Console, results: dict[str, StoredArtifact]) -> None:
     table = Table(
         title="输出文件",
         title_style="bold #0f766e",
@@ -507,9 +499,7 @@ def _run_monitor_with_args(args: MonitorCLIArgs, console: Console) -> int:
         return 1
 
     if not config.monitor.enabled:
-        console.print(
-            "[bold red]配置错误:[/] [monitor].enabled = true 后才能启动监控"
-        )
+        console.print("[bold red]配置错误:[/] [monitor].enabled = true 后才能启动监控")
         return 1
 
     service = BilibiliMonitorService(config)

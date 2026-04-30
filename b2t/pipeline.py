@@ -12,6 +12,7 @@ from b2t.converter.json_to_md import convert_json_to_md
 from b2t.download.yutto_cli import extract_bvid
 from b2t.download.yutto import download_audio
 from b2t.storage import (
+    StorageBackend,
     StoredArtifact,
     create_storage_backend,
     create_stt_storage_backend,
@@ -140,7 +141,9 @@ def run_pipeline(
 
         # Record metadata
         if metadata:
-            logger.info("Video author: %s, publish date: %s", metadata.author, metadata.pubdate)
+            logger.info(
+                "Video author: %s, publish date: %s", metadata.author, metadata.pubdate
+            )
             results["_metadata"] = metadata  # Temporarily store metadata for later use
 
         # Create workflow directory

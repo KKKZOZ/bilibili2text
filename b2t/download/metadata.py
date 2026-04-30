@@ -45,7 +45,7 @@ async def get_video_metadata_async(bvid: str) -> VideoMetadata:
     url = f"https://api.bilibili.com/x/web-interface/view?bvid={bvid}"
     headers = {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-        "Referer": "https://www.bilibili.com"
+        "Referer": "https://www.bilibili.com",
     }
 
     logger.debug("Fetching metadata for video %s...", bvid)
@@ -71,7 +71,9 @@ async def get_video_metadata_async(bvid: str) -> VideoMetadata:
         # Convert timestamp to readable format
         pubdate_readable = ""
         if pubdate_timestamp:
-            pubdate_readable = datetime.fromtimestamp(pubdate_timestamp).strftime('%Y-%m-%d %H:%M:%S')
+            pubdate_readable = datetime.fromtimestamp(pubdate_timestamp).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
 
         metadata = VideoMetadata(
             bvid=video_data.get("bvid", bvid),

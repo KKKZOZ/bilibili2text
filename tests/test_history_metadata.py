@@ -1,4 +1,9 @@
-from b2t.history import HistoryArtifact, HistoryDB, build_history_artifacts, record_pipeline_run
+from b2t.history import (
+    HistoryArtifact,
+    HistoryDB,
+    build_history_artifacts,
+    record_pipeline_run,
+)
 from b2t.storage.base import StoredArtifact, classify_artifact_filename
 
 
@@ -15,7 +20,9 @@ def _mock_results(
         ),
         "json": StoredArtifact(
             filename="BV1AB411c7mD_demo_transcription.json",
-            storage_key=markdown_key.replace("_transcription.md", "_transcription.json"),
+            storage_key=markdown_key.replace(
+                "_transcription.md", "_transcription.json"
+            ),
             backend="minio",
         ),
         "summary": StoredArtifact(
@@ -29,9 +36,7 @@ def _mock_results(
 def test_record_pipeline_run_persists_summary_metadata(tmp_path) -> None:
     db = HistoryDB(tmp_path)
     results = _mock_results(
-        markdown_key=(
-            "BV1AB411c7mD-11111111/BV1AB411c7mD_demo_transcription.md"
-        ),
+        markdown_key=("BV1AB411c7mD-11111111/BV1AB411c7mD_demo_transcription.md"),
         summary_key="BV1AB411c7mD-22222222/BV1AB411c7mD_demo_summary.md",
     )
 
@@ -219,7 +224,11 @@ def test_record_run_preserves_rag_query_type_when_fancy_html_removed(tmp_path) -
     detail = db.get_run_detail(run_id)
     assert detail is not None
 
-    remained_artifacts = [artifact for artifact in detail.artifacts if artifact.kind != "summary_fancy_html"]
+    remained_artifacts = [
+        artifact
+        for artifact in detail.artifacts
+        if artifact.kind != "summary_fancy_html"
+    ]
     db.record_run(
         run_id=detail.run_id,
         bvid=detail.bvid,

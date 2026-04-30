@@ -8,8 +8,15 @@ import logging
 from pathlib import Path
 import re
 
-from b2t.config import AppConfig, resolve_summarize_api_base, resolve_summarize_model_profile
-from b2t.summarize.litellm_client import collect_stream_result, stream_summary_completion
+from b2t.config import (
+    AppConfig,
+    resolve_summarize_api_base,
+    resolve_summarize_model_profile,
+)
+from b2t.summarize.litellm_client import (
+    collect_stream_result,
+    stream_summary_completion,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -644,11 +651,15 @@ def sanitize_fragment(raw_fragment: str) -> str:
 
 
 def _fallback_fragment(summary_markdown: str) -> str:
-    paragraphs = [block.strip() for block in summary_markdown.split("\n\n") if block.strip()]
+    paragraphs = [
+        block.strip() for block in summary_markdown.split("\n\n") if block.strip()
+    ]
     rendered = "\n".join(
         (
             '<section class="section"><div class="section-body"><p>'
-            + "<br />".join(html.escape(line) for line in item.splitlines() if line.strip())
+            + "<br />".join(
+                html.escape(line) for line in item.splitlines() if line.strip()
+            )
             + "</p></div></section>"
         )
         for item in paragraphs[:12]
@@ -704,7 +715,9 @@ def generate_fancy_summary_html(
     _, fragment = collect_stream_result(stream)
     safe_fragment = sanitize_fragment(fragment)
     if not safe_fragment:
-        logger.warning("LLM did not return a valid fancy HTML fragment, falling back to plain text layout")
+        logger.warning(
+            "LLM did not return a valid fancy HTML fragment, falling back to plain text layout"
+        )
         safe_fragment = _fallback_fragment(summary_markdown)
 
     title = _extract_title(summary_markdown, fallback_title=summary_path.stem)

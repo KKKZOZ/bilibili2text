@@ -543,6 +543,7 @@ def record_rag_query(
 ) -> str:
     """Persist a RAG query + answer to the history DB. Returns run_id."""
     from uuid import uuid4  # noqa: PLC0415
+
     run_id = uuid4().hex
     title = question[:200]
     db.record_run(
@@ -650,9 +651,7 @@ def record_pipeline_run(
         run_id if successful, None otherwise
     """
     # Filter out metadata from results as it's not a file artifact
-    file_results = {
-        k: v for k, v in results.items() if not k.startswith("_")
-    }
+    file_results = {k: v for k, v in results.items() if not k.startswith("_")}
 
     markdown = file_results.get("markdown")
     if markdown is None:

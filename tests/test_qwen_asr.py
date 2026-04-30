@@ -60,8 +60,7 @@ def test_submit_task_uses_fun_asr_api(monkeypatch) -> None:
     assert captured["task"] == "task-fun"
     assert provider._extract_task_status(response) == "SUCCEEDED"
     assert (
-        provider._extract_transcription_url(response)
-        == "https://example.com/fun.json"
+        provider._extract_transcription_url(response) == "https://example.com/fun.json"
     )
 
 
@@ -81,8 +80,7 @@ def test_extract_transcription_url_supports_dashscope_dict_mixin_shape() -> None
 
     assert provider._extract_task_status(response) == "SUCCEEDED"
     assert (
-        provider._extract_transcription_url(response)
-        == "https://example.com/fun.json"
+        provider._extract_transcription_url(response) == "https://example.com/fun.json"
     )
 
 
@@ -121,6 +119,5 @@ def test_submit_task_uses_qwen_filetrans_api(monkeypatch) -> None:
     assert captured["task"] == "task-qwen"
     assert provider._extract_task_status(response) == "SUCCEEDED"
     assert (
-        provider._extract_transcription_url(response)
-        == "https://example.com/qwen.json"
+        provider._extract_transcription_url(response) == "https://example.com/qwen.json"
     )

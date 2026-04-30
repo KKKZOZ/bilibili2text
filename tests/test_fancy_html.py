@@ -66,14 +66,14 @@ def test_sanitize_fragment_strips_scripts_and_inline_styles() -> None:
 
     cleaned = fancy_html_module.sanitize_fragment(raw)
 
-    assert '<script>' not in cleaned
-    assert 'style=' not in cleaned
-    assert 'onclick=' not in cleaned
-    assert 'data-x=' not in cleaned
-    assert 'evil' not in cleaned
+    assert "<script>" not in cleaned
+    assert "style=" not in cleaned
+    assert "onclick=" not in cleaned
+    assert "data-x=" not in cleaned
+    assert "evil" not in cleaned
     assert 'class="section"' in cleaned
     assert 'class="callout callout-warning"' in cleaned
-    assert '保留正文' in cleaned
+    assert "保留正文" in cleaned
 
 
 def test_generate_fancy_summary_html_writes_wrapped_document(
@@ -112,7 +112,10 @@ def test_generate_fancy_summary_html_writes_wrapped_document(
     assert "@media (max-width: 680px)" in content
     assert "@media (max-width: 420px)" in content
     assert "env(safe-area-inset-top)" in content
-    assert "table {\n      width: 100%;\n      border-collapse: collapse;\n      min-width: 560px;" in content
+    assert (
+        "table {\n      width: 100%;\n      border-collapse: collapse;\n      min-width: 560px;"
+        in content
+    )
 
 
 def test_generate_fancy_summary_html_uses_dedicated_fancy_profile(

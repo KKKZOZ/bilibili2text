@@ -105,7 +105,11 @@ def _ensure_runtime_ready(
     profile_name = summary_profile or config.summarize.profile
     profile = config.summarize.profiles.get(profile_name)
     if profile is not None and not profile.api_key.strip():
-        provider_label = "DeepSeek" if profile.provider.strip().lower() == "deepseek" else profile.provider
+        provider_label = (
+            "DeepSeek"
+            if profile.provider.strip().lower() == "deepseek"
+            else profile.provider
+        )
         raise HTTPException(
             status_code=400,
             detail=(

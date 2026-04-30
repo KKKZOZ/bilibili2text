@@ -5,13 +5,13 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class Chunk:
-    text: str           # Prefixed with "【title】\n" at the head
+    text: str  # Prefixed with "【title】\n" at the head
     run_id: str
-    kind: str           # "summary" or "markdown"
+    kind: str  # "summary" or "markdown"
     title: str
     bvid: str
     chunk_index: int
-    doc_id: str         # "{run_id}__{kind}__{chunk_index}"
+    doc_id: str  # "{run_id}__{kind}__{chunk_index}"
 
 
 def chunk_markdown(
@@ -34,7 +34,9 @@ def chunk_markdown(
     5. Prefix each chunk with 【title】
     """
     paragraphs = _split_paragraphs(content, chunk_size=chunk_size)
-    raw_chunks = _merge_into_chunks(paragraphs, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+    raw_chunks = _merge_into_chunks(
+        paragraphs, chunk_size=chunk_size, chunk_overlap=chunk_overlap
+    )
 
     chunks: list[Chunk] = []
     for i, text in enumerate(raw_chunks):
@@ -91,6 +93,7 @@ def _split_paragraphs(content: str, *, chunk_size: int) -> list[str]:
 def _split_sentences(text: str) -> list[str]:
     """Split text on Chinese/English sentence endings, preserving delimiters."""
     import re
+
     parts = re.split(r"(?<=[。！？.!?\n])", text)
     return [p for p in parts if p]
 

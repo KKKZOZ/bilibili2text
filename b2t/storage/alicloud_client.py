@@ -126,7 +126,9 @@ class AlicloudStorageBackend(PublicURLStorageBackend):
             with temp_path.open("rb") as stream:
                 yield stream
         except Exception as exc:
-            raise FileNotFoundError(f"OSS object does not exist or is not readable: {storage_key}") from exc
+            raise FileNotFoundError(
+                f"OSS object does not exist or is not readable: {storage_key}"
+            ) from exc
         finally:
             temp_path.unlink(missing_ok=True)
 
@@ -148,7 +150,9 @@ class AlicloudStorageBackend(PublicURLStorageBackend):
         if not path.exists() or not path.is_file():
             raise FileNotFoundError(f"File to upload does not exist: {path}")
 
-        temp_prefix = object_key_prefix.strip("/") or self._temporary_prefix or "temp-audio"
+        temp_prefix = (
+            object_key_prefix.strip("/") or self._temporary_prefix or "temp-audio"
+        )
         key = self._resolve_object_key(f"{temp_prefix}/{uuid.uuid4().hex}-{path.name}")
         self._upload(path, object_key=key, acl="public-read")
 
@@ -241,7 +245,9 @@ class AlicloudStorageBackend(PublicURLStorageBackend):
 
                 last_modified = getattr(item, "last_modified", None)
                 modified_ts = (
-                    float(last_modified.timestamp()) if last_modified is not None else 0.0
+                    float(last_modified.timestamp())
+                    if last_modified is not None
+                    else 0.0
                 )
                 artifact_items.append(
                     (

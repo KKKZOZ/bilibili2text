@@ -18,7 +18,9 @@ from b2t.config import (
 )
 
 
-def _app_config(*, summarize_profile: str = "summary-default", rag_llm_profile: str = "") -> AppConfig:
+def _app_config(
+    *, summarize_profile: str = "summary-default", rag_llm_profile: str = ""
+) -> AppConfig:
     summarize = SummarizeConfig(
         profile=summarize_profile,
         profiles={

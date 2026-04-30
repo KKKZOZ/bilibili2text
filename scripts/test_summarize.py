@@ -3,11 +3,6 @@ import sys
 import time
 from pathlib import Path
 
-# Allow importing the b2t package from the project when running directly from the scripts directory
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-
 import questionary
 from rich.console import Console
 from rich.panel import Panel
@@ -139,7 +134,9 @@ def _run_interactive_config(config_path: str | None) -> dict[str, str] | None:
                 return None
 
         else:  # terminal
-            console.print("\n[cyan]请输入要总结的内容（输入完成后按 Ctrl+D 或输入单独一行的 EOF）:[/cyan]\n")
+            console.print(
+                "\n[cyan]请输入要总结的内容（输入完成后按 Ctrl+D 或输入单独一行的 EOF）:[/cyan]\n"
+            )
             lines = []
             try:
                 while True:
@@ -182,11 +179,11 @@ def _run_interactive_config(config_path: str | None) -> dict[str, str] | None:
                 value=RAW_PRESET_NAME,
             ),
             *[
-            questionary.Choice(
-                title=f"📝 {preset.label}",
-                value=preset_name,
-            )
-            for preset_name, preset in config.summary_presets.presets.items()
+                questionary.Choice(
+                    title=f"📝 {preset.label}",
+                    value=preset_name,
+                )
+                for preset_name, preset in config.summary_presets.presets.items()
             ],
         ]
 
@@ -324,7 +321,9 @@ def main() -> None:
     if selected_preset == RAW_PRESET_NAME:
         prompt_text = raw_content
     else:
-        prompt_template = config.summary_presets.presets[selected_preset].prompt_template
+        prompt_template = config.summary_presets.presets[
+            selected_preset
+        ].prompt_template
         prompt_text = prompt_template.format(content=raw_content)
 
     # Display configuration info using rich
@@ -333,14 +332,16 @@ def main() -> None:
     config_table.add_column("项目", style="yellow", width=18)
     config_table.add_column("值", style="white")
 
-    config_table.add_row("输入来源", "📄 文件" if input_source_type == "file" else "⌨️  终端")
+    config_table.add_row(
+        "输入来源", "📄 文件" if input_source_type == "file" else "⌨️  终端"
+    )
     config_table.add_row("Profile", selected_profile)
     config_table.add_row("Preset", f"{selected_preset} ({selected_preset_label})")
     config_table.add_row("Provider", model_profile.provider)
     config_table.add_row("模型", selected_model)
     config_table.add_row("API Base", selected_api_base)
     if model_profile.provider == "openrouter" and model_profile.providers:
-        config_table.add_row("Providers", ', '.join(model_profile.providers))
+        config_table.add_row("Providers", ", ".join(model_profile.providers))
 
     console.print(config_table)
 
@@ -406,10 +407,12 @@ def main() -> None:
 
     stats_table.add_row(
         "📁 输入来源" if input_source_type == "terminal" else "📁 输入文件",
-        input_display_name
+        input_display_name,
     )
     stats_table.add_row("⚙️  配置 Profile", selected_profile)
-    stats_table.add_row("📝 总结 Preset", f"{selected_preset} ({selected_preset_label})")
+    stats_table.add_row(
+        "📝 总结 Preset", f"{selected_preset} ({selected_preset_label})"
+    )
     stats_table.add_row("🤖 模型", selected_model)
     stats_table.add_row("⏱️  总耗时", f"{elapsed:.2f} 秒")
     stats_table.add_row("📄 输出字符数", f"{output_chars:,}")

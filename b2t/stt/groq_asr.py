@@ -76,7 +76,9 @@ def _transcribe_single_chunk(
 
                 api_time = time.time() - start_time
                 total_api_time += api_time
-                logger.info("Chunk %s/%s API time: %.2fs", chunk_num, total_chunks, api_time)
+                logger.info(
+                    "Chunk %s/%s API time: %.2fs", chunk_num, total_chunks, api_time
+                )
 
                 data = result.model_dump() if hasattr(result, "model_dump") else result
                 if not isinstance(data, dict):
@@ -101,7 +103,9 @@ def _find_longest_common_sequence(
         return ""
 
     if match_by_words:
-        parsed = [[word for word in re.split(r"(\s+\w+)", seq) if word] for seq in sequences]
+        parsed = [
+            [word for word in re.split(r"(\s+\w+)", seq) if word] for seq in sequences
+        ]
     else:
         parsed = [list(seq) for seq in sequences]
 
@@ -126,7 +130,9 @@ def _find_longest_common_sequence(
             right = right_sequence[right_start:right_stop]
 
             if len(left) != len(right):
-                raise RuntimeError("Mismatched subsequences detected during transcript merging.")
+                raise RuntimeError(
+                    "Mismatched subsequences detected during transcript merging."
+                )
 
             matches = sum(a == b for a, b in zip(left, right))
             matching = matches / float(i) + eps
@@ -272,7 +278,9 @@ def transcribe_local_audio(audio_path: Path, config: STTConfig) -> dict:
         raise ValueError("stt.groq_overlap must be less than stt.groq_chunk_length")
 
     logger.info("Starting Groq transcription for audio: %s", audio_path)
-    client = Groq(api_key=config.groq_api_key, base_url=config.groq_base_url, max_retries=0)
+    client = Groq(
+        api_key=config.groq_api_key, base_url=config.groq_base_url, max_retries=0
+    )
 
     audio = AudioSegment.from_file(audio_path)
     duration = len(audio)

@@ -106,8 +106,8 @@ class BilibiliMonitorService:
         self._owns_notifier = notifier is None
         self.history_db = history_db or HistoryDB(config.download.db_dir)
         self.storage_backend = storage_backend or create_storage_backend(config)
-        self.stt_storage_backend = (
-            stt_storage_backend or create_stt_storage_backend(config)
+        self.stt_storage_backend = stt_storage_backend or create_stt_storage_backend(
+            config
         )
         self.pipeline_runner = pipeline_runner
         self.state = JsonStateStore(config.monitor.state_file)
@@ -131,7 +131,9 @@ class BilibiliMonitorService:
     ) -> None:
         creators = self.config.monitor.creators
         if not creators:
-            raise ValueError("monitor.creators 为空，请先在配置文件中配置要监控的 UP 主")
+            raise ValueError(
+                "monitor.creators 为空，请先在配置文件中配置要监控的 UP 主"
+            )
 
         if self.config.monitor.startup_notification:
             creator_names = ", ".join(
@@ -293,7 +295,9 @@ class BilibiliMonitorService:
             payload["data"] = {}
             return payload
         if not isinstance(raw_data, dict):
-            raise RuntimeError(f"B站动态接口返回非法 data 结构: {type(raw_data).__name__}")
+            raise RuntimeError(
+                f"B站动态接口返回非法 data 结构: {type(raw_data).__name__}"
+            )
         items = raw_data.get("items", [])
         if len(items) > limit_recent:
             raw_data["items"] = items[:limit_recent]

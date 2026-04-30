@@ -73,7 +73,9 @@ def rag_authors() -> RagAuthorsResponse:
 
 
 @router.get("/query-stream")
-async def rag_query_stream(question: str, filter_authors: str = "", llm_profile: str = "") -> StreamingResponse:
+async def rag_query_stream(
+    question: str, filter_authors: str = "", llm_profile: str = ""
+) -> StreamingResponse:
     """Stream RAG query progress as Server-Sent Events."""
     _require_rag_enabled()
     config = get_runtime_app_config()
@@ -121,26 +123,33 @@ async def rag_query_stream(question: str, filter_authors: str = "", llm_profile:
                 meta = result.get("metadata") or {}
                 distance = result.get("distance", 1.0)
                 score = max(0.0, 1.0 - float(distance))
-                sources.append({
-                    "run_id": str(meta.get("run_id", "")),
-                    "title": str(meta.get("title", "")),
-                    "bvid": str(meta.get("bvid", "")),
-                    "text": result.get("document", "")[:500],
-                    "score": score,
-                })
+                sources.append(
+                    {
+                        "run_id": str(meta.get("run_id", "")),
+                        "title": str(meta.get("title", "")),
+                        "bvid": str(meta.get("bvid", "")),
+                        "text": result.get("document", "")[:500],
+                        "score": score,
+                    }
+                )
                 chunk_texts.append(result.get("document", ""))
 
-            yield _sse({
-                "stage": "retrieved",
-                "sources": sources,
-                "message": f"找到 {len(sources)} 个相关片段，正在生成回答…",
-            })
+            yield _sse(
+                {
+                    "stage": "retrieved",
+                    "sources": sources,
+                    "message": f"找到 {len(sources)} 个相关片段，正在生成回答…",
+                }
+            )
 
             chunks_str = (
                 "\n---\n".join(f"[{i + 1}] {t}" for i, t in enumerate(chunk_texts))
-                if chunk_texts else "（未检索到相关内容）"
+                if chunk_texts
+                else "（未检索到相关内容）"
             )
-            prompt = _ANSWER_PROMPT_TEMPLATE.format(chunks=chunks_str, question=question)
+            prompt = _ANSWER_PROMPT_TEMPLATE.format(
+                chunks=chunks_str, question=question
+            )
 
             from b2t.config import resolve_rag_llm_profile, resolve_summarize_api_base  # noqa: PLC0415
             from b2t.summarize.litellm_client import _to_litellm_model_name  # noqa: PLC0415
@@ -164,7 +173,9 @@ async def rag_query_stream(question: str, filter_authors: str = "", llm_profile:
             # Build markdown content for download / history
             query_time = _shanghai_now()
             now_str = query_time.strftime("%Y%m%d_%H%M%S")
-            safe_q = "".join(c if c.isalnum() or c in "-_" else "_" for c in question[:40])
+            safe_q = "".join(
+                c if c.isalnum() or c in "-_" else "_" for c in question[:40]
+            )
             answer_filename = f"rag_{now_str}_{safe_q}.md"
 
             if sources:
@@ -213,6 +224,7 @@ async def rag_query_stream(question: str, filter_authors: str = "", llm_profile:
                         tmp_path = Path(tmp.name)
                     try:
                         from uuid import uuid4  # noqa: PLC0415
+
                         artifact = storage.store_file(
                             tmp_path,
                             object_key=f"rag_answers/{uuid4().hex}/{answer_filename}",
@@ -234,7 +246,15 @@ async def rag_query_stream(question: str, filter_authors: str = "", llm_profile:
             except Exception as persist_exc:
                 logger.warning("RAG 答案持久化失败（不影响下载）: %s", persist_exc)
 
-            yield _sse({"stage": "done", "answer": answer, "sources": sources, "download_id": download_id, "filename": answer_filename})
+            yield _sse(
+                {
+                    "stage": "done",
+                    "answer": answer,
+                    "sources": sources,
+                    "download_id": download_id,
+                    "filename": answer_filename,
+                }
+            )
 
         except Exception as exc:
             logger.error("RAG 流式查询失败: %s", exc)
@@ -256,6 +276,7 @@ def rag_query(request: RagQueryRequest) -> RagQueryResponse:
 
     try:
         from b2t.rag.retriever import retrieve_and_answer
+
         result = retrieve_and_answer(
             request.question,
             config=config,
@@ -293,6 +314,7 @@ def rag_index_run(run_id: str, request: RagIndexRequest) -> RagIndexResponse:
 
     try:
         from b2t.rag.indexer import index_run
+
         count = index_run(
             run_id=run_id,
             history_db=history_db,
@@ -321,6 +343,7 @@ def rag_index_all(request: RagIndexRequest) -> RagIndexAllResponse:
 
     def _do_index_all():
         from b2t.rag.indexer import index_all_runs
+
         return index_all_runs(
             history_db=history_db,
             storage_backend=storage_backend,
@@ -408,7 +431,9 @@ def rag_status() -> RagStatusResponse:
             )
         )
 
-    indexed_items.sort(key=lambda item: (item.author or "", item.title or "", item.run_id))
+    indexed_items.sort(
+        key=lambda item: (item.author or "", item.title or "", item.run_id)
+    )
     total_indexed_runs = len(indexed_run_ids)
     return RagStatusResponse(
         enabled=True,

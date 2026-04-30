@@ -28,7 +28,9 @@ def download_markdown(download_id: str) -> StreamingResponse:
         return StreamingResponse(
             iter([content]),
             media_type=media_type_for_filename(filename),
-            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quoted_filename}"},
+            headers={
+                "Content-Disposition": f"attachment; filename*=UTF-8''{quoted_filename}"
+            },
         )
 
     artifact = download_registry.get_artifact(download_id)
@@ -141,7 +143,10 @@ def convert_artifact(payload: ConvertRequest) -> ConvertResponse:
             )
             convert_options = {}
             explicit_output_path = None
-            if source_suffix in _html_suffixes and target_format == ConversionFormat.PNG:
+            if (
+                source_suffix in _html_suffixes
+                and target_format == ConversionFormat.PNG
+            ):
                 render_mode = payload.render_mode or "desktop"
                 if render_mode == "mobile":
                     convert_options.update(

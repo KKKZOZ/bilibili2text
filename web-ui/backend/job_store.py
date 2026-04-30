@@ -264,7 +264,9 @@ class JobRepository:
             return payload
 
     def _snapshot_stage_durations(self, job: JobState) -> dict[str, int]:
-        snapshot = {key: max(0, job.stage_durations_seconds.get(key, 0)) for key in STAGE_KEYS}
+        snapshot = {
+            key: max(0, job.stage_durations_seconds.get(key, 0)) for key in STAGE_KEYS
+        }
         if job.stage in snapshot and job.status in {"queued", "running"}:
             snapshot[job.stage] += max(
                 0,
