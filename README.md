@@ -20,6 +20,10 @@ Bilibili 视频转文字工具：自动下载音频、语音转录、生成 Mark
 - 可选 RAG：检索历史转录内容并问答
 - Markdown 派生转换：PDF / PNG / HTML
 
+> [!NOTE]
+> - 注意只有 Web UI + RAG + Open Public + Monitor + 飞书通知 几种功能在 Linux/MacOS 上经过测试
+> - Docker/Cli 未经测试
+
 
 ## 效果预览
 
