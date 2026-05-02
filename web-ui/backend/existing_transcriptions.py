@@ -30,6 +30,7 @@ class ExistingTranscriptionService:
         skip_summary: bool,
         summary_preset: str | None,
         summary_profile: str | None,
+        summary_prompt_template: str | None,
         auto_generate_fancy_html: bool,
     ) -> bool:
         try:
@@ -58,6 +59,7 @@ class ExistingTranscriptionService:
             existing_results=existing_results,
             summary_preset=summary_preset,
             summary_profile=summary_profile,
+            summary_prompt_template=summary_prompt_template,
             auto_generate_fancy_html=auto_generate_fancy_html,
         )
 
@@ -112,6 +114,7 @@ class ExistingTranscriptionService:
         existing_results,
         summary_preset: str | None,
         summary_profile: str | None,
+        summary_prompt_template: str | None,
         auto_generate_fancy_html: bool,
     ) -> bool:
         _update_job(
@@ -129,6 +132,7 @@ class ExistingTranscriptionService:
                 existing_results=existing_results,
                 summary_preset=summary_preset,
                 summary_profile=summary_profile,
+                summary_prompt_template=summary_prompt_template,
             )
         except Exception as exc:
             _fail_job(job_id, str(exc))

@@ -19,6 +19,10 @@ class ProcessRequest(BaseModel):
         default=None,
         description="总结模型 profile 名称",
     )
+    summary_prompt_template: str | None = Field(
+        default=None,
+        description="本次请求使用的自定义总结模板，必须包含 {content} 占位符",
+    )
     auto_generate_fancy_html: bool = Field(
         default=False,
         description="总结完成后是否自动异步生成 fancy HTML",
@@ -79,6 +83,7 @@ class ProcessStatusResponse(BaseModel):
     summary_table_pdf_filename: str | None = None
     summary_preset: str | None = None
     summary_profile: str | None = None
+    summary_prompt_template: str | None = None
     auto_generate_fancy_html: bool = False
     fancy_html_status: Literal["idle", "pending", "running", "succeeded", "failed"] = (
         "idle"
@@ -101,6 +106,7 @@ class ProcessStatusResponse(BaseModel):
 class SummaryPresetItemResponse(BaseModel):
     name: str
     label: str
+    prompt_template: str
 
 
 class SummaryPresetListResponse(BaseModel):
@@ -197,6 +203,10 @@ class HistoryRegenerateSummaryRequest(BaseModel):
     summary_profile: str | None = Field(
         default=None,
         description="总结模型 profile 名称，为空时使用后端默认",
+    )
+    summary_prompt_template: str | None = Field(
+        default=None,
+        description="本次重生成使用的自定义总结模板，必须包含 {content} 占位符",
     )
 
 

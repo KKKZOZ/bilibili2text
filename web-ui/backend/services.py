@@ -219,6 +219,7 @@ def _run_summary_only_from_existing(
     existing_results: dict[str, StoredArtifact],
     summary_preset: str | None,
     summary_profile: str | None,
+    summary_prompt_template: str | None = None,
     title: str = "",
     author: str = "",
     pubdate: str = "",
@@ -279,6 +280,7 @@ def _run_summary_only_from_existing(
             config.summary_presets,
             preset=summary_preset,
             profile=summary_profile,
+            prompt_template_override=summary_prompt_template,
             metadata=metadata,
         )
 

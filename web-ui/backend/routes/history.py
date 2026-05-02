@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Query
 from b2t.config import resolve_summarize_model_profile, resolve_summary_preset_name
 from b2t.history import build_history_artifacts
 from b2t.storage import StoredArtifact
+from b2t.summarize.llm import validate_summary_prompt_template
 
 from backend.download_registry import download_registry
 from backend.dependencies import get_history_db, get_storage_backend
@@ -195,7 +196,12 @@ def regenerate_history_summary(
 
     summary_preset = (payload.summary_preset or "").strip() or None
     summary_profile = (payload.summary_profile or "").strip() or None
+    summary_prompt_template = (payload.summary_prompt_template or "").strip() or None
     try:
+        if summary_prompt_template is not None:
+            summary_prompt_template = validate_summary_prompt_template(
+                summary_prompt_template
+            )
         resolved_preset = resolve_summary_preset_name(
             summarize=config.summarize,
             summary_presets=config.summary_presets,
@@ -233,6 +239,7 @@ def regenerate_history_summary(
             existing_results=existing_results,
             summary_preset=resolved_preset,
             summary_profile=resolved_profile,
+            summary_prompt_template=summary_prompt_template,
             title=detail.title,
             author=detail.author,
             pubdate=detail.pubdate,

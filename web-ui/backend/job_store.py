@@ -50,6 +50,7 @@ class JobState:
     skip_summary: bool
     summary_preset: str | None
     summary_profile: str | None
+    summary_prompt_template: str | None
     auto_generate_fancy_html: bool
     fancy_html_status: str
     fancy_html_error: str | None
@@ -73,6 +74,7 @@ class JobState:
         skip_summary: bool,
         summary_preset: str | None,
         summary_profile: str | None,
+        summary_prompt_template: str | None,
         auto_generate_fancy_html: bool,
     ) -> "JobState":
         now = utc_iso()
@@ -101,6 +103,7 @@ class JobState:
             skip_summary=skip_summary,
             summary_preset=summary_preset,
             summary_profile=summary_profile,
+            summary_prompt_template=summary_prompt_template,
             auto_generate_fancy_html=auto_generate_fancy_html,
             fancy_html_status=(
                 "pending" if auto_generate_fancy_html and not skip_summary else "idle"
@@ -162,12 +165,14 @@ class JobRepository:
         skip_summary: bool,
         summary_preset: str | None,
         summary_profile: str | None,
+        summary_prompt_template: str | None = None,
         auto_generate_fancy_html: bool,
     ) -> dict[str, JobValue]:
         job = JobState.create(
             skip_summary=skip_summary,
             summary_preset=summary_preset,
             summary_profile=summary_profile,
+            summary_prompt_template=summary_prompt_template,
             auto_generate_fancy_html=auto_generate_fancy_html,
         )
         with self._lock:

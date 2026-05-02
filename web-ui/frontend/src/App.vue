@@ -16,6 +16,7 @@
   // ─── Summary configuration state ─────────────────────────────────
   const summaryPresets = ref([])
   const summaryDefaultPreset = ref('')
+  const summaryDefaultPromptTemplate = ref('')
   const summaryProfiles = ref([])
   const selectedSummaryPreset = ref('')
   const selectedSummaryProfile = ref('')
@@ -144,6 +145,7 @@
       summaryPresets.value = presets
       if (presets.length === 0) {
         summaryDefaultPreset.value = ''
+        summaryDefaultPromptTemplate.value = ''
         selectedSummaryPreset.value = ''
         return
       }
@@ -152,10 +154,19 @@
       summaryDefaultPreset.value = data.default_preset || fallback
       selectedSummaryPreset.value =
         data.selected_preset || summaryDefaultPreset.value || fallback
+      const defaultPreset =
+        presets.find((item) => item.name === summaryDefaultPreset.value) ||
+        presets.find((item) => item.name === selectedSummaryPreset.value) ||
+        presets[0]
+      summaryDefaultPromptTemplate.value =
+        typeof defaultPreset?.prompt_template === 'string'
+          ? defaultPreset.prompt_template
+          : ''
     } catch (err) {
       console.error(err)
       summaryPresets.value = []
       summaryDefaultPreset.value = ''
+      summaryDefaultPromptTemplate.value = ''
       selectedSummaryPreset.value = ''
       summaryPresetError.value =
         err instanceof Error
@@ -323,6 +334,7 @@
         :is="Component"
         :summary-presets="summaryPresets"
         :summary-default-preset="summaryDefaultPreset"
+        :summary-default-prompt-template="summaryDefaultPromptTemplate"
         :selected-summary-preset="selectedSummaryPreset"
         :summary-profiles="summaryProfiles"
         :selected-summary-profile="selectedSummaryProfile"

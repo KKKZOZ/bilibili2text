@@ -45,6 +45,10 @@
     allowDelete: {
       type: Boolean,
       default: true
+    },
+    requiresApiKey: {
+      type: Boolean,
+      default: false
     }
   })
 
@@ -76,6 +80,9 @@
 
   // ─── Active jobs (in-progress) ───────────────────────────────
   const ACTIVE_JOB_IDS_KEY = 'b2t.active-job-ids'
+  const LOCAL_OPEN_PUBLIC_SUMMARY_TEMPLATE_KEY =
+    'b2t.open-public-summary-template'
+  const CUSTOM_SUMMARY_PRESET_VALUE = '__user_custom__'
   const activeJobs = ref([])
   let activeJobsPollTimer = null
 
@@ -171,6 +178,19 @@
   const ragReferenceItems = computed(() =>
     extractRagReferenceItems(ragAnswerMarkdown.value)
   )
+  const historyPresetOptions = computed(() => {
+    const base = Array.isArray(props.summaryPresets) ? props.summaryPresets : []
+    if (!props.requiresApiKey) {
+      return base
+    }
+    return [
+      ...base,
+      {
+        name: CUSTOM_SUMMARY_PRESET_VALUE,
+        label: '用户自定义'
+      }
+    ]
+  })
 
   const loadHistory = async () => {
     historyLoading.value = true
@@ -336,6 +356,24 @@
     if (!runId) {
       return
     }
+    let customTemplate = null
+    if (
+      props.requiresApiKey &&
+      selectedHistorySummaryPreset.value === CUSTOM_SUMMARY_PRESET_VALUE
+    ) {
+      try {
+        customTemplate = (
+          window.localStorage.getItem(LOCAL_OPEN_PUBLIC_SUMMARY_TEMPLATE_KEY) || ''
+        ).trim()
+      } catch {
+        customTemplate = ''
+      }
+      if (!customTemplate) {
+        regenerateError.value =
+          '请先在「API Key」页面保存自定义总结模板，再选择“用户自定义”模板'
+        return
+      }
+    }
 
     regenerateLoading.value = true
     regenerateError.value = ''
@@ -349,8 +387,13 @@
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            summary_preset: selectedHistorySummaryPreset.value || null,
-            summary_profile: selectedHistorySummaryProfile.value || null
+            summary_preset:
+              !selectedHistorySummaryPreset.value ||
+              selectedHistorySummaryPreset.value === CUSTOM_SUMMARY_PRESET_VALUE
+                ? props.summaryDefaultPreset || null
+                : selectedHistorySummaryPreset.value,
+            summary_profile: selectedHistorySummaryProfile.value || null,
+            summary_prompt_template: customTemplate || null
           })
         }
       )
@@ -548,7 +591,12 @@
           <div class="history-regenerate-head">
             <p class="history-regenerate-kicker">重新生成配置</p>
             <h3>总结参数</h3>
-            <p>可切换模型配置与 preset，对同一条历史转录重新生成总结。</p>
+            <p>
+              可切换模型配置与 preset，对同一条历史转录重新生成总结。
+              <template v-if="requiresApiKey">
+                选择“用户自定义”时，会使用你在 API Key 页面保存的模板。
+              </template>
+            </p>
           </div>
 
           <div class="history-regenerate-grid">
@@ -579,19 +627,28 @@
                 id="history-summary-preset-select"
                 v-model="selectedHistorySummaryPreset"
                 class="preset-select history-preset-select"
-                :disabled="regenerateLoading || summaryPresets.length === 0"
+                :disabled="regenerateLoading || historyPresetOptions.length === 0"
               >
-                <option v-if="summaryPresets.length === 0" value="">
+                <option v-if="historyPresetOptions.length === 0" value="">
                   未获取到 preset（将使用后端默认）
                 </option>
                 <option
-                  v-for="preset in summaryPresets"
+                  v-for="preset in historyPresetOptions"
                   :key="preset.name"
                   :value="preset.name"
                 >
                   {{ preset.label }}
                 </option>
               </select>
+              <p
+                v-if="
+                  requiresApiKey &&
+                  selectedHistorySummaryPreset === CUSTOM_SUMMARY_PRESET_VALUE
+                "
+                class="preset-hint"
+              >
+                当前将使用你在 API Key 页面保存的自定义模板。
+              </p>
             </div>
           </div>
 

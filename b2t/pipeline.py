@@ -62,6 +62,7 @@ def run_pipeline(
     skip_summary: bool = False,
     summary_preset: str | None = None,
     summary_profile: str | None = None,
+    summary_prompt_template: str | None = None,
     output_dir: Path | str | None = None,
     progress_callback: Callable[[str, str, int], None] | None = None,
     storage_backend: "StorageBackend | None" = None,
@@ -79,6 +80,7 @@ def run_pipeline(
         skip_summary: Whether to skip LLM summarization
         summary_preset: Summary preset name, uses config default when None
         summary_profile: Summary model profile name, uses config default when None
+        summary_prompt_template: Optional request-scoped prompt template override
         output_dir: Output root directory, uses config download.output_dir when None
         progress_callback: Stage progress callback with (stage_key, stage_label, progress_percent)
 
@@ -190,6 +192,7 @@ def run_pipeline(
                 config.summary_presets,
                 preset=summary_preset,
                 profile=summary_profile,
+                prompt_template_override=summary_prompt_template,
                 metadata=metadata,
             )
             local_results["summary"] = summary_path

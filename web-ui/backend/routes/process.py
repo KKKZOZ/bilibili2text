@@ -20,6 +20,7 @@ from backend.schemas import (
 )
 from backend.settings import get_runtime_app_config, is_upload_enabled
 from backend.task_queue import submit_job
+from b2t.summarize.llm import validate_summary_prompt_template
 
 router = APIRouter()
 _UPLOAD_BVID_NAME_PATTERN = re.compile(r"^(BV[0-9A-Za-z]{10})_(.+)$", re.IGNORECASE)
@@ -38,6 +39,13 @@ _ALLOWED_AUDIO_SUFFIXES = {
 def _clean_optional_text(value: str | None) -> str | None:
     cleaned = value.strip() if value else ""
     return cleaned or None
+
+
+def _clean_optional_prompt_template(value: str | None) -> str | None:
+    cleaned = _clean_optional_text(value)
+    if cleaned is None:
+        return None
+    return validate_summary_prompt_template(cleaned)
 
 
 def _normalize_bvid(raw: str) -> str:
@@ -126,6 +134,9 @@ def process_video(payload: ProcessRequest) -> ProcessStartResponse:
 
     summary_preset = _clean_optional_text(payload.summary_preset)
     summary_profile = _clean_optional_text(payload.summary_profile)
+    summary_prompt_template = _clean_optional_prompt_template(
+        payload.summary_prompt_template
+    )
 
     _ensure_runtime_ready(
         api_key=_clean_optional_text(payload.api_key),
@@ -137,6 +148,7 @@ def process_video(payload: ProcessRequest) -> ProcessStartResponse:
         skip_summary=payload.skip_summary,
         summary_preset=summary_preset,
         summary_profile=summary_profile,
+        summary_prompt_template=summary_prompt_template,
         auto_generate_fancy_html=payload.auto_generate_fancy_html,
     )
     submit_job(
@@ -146,6 +158,7 @@ def process_video(payload: ProcessRequest) -> ProcessStartResponse:
         skip_summary=payload.skip_summary,
         summary_preset=summary_preset,
         summary_profile=summary_profile,
+        summary_prompt_template=summary_prompt_template,
         auto_generate_fancy_html=payload.auto_generate_fancy_html,
         api_key=_clean_optional_text(payload.api_key),
         deepseek_api_key=_clean_optional_text(payload.deepseek_api_key),
@@ -160,6 +173,7 @@ def process_uploaded_audio(
     skip_summary: bool = Form(default=False),
     summary_preset: str | None = Form(default=None),
     summary_profile: str | None = Form(default=None),
+    summary_prompt_template: str | None = Form(default=None),
     auto_generate_fancy_html: bool = Form(default=False),
     api_key: str | None = Form(default=None),
     deepseek_api_key: str | None = Form(default=None),
@@ -178,6 +192,9 @@ def process_uploaded_audio(
     safe_filename, bvid = _validate_upload_filename(file.filename or "")
     cleaned_summary_preset = _clean_optional_text(summary_preset)
     cleaned_summary_profile = _clean_optional_text(summary_profile)
+    cleaned_summary_prompt_template = _clean_optional_prompt_template(
+        summary_prompt_template
+    )
 
     temp_dir = Path(tempfile.mkdtemp(prefix="b2t-upload-"))
     upload_path = temp_dir / safe_filename
@@ -202,6 +219,7 @@ def process_uploaded_audio(
         skip_summary=skip_summary,
         summary_preset=cleaned_summary_preset,
         summary_profile=cleaned_summary_profile,
+        summary_prompt_template=cleaned_summary_prompt_template,
         auto_generate_fancy_html=auto_generate_fancy_html,
     )
     submit_job(
@@ -213,6 +231,7 @@ def process_uploaded_audio(
         skip_summary=skip_summary,
         summary_preset=cleaned_summary_preset,
         summary_profile=cleaned_summary_profile,
+        summary_prompt_template=cleaned_summary_prompt_template,
         auto_generate_fancy_html=auto_generate_fancy_html,
         api_key=_clean_optional_text(api_key),
         deepseek_api_key=_clean_optional_text(deepseek_api_key),
@@ -303,6 +322,9 @@ def process_status(job_id: str) -> ProcessStatusResponse:
         else None,
         summary_profile=job["summary_profile"]
         if isinstance(job["summary_profile"], str)
+        else None,
+        summary_prompt_template=job["summary_prompt_template"]
+        if isinstance(job.get("summary_prompt_template"), str)
         else None,
         auto_generate_fancy_html=bool(job.get("auto_generate_fancy_html")),
         fancy_html_status=str(job.get("fancy_html_status") or "idle"),

@@ -27,6 +27,16 @@ TABLE_SEPARATOR_RE = re.compile(r"^\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|
 _BVID_PREFIX_RE = re.compile(r"^(BV[0-9A-Za-z]{10})[_-]?", re.IGNORECASE)
 
 
+def validate_summary_prompt_template(template: str) -> str:
+    """Validate a user-provided summary prompt template."""
+    cleaned = template.strip()
+    if not cleaned:
+        raise ValueError("总结模板不能为空")
+    if "{content}" not in cleaned:
+        raise ValueError("总结模板必须包含 {content} 占位符")
+    return cleaned
+
+
 def _extract_markdown_table_blocks(content: str) -> list[str]:
     """Extract markdown table blocks from mixed markdown content."""
     lines = content.splitlines()
@@ -246,6 +256,7 @@ def summarize(
     summary_presets: SummaryPresetsConfig,
     preset: str | None = None,
     profile: str | None = None,
+    prompt_template_override: str | None = None,
     metadata: VideoMetadata | None = None,
 ) -> Path:
     """Summarize a Markdown file using an LLM
@@ -256,6 +267,7 @@ def summarize(
         summary_presets: Summary preset config
         preset: Optional, override the default preset name
         profile: Optional, override the default summary profile name
+        prompt_template_override: Optional, override the preset prompt template
 
     Returns:
         Path to the generated summary file
@@ -271,7 +283,11 @@ def summarize(
         summary_presets=summary_presets,
         override=preset,
     )
-    template = summary_presets.presets[preset_name].prompt_template
+    template = (
+        validate_summary_prompt_template(prompt_template_override)
+        if prompt_template_override is not None
+        else summary_presets.presets[preset_name].prompt_template
+    )
     prompt = template.format(content=content)
     selected_profile = (profile or config.profile).strip()
     model_profile = resolve_summarize_model_profile(config, override=selected_profile)

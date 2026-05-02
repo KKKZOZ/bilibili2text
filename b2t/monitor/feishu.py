@@ -38,7 +38,7 @@ class FeishuNotifier:
     def send_card(self, title: str, markdown_content: str) -> bool:
         if not self.is_enabled():
             logger.info("[Mock飞书消息] %s\n%s", title, markdown_content)
-            return False
+            return True
 
         card = {
             "config": {"wide_screen_mode": True},
@@ -64,7 +64,7 @@ class FeishuNotifier:
     def send_image_card(self, title: str, image_paths: list[Path | str]) -> bool:
         if not self.is_enabled():
             logger.info("[Mock飞书图片消息] %s\n%s", title, image_paths)
-            return False
+            return True
 
         image_keys: list[str] = []
         for image_path in image_paths:

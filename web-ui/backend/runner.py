@@ -47,6 +47,7 @@ def _run_job(
     skip_summary: bool,
     summary_preset: str | None,
     summary_profile: str | None,
+    summary_prompt_template: str | None,
     auto_generate_fancy_html: bool,
     api_key: str | None = None,
     deepseek_api_key: str | None = None,
@@ -110,6 +111,7 @@ def _run_job(
         skip_summary=skip_summary,
         summary_preset=summary_preset,
         summary_profile=summary_profile,
+        summary_prompt_template=summary_prompt_template,
         auto_generate_fancy_html=auto_generate_fancy_html,
     ):
         _cleanup_upload_temp_dir(upload_temp_dir)
@@ -138,6 +140,7 @@ def _run_job(
                     skip_summary=skip_summary,
                     summary_preset=summary_preset,
                     summary_profile=summary_profile,
+                    summary_prompt_template=summary_prompt_template,
                     storage_backend=storage_backend,
                     stt_storage_backend=stt_storage_backend,
                     progress_callback=lambda stage, label, progress: _update_job(
@@ -155,6 +158,7 @@ def _run_job(
                     skip_summary=skip_summary,
                     summary_preset=summary_preset,
                     summary_profile=summary_profile,
+                    summary_prompt_template=summary_prompt_template,
                     storage_backend=storage_backend,
                     stt_storage_backend=stt_storage_backend,
                     progress_callback=lambda stage, label, progress: _update_job(

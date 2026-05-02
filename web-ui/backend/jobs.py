@@ -8,12 +8,14 @@ def _create_job(
     skip_summary: bool,
     summary_preset: str | None,
     summary_profile: str | None,
+    summary_prompt_template: str | None,
     auto_generate_fancy_html: bool,
 ) -> dict[str, JobValue]:
     return job_repository.create(
         skip_summary=skip_summary,
         summary_preset=summary_preset,
         summary_profile=summary_profile,
+        summary_prompt_template=summary_prompt_template,
         auto_generate_fancy_html=auto_generate_fancy_html,
     )
 

@@ -38,7 +38,11 @@ def summary_presets() -> SummaryPresetListResponse:
     except ValueError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     presets = [
-        SummaryPresetItemResponse(name=name, label=preset.label)
+        SummaryPresetItemResponse(
+            name=name,
+            label=preset.label,
+            prompt_template=preset.prompt_template,
+        )
         for name, preset in config.summary_presets.presets.items()
     ]
 

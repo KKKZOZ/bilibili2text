@@ -33,6 +33,10 @@
       type: String,
       required: true
     },
+    summaryDefaultPromptTemplate: {
+      type: String,
+      default: ''
+    },
     selectedSummaryPreset: {
       type: String,
       required: true
@@ -72,6 +76,10 @@
     apiKeyConfigured: {
       type: Boolean,
       default: true
+    },
+    deepseekApiKeyConfigured: {
+      type: Boolean,
+      default: false
     }
   })
 
@@ -133,13 +141,43 @@
   const ACTIVE_JOB_IDS_KEY = 'b2t.active-job-ids'
   const LOCAL_API_KEY_KEY = 'b2t.public-api-key'
   const LOCAL_DEEPSEEK_API_KEY_KEY = 'b2t.public-deepseek-api-key'
+  const LOCAL_OPEN_PUBLIC_SUMMARY_TEMPLATE_KEY =
+    'b2t.open-public-summary-template'
+  const CUSTOM_SUMMARY_PRESET_VALUE = '__user_custom__'
   const uploadAccept = '.aac,.flac,.m4a,.mp3,.ogg,.opus,.wav,.webm'
   const uploadFilenamePattern =
     /^(BV[0-9A-Za-z]{10})_.+\.(aac|flac|m4a|mp3|ogg|opus|wav|webm)$/i
+  const userSummaryPromptTemplate = ref('')
 
   // Job from route param
   const routeJobId = computed(() => String(route.params.jobId || ''))
   const isJobDetailMode = computed(() => !!routeJobId.value)
+  const isOpenPublic = computed(() => props.requiresApiKey)
+  const presetOptions = computed(() => {
+    const base = Array.isArray(props.summaryPresets) ? props.summaryPresets : []
+    if (!isOpenPublic.value) {
+      return base
+    }
+    return [
+      ...base,
+      {
+        name: CUSTOM_SUMMARY_PRESET_VALUE,
+        label: '用户自定义'
+      }
+    ]
+  })
+  const effectiveSummaryPromptTemplate = computed(() => {
+    if (!enableSummary.value) {
+      return ''
+    }
+    if (!isOpenPublic.value) {
+      return ''
+    }
+    if (props.selectedSummaryPreset !== CUSTOM_SUMMARY_PRESET_VALUE) {
+      return ''
+    }
+    return userSummaryPromptTemplate.value.trim()
+  })
 
   // Multi-job localStorage helpers (shared with HistoryView for active job tracking)
   const readActiveJobIds = () => {
@@ -218,6 +256,22 @@
       ).trim()
     } catch {
       return ''
+    }
+  }
+
+  const loadLocalSummaryPromptTemplate = () => {
+    if (!isOpenPublic.value) {
+      userSummaryPromptTemplate.value = ''
+      return
+    }
+    try {
+      const stored = (
+        window.localStorage.getItem(LOCAL_OPEN_PUBLIC_SUMMARY_TEMPLATE_KEY) || ''
+      ).trim()
+      userSummaryPromptTemplate.value =
+        stored || props.summaryDefaultPromptTemplate || ''
+    } catch {
+      userSummaryPromptTemplate.value = props.summaryDefaultPromptTemplate || ''
     }
   }
 
@@ -376,6 +430,13 @@
         : 0
       job.value = data
       currentSkipSummary.value = Boolean(data.skip_summary)
+      if (
+        isOpenPublic.value &&
+        typeof data.summary_prompt_template === 'string' &&
+        data.summary_prompt_template.trim()
+      ) {
+        userSummaryPromptTemplate.value = data.summary_prompt_template
+      }
       pollErrorCount.value = 0
       error.value = ''
       const currentLogCount = Array.isArray(data.logs) ? data.logs.length : 0
@@ -426,6 +487,15 @@
       if (props.requiresApiKey && !props.apiKeyConfigured) {
         throw new Error('请先在「API Key」页面配置阿里云 DashScope API Key')
       }
+      if (
+        enableSummary.value &&
+        props.selectedSummaryPreset === CUSTOM_SUMMARY_PRESET_VALUE &&
+        !effectiveSummaryPromptTemplate.value
+      ) {
+        throw new Error(
+          '请先在「API Key」页面保存自定义总结模板，再选择“用户自定义”模板'
+        )
+      }
 
       const skipSummary = !enableSummary.value
       currentSkipSummary.value = skipSummary
@@ -443,11 +513,28 @@
         const formData = new FormData()
         formData.append('file', uploadedAudioFile.value)
         formData.append('skip_summary', String(skipSummary))
-        if (!skipSummary && props.selectedSummaryPreset) {
+        if (
+          !skipSummary &&
+          props.selectedSummaryPreset &&
+          props.selectedSummaryPreset !== CUSTOM_SUMMARY_PRESET_VALUE
+        ) {
           formData.append('summary_preset', props.selectedSummaryPreset)
+        }
+        if (
+          !skipSummary &&
+          props.selectedSummaryPreset === CUSTOM_SUMMARY_PRESET_VALUE &&
+          props.summaryDefaultPreset
+        ) {
+          formData.append('summary_preset', props.summaryDefaultPreset)
         }
         if (!skipSummary && props.selectedSummaryProfile) {
           formData.append('summary_profile', props.selectedSummaryProfile)
+        }
+        if (!skipSummary && effectiveSummaryPromptTemplate.value) {
+          formData.append(
+            'summary_prompt_template',
+            effectiveSummaryPromptTemplate.value
+          )
         }
         if (!skipSummary) {
           formData.append(
@@ -477,13 +564,24 @@
             url: url.value.trim(),
             skip_summary: skipSummary,
             summary_preset:
-              skipSummary || !props.selectedSummaryPreset
+              skipSummary ||
+              !props.selectedSummaryPreset ||
+              props.selectedSummaryPreset === CUSTOM_SUMMARY_PRESET_VALUE
                 ? null
                 : props.selectedSummaryPreset,
+            ...(skipSummary ||
+            props.selectedSummaryPreset !== CUSTOM_SUMMARY_PRESET_VALUE ||
+            !props.summaryDefaultPreset
+              ? {}
+              : { summary_preset: props.summaryDefaultPreset }),
             summary_profile:
               skipSummary || !props.selectedSummaryProfile
                 ? null
                 : props.selectedSummaryProfile,
+            summary_prompt_template:
+              skipSummary || !effectiveSummaryPromptTemplate.value
+                ? null
+                : effectiveSummaryPromptTemplate.value,
             auto_generate_fancy_html: skipSummary
               ? false
               : autoGenerateFancyHtml.value,
@@ -522,6 +620,7 @@
   }
 
   onMounted(async () => {
+    loadLocalSummaryPromptTemplate()
     if (!routeJobId.value) {
       return
     }
@@ -540,6 +639,29 @@
   onBeforeUnmount(() => {
     stopPolling()
   })
+
+  watch(
+    () => props.summaryDefaultPromptTemplate,
+    () => {
+      if (!isOpenPublic.value) {
+        return
+      }
+      const hasLocalValue = userSummaryPromptTemplate.value.trim().length > 0
+      if (!hasLocalValue) {
+        userSummaryPromptTemplate.value = props.summaryDefaultPromptTemplate || ''
+      }
+    },
+    { immediate: true }
+  )
+
+  watch(
+    () => props.requiresApiKey,
+    () => {
+      loadLocalSummaryPromptTemplate()
+    },
+    { immediate: true }
+  )
+
 </script>
 
 <template>
@@ -666,7 +788,12 @@
             <div class="process-summary-head">
               <p class="process-summary-kicker">Summary Config</p>
               <h3>总结参数</h3>
-              <p>选择模型配置与总结模板，生成更符合用途的总结内容。</p>
+              <p>
+                选择模型配置与总结模板，生成更符合用途的总结内容。
+                <template v-if="isOpenPublic">
+                  选择“用户自定义”时，会使用你在 API Key 页面保存的模板。
+                </template>
+              </p>
             </div>
 
             <div class="process-summary-grid">
@@ -747,7 +874,7 @@
                   :value="selectedSummaryPreset"
                   class="preset-select process-preset-select"
                   :disabled="
-                    isLoadingSummaryPresets || summaryPresets.length === 0
+                    isLoadingSummaryPresets || presetOptions.length === 0
                   "
                   @change="
                     emit('update:selectedSummaryPreset', $event.target.value)
@@ -756,11 +883,11 @@
                   <option v-if="isLoadingSummaryPresets" value="">
                     正在加载模板...
                   </option>
-                  <option v-else-if="summaryPresets.length === 0" value="">
+                  <option v-else-if="presetOptions.length === 0" value="">
                     未获取到模板（将使用后端默认）
                   </option>
                   <option
-                    v-for="preset in summaryPresets"
+                    v-for="preset in presetOptions"
                     :key="preset.name"
                     :value="preset.name"
                   >
@@ -780,8 +907,17 @@
                     重试
                   </button>
                 </p>
-                <p v-else-if="summaryPresets.length === 0" class="preset-hint">
+                <p v-else-if="presetOptions.length === 0" class="preset-hint">
                   暂未连接到后端模板接口，提交时会使用服务端默认模板。
+                </p>
+                <p
+                  v-else-if="
+                    isOpenPublic &&
+                    selectedSummaryPreset === CUSTOM_SUMMARY_PRESET_VALUE
+                  "
+                  class="preset-hint"
+                >
+                  当前将使用你在 API Key 页面保存的自定义模板。
                 </p>
               </div>
             </div>

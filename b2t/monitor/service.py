@@ -66,13 +66,16 @@ class JsonStateStore:
         try:
             self.state = json.loads(self.path.read_text(encoding="utf-8"))
         except Exception:  # noqa: BLE001
+            logger.warning("监控状态文件损坏或不可读，已重置为空: %s", self.path)
             self.state = {}
 
     def save(self) -> None:
-        self.path.write_text(
+        temp_path = self.path.with_name(f"{self.path.name}.tmp")
+        temp_path.write_text(
             json.dumps(self.state, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+        temp_path.replace(self.path)
 
     def clear(self) -> None:
         self.state = {}
@@ -216,11 +219,6 @@ class BilibiliMonitorService:
             logger.info("%s 暂无可处理动态", creator.name or creator.uid)
             return
 
-        items = sorted(items, key=self.get_publish_timestamp, reverse=True)
-        newest_dynamic_id = self.get_dynamic_id(items[0])
-        if newest_dynamic_id is None:
-            return
-
         last_seen = self.state.get_last_seen(creator.uid)
         if bootstrap_unsummarized_count > 0:
             candidates = self._collect_unsummarized_video_items(
@@ -233,16 +231,12 @@ class BilibiliMonitorService:
             candidates = self._collect_new_video_items(items, last_seen)
             if candidates is None:
                 logger.warning(
-                    "%s 的 last_seen 已失效，直接更新到最新动态",
+                    "%s 的 last_seen 已失效，回退到首次扫描策略",
                     creator.name or creator.uid,
                 )
-                self.state.set_last_seen(creator.uid, newest_dynamic_id)
-                self.state.save()
-                return
+                candidates = self._collect_recoverable_video_items(items)
 
         if not candidates:
-            self.state.set_last_seen(creator.uid, newest_dynamic_id)
-            self.state.save()
             return
 
         for item in candidates:
@@ -250,9 +244,8 @@ class BilibiliMonitorService:
             if event is None:
                 continue
             self._handle_video_event(event)
-
-        self.state.set_last_seen(creator.uid, newest_dynamic_id)
-        self.state.save()
+            self.state.set_last_seen(creator.uid, event.dynamic_id)
+            self.state.save()
 
     def fetch_user_space_dynamics(
         self,
@@ -307,6 +300,15 @@ class BilibiliMonitorService:
         self,
         items: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
+        collected = self._collect_recent_video_items(items)
+        limited = collected[: self.config.monitor.first_run_max_push]
+        limited.sort(key=self.get_publish_timestamp)
+        return limited
+
+    def _collect_recent_video_items(
+        self,
+        items: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
         threshold = int(time.time()) - self.config.monitor.lookback_hours * 3600
         collected: list[dict[str, Any]] = []
         for item in items:
@@ -315,8 +317,20 @@ class BilibiliMonitorService:
             if self.extract_video_event(item, None) is None:
                 continue
             collected.append(item)
-            if len(collected) >= self.config.monitor.first_run_max_push:
-                break
+        return collected
+
+    def _collect_recoverable_video_items(
+        self,
+        items: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        collected: list[dict[str, Any]] = []
+        for item in self._collect_recent_video_items(items):
+            event = self.extract_video_event(item, None)
+            if event is None:
+                continue
+            if self._has_summary_for_bvid(event.bvid):
+                continue
+            collected.append(item)
         collected.sort(key=self.get_publish_timestamp)
         return collected
 
@@ -325,22 +339,18 @@ class BilibiliMonitorService:
         items: list[dict[str, Any]],
         last_seen: str,
     ) -> list[dict[str, Any]] | None:
-        last_seen_timestamp = 0
-        last_seen_found = False
-        for item in items:
+        last_seen_index: int | None = None
+        for index, item in enumerate(items):
             if self.get_dynamic_id(item) == last_seen:
-                last_seen_timestamp = self.get_publish_timestamp(item)
-                last_seen_found = True
+                last_seen_index = index
                 break
-        if not last_seen_found:
+        if last_seen_index is None:
             return None
 
         threshold = int(time.time()) - self.config.monitor.lookback_hours * 3600
         collected: list[dict[str, Any]] = []
-        for item in items:
+        for item in items[:last_seen_index]:
             publish_timestamp = self.get_publish_timestamp(item)
-            if publish_timestamp <= last_seen_timestamp:
-                continue
             if publish_timestamp < threshold:
                 continue
             if self.extract_video_event(item, None) is None:
