@@ -256,6 +256,14 @@
           </h3>
           <p class="provider-desc">
             语音识别（ASR）依赖阿里云，无此 Key 无法提交转录任务。
+            <a
+              class="provider-link"
+              href="https://bailian.console.aliyun.com/cn-beijing/?tab=model#/api-key"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              前往阿里云百炼创建 API Key
+            </a>
           </p>
 
           <div class="status-row">
@@ -317,6 +325,14 @@
           <p class="provider-desc">
             配置后可在转录页面的模型下拉框中选择 DeepSeek 模型，用于 LLM
             总结、知识库问答和 Fancy HTML。
+            <a
+              class="provider-link"
+              href="https://platform.deepseek.com/api_keys"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              前往 DeepSeek 创建 API Key
+            </a>
           </p>
 
           <div class="status-row">
@@ -566,6 +582,19 @@
     margin: 0;
     font-size: 0.86rem;
     color: var(--text-muted);
+  }
+
+  .provider-link {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 8px;
+    color: #0369a1;
+    font-weight: 700;
+    text-decoration: none;
+  }
+
+  .provider-link:hover {
+    text-decoration: underline;
   }
 
   .status-row {

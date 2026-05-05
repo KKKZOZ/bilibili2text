@@ -65,6 +65,18 @@ def _summary_family_storage_keys(detail, summary_artifact) -> set[str]:
     return related
 
 
+def _has_summary_with_config(detail, summary_preset: str, summary_profile: str) -> bool:
+    for artifact in detail.artifacts:
+        if artifact.kind != "summary":
+            continue
+        if (
+            artifact.summary_preset.strip() == summary_preset
+            and artifact.summary_profile.strip() == summary_profile
+        ):
+            return True
+    return False
+
+
 def _to_history_detail_response(
     detail,
 ) -> HistoryDetailResponse:
@@ -225,6 +237,11 @@ def regenerate_history_summary(
             raise ValueError(
                 f"模型 {resolved_profile}（{provider_label}）需要 API Key，"
                 "但你未提供。请在「API Key」页面配置对应的 Key 后再试。"
+            )
+        if _has_summary_with_config(detail, resolved_preset, resolved_profile):
+            raise ValueError(
+                f"已存在使用模型配置 {resolved_profile} 与总结模板 {resolved_preset} "
+                "生成的总结，请选择不同配置后再重新生成。"
             )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

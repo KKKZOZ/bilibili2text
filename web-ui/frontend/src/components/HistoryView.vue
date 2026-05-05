@@ -1,6 +1,6 @@
 <script setup>
-  import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-  import { useRouter } from 'vue-router'
+  import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+  import { useRoute, useRouter } from 'vue-router'
   import { BookMarked, ExternalLink } from 'lucide-vue-next'
   import {
     AlertCircle,
@@ -19,6 +19,7 @@
   import { bilibiliVideoUrl, formatTime } from '../utils/fileUtils'
   import { extractRagReferenceItems, renderMarkdown } from '../utils/markdown'
 
+  const route = useRoute()
   const router = useRouter()
 
   const props = defineProps({
@@ -157,6 +158,7 @@
   const showHistorySkeleton = computed(
     () => historyLoading.value && historyItems.value.length === 0
   )
+  const routeRunId = computed(() => String(route.params.runId || ''))
 
   const historyDetailDownloadRows = computed(() => {
     const detail = historyDetail.value
@@ -179,6 +181,42 @@
 
   const ragReferenceItems = computed(() =>
     extractRagReferenceItems(ragAnswerMarkdown.value)
+  )
+
+  const selectedRegeneratePresetName = computed(() => {
+    if (
+      !selectedHistorySummaryPreset.value ||
+      selectedHistorySummaryPreset.value === CUSTOM_SUMMARY_PRESET_VALUE
+    ) {
+      return props.summaryDefaultPreset || ''
+    }
+    return selectedHistorySummaryPreset.value
+  })
+
+  const selectedRegenerateProfileName = computed(
+    () => selectedHistorySummaryProfile.value || props.selectedSummaryProfile || ''
+  )
+
+  const isSelectedSummaryAlreadyGenerated = computed(() => {
+    const detail = historyDetail.value
+    if (!detail || !Array.isArray(detail.artifacts)) {
+      return false
+    }
+    const preset = selectedRegeneratePresetName.value.trim()
+    const profile = selectedRegenerateProfileName.value.trim()
+    if (!preset || !profile) {
+      return false
+    }
+    return detail.artifacts.some(
+      (artifact) =>
+        artifact.kind === 'summary' &&
+        (artifact.summary_preset || '').trim() === preset &&
+        (artifact.summary_profile || '').trim() === profile
+    )
+  })
+
+  const regenerateDisabled = computed(
+    () => regenerateLoading.value || isSelectedSummaryAlreadyGenerated.value
   )
 
   const getLocalApiKey = () => {
@@ -242,6 +280,10 @@
   }
 
   const loadHistoryDetail = async (runId) => {
+    const requestedRunId = String(runId || '').trim()
+    if (!requestedRunId) {
+      return
+    }
     historyDetailLoading.value = true
     showHistoryDetail.value = true
     historyDetail.value = null
@@ -254,10 +296,15 @@
       props.selectedSummaryPreset || props.summaryDefaultPreset || ''
     selectedHistorySummaryProfile.value = props.selectedSummaryProfile || ''
     try {
-      const resp = await fetch(`/api/history/${encodeURIComponent(runId)}`)
+      const resp = await fetch(
+        `/api/history/${encodeURIComponent(requestedRunId)}`
+      )
       const data = await resp.json()
       if (!resp.ok) {
         throw new Error(data.detail || '获取详情失败')
+      }
+      if (routeRunId.value !== requestedRunId) {
+        return
       }
       historyDetail.value = data
       ragFancyHtmlError.value = data.fancy_html_error || ''
@@ -272,6 +319,14 @@
     } finally {
       historyDetailLoading.value = false
     }
+  }
+
+  const openHistoryDetail = (runId) => {
+    router.push(`/history/${encodeURIComponent(runId)}`)
+  }
+
+  const closeHistoryDetail = () => {
+    router.push('/history')
   }
 
   const stopRagFancyHtmlPolling = () => {
@@ -377,6 +432,11 @@
     if (!runId) {
       return
     }
+    if (isSelectedSummaryAlreadyGenerated.value) {
+      regenerateError.value =
+        '该模型配置与总结模板已经生成过，请选择不同配置后再重新生成。'
+      return
+    }
     let customTemplate = null
     if (
       props.requiresApiKey &&
@@ -409,11 +469,8 @@
           },
           body: JSON.stringify({
             summary_preset:
-              !selectedHistorySummaryPreset.value ||
-              selectedHistorySummaryPreset.value === CUSTOM_SUMMARY_PRESET_VALUE
-                ? props.summaryDefaultPreset || null
-                : selectedHistorySummaryPreset.value,
-            summary_profile: selectedHistorySummaryProfile.value || null,
+              selectedRegeneratePresetName.value || null,
+            summary_profile: selectedRegenerateProfileName.value || null,
             summary_prompt_template: customTemplate || null,
             api_key: props.requiresApiKey ? getLocalApiKey() : null,
             deepseek_api_key: props.requiresApiKey
@@ -533,8 +590,27 @@
 
   onMounted(() => {
     loadHistory()
+    if (routeRunId.value) {
+      loadHistoryDetail(routeRunId.value)
+    }
     loadActiveJobs()
     activeJobsPollTimer = setInterval(loadActiveJobs, 2000)
+  })
+
+  watch(routeRunId, (runId) => {
+    if (runId) {
+      loadHistoryDetail(runId)
+      return
+    }
+    showHistoryDetail.value = false
+    historyDetail.value = null
+    historyDetailLoading.value = false
+    ragAnswerMarkdown.value = ''
+    ragAnswerError.value = ''
+    ragFancyHtmlError.value = ''
+    regenerateError.value = ''
+    regenerateSuccess.value = ''
+    stopRagFancyHtmlPolling()
   })
 
   onBeforeUnmount(() => {
@@ -551,7 +627,7 @@
     <!-- Detail View -->
     <article v-if="showHistoryDetail" class="panel panel-history">
       <header class="history-detail-header">
-        <button class="detail-back" @click="showHistoryDetail = false">
+        <button class="detail-back" @click="closeHistoryDetail">
           <ArrowLeft :size="16" />
           <span>返回列表</span>
         </button>
@@ -680,7 +756,7 @@
           <button
             class="submit history-regenerate-button"
             type="button"
-            :disabled="regenerateLoading"
+            :disabled="regenerateDisabled"
             @click="regenerateSummary"
           >
             <LoaderCircle v-if="regenerateLoading" :size="16" class="spin" />
@@ -688,6 +764,12 @@
               regenerateLoading ? '生成中...' : '用当前配置重新生成总结'
             }}</span>
           </button>
+          <p
+            v-if="isSelectedSummaryAlreadyGenerated"
+            class="preset-hint duplicate-summary-hint"
+          >
+            该模型配置与总结模板已经生成过，请选择不同配置后再重新生成。
+          </p>
           <p v-if="regenerateError" class="inline-error">
             <AlertCircle :size="16" />
             <span>{{ regenerateError }}</span>
@@ -947,7 +1029,7 @@
         >
           <div
             class="history-item-content"
-            @click="loadHistoryDetail(item.run_id)"
+            @click="openHistoryDetail(item.run_id)"
           >
             <div class="history-item-main">
               <span
