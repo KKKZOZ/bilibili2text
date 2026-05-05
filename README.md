@@ -7,6 +7,14 @@ Bilibili 视频转文字工具：自动下载音频、语音转录、生成 Mark
 - 提供 Open Public 模式，用户使用自己的 API KEY 进行调用
 - 提供监控功能，自动监控指定 B 站 UP 主视频更新并自动转录，完成之后通过飞书机器人通知用户
 
+
+<details>
+<summary>欢迎加群一起交流</summary>
+
+![](./assets/qr_code.jpg)
+
+</details>
+
 ## 功能
 
 - 使用 [yutto](https://github.com/yutto-dev/yutto) 下载 Bilibili 视频音频
