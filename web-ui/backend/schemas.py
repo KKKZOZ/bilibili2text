@@ -208,6 +208,14 @@ class HistoryRegenerateSummaryRequest(BaseModel):
         default=None,
         description="本次重生成使用的自定义总结模板，必须包含 {content} 占位符",
     )
+    api_key: str | None = Field(
+        default=None,
+        description="open-public 模式下用户自带的阿里云 DashScope API Key",
+    )
+    deepseek_api_key: str | None = Field(
+        default=None,
+        description="open-public 模式下用户自带的 DeepSeek API Key（可选，用于 LLM/Fancy HTML）",
+    )
 
 
 class GenerateFancyHtmlRequest(BaseModel):

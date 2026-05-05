@@ -179,7 +179,11 @@ def regenerate_history_summary(
         raise HTTPException(status_code=404, detail="转录记录不存在")
 
     try:
-        config = get_runtime_app_config(require_public_api_key=True)
+        config = get_runtime_app_config(
+            require_public_api_key=True,
+            api_key=(payload.api_key or "").strip() or None,
+            deepseek_api_key=(payload.deepseek_api_key or "").strip() or None,
+        )
         storage_backend = get_storage_backend()
     except FileNotFoundError as exc:
         raise HTTPException(
@@ -208,10 +212,20 @@ def regenerate_history_summary(
             override=summary_preset,
         )
         resolved_profile = summary_profile or config.summarize.profile.strip()
-        resolve_summarize_model_profile(
+        model_profile = resolve_summarize_model_profile(
             config.summarize,
             override=resolved_profile,
         )
+        if not model_profile.api_key.strip():
+            provider_label = (
+                "DeepSeek"
+                if model_profile.provider.strip().lower() == "deepseek"
+                else model_profile.provider
+            )
+            raise ValueError(
+                f"模型 {resolved_profile}（{provider_label}）需要 API Key，"
+                "但你未提供。请在「API Key」页面配置对应的 Key 后再试。"
+            )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

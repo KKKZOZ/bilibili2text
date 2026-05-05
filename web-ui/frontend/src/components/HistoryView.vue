@@ -80,6 +80,8 @@
 
   // ─── Active jobs (in-progress) ───────────────────────────────
   const ACTIVE_JOB_IDS_KEY = 'b2t.active-job-ids'
+  const LOCAL_API_KEY_KEY = 'b2t.public-api-key'
+  const LOCAL_DEEPSEEK_API_KEY_KEY = 'b2t.public-deepseek-api-key'
   const LOCAL_OPEN_PUBLIC_SUMMARY_TEMPLATE_KEY =
     'b2t.open-public-summary-template'
   const CUSTOM_SUMMARY_PRESET_VALUE = '__user_custom__'
@@ -178,6 +180,25 @@
   const ragReferenceItems = computed(() =>
     extractRagReferenceItems(ragAnswerMarkdown.value)
   )
+
+  const getLocalApiKey = () => {
+    try {
+      return (window.localStorage.getItem(LOCAL_API_KEY_KEY) || '').trim()
+    } catch {
+      return ''
+    }
+  }
+
+  const getLocalDeepseekApiKey = () => {
+    try {
+      return (
+        window.localStorage.getItem(LOCAL_DEEPSEEK_API_KEY_KEY) || ''
+      ).trim()
+    } catch {
+      return ''
+    }
+  }
+
   const historyPresetOptions = computed(() => {
     const base = Array.isArray(props.summaryPresets) ? props.summaryPresets : []
     if (!props.requiresApiKey) {
@@ -393,7 +414,11 @@
                 ? props.summaryDefaultPreset || null
                 : selectedHistorySummaryPreset.value,
             summary_profile: selectedHistorySummaryProfile.value || null,
-            summary_prompt_template: customTemplate || null
+            summary_prompt_template: customTemplate || null,
+            api_key: props.requiresApiKey ? getLocalApiKey() : null,
+            deepseek_api_key: props.requiresApiKey
+              ? getLocalDeepseekApiKey() || null
+              : null
           })
         }
       )
