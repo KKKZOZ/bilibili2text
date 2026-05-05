@@ -135,6 +135,8 @@ class RuntimeFeaturesResponse(BaseModel):
     requires_user_api_key: bool
     api_key_configured: bool
     deepseek_api_key_configured: bool = False
+    counterscale_site_id: str = ""
+    counterscale_tracker_url: str = ""
 
 
 class OpenPublicApiKeyStatusResponse(BaseModel):

@@ -313,6 +313,7 @@ def get_runtime_app_config(
 
 
 def get_runtime_features() -> dict[str, str | bool]:
+    config = get_app_config()
     return {
         "mode": get_web_ui_mode(),
         "allow_upload_audio": is_upload_enabled(),
@@ -320,4 +321,6 @@ def get_runtime_features() -> dict[str, str | bool]:
         "requires_user_api_key": requires_user_api_key(),
         "api_key_configured": is_public_api_key_configured(),
         "deepseek_api_key_configured": is_public_deepseek_api_key_configured(),
+        "counterscale_site_id": config.analytics.counterscale.site_id,
+        "counterscale_tracker_url": config.analytics.counterscale.tracker_url,
     }

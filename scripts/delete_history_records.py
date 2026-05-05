@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Delete all local system records related to one Bilibili BV id."""
+"""Delete local system records by Bilibili BV id or history run_id."""
 
 from __future__ import annotations
 
@@ -20,22 +20,42 @@ from b2t.history import HistoryDB  # noqa: E402
 from b2t.storage import StoredArtifact, create_storage_backend  # noqa: E402
 
 _BVID_RE = re.compile(r"(BV[0-9A-Za-z]{10})", re.IGNORECASE)
+_HISTORY_FRAGMENT_RE = re.compile(r"(?:^|[#/])history/([^/?#]+)", re.IGNORECASE)
+_RUN_ID_RE = re.compile(r"^[0-9a-f]{32}$|^BV[0-9A-Za-z]{10}-[0-9a-f]{8}$")
 _DB_FILENAME = "b2t_history.db"
 
 
 @dataclass
 class CleanupPlan:
-    bvid: str
+    target: str
+    target_type: str
+    bvid: str = ""
     run_ids: list[str] = field(default_factory=list)
     artifacts: list[StoredArtifact] = field(default_factory=list)
     local_dirs: list[Path] = field(default_factory=list)
 
 
-def _normalize_bvid(raw: str) -> str:
-    match = _BVID_RE.search(raw.strip())
-    if not match:
-        raise ValueError(f"Invalid BV id: {raw}")
-    return match.group(1)
+def _parse_target(raw: str) -> tuple[str, str]:
+    value = raw.strip()
+    if not value:
+        raise ValueError("Target cannot be empty")
+
+    history_match = _HISTORY_FRAGMENT_RE.search(value)
+    if history_match:
+        return "run_id", history_match.group(1)
+
+    if _RUN_ID_RE.fullmatch(value):
+        return "run_id", value
+
+    bvid_match = _BVID_RE.fullmatch(value)
+    if bvid_match:
+        return "bvid", bvid_match.group(1)
+
+    url_bvid_match = _BVID_RE.search(value)
+    if url_bvid_match:
+        return "bvid", url_bvid_match.group(1)
+
+    raise ValueError(f"Invalid BV id, history run_id, or history URL: {raw}")
 
 
 def _history_db_path(db_dir: str | Path) -> Path:
@@ -62,6 +82,26 @@ def _find_run_ids(db_path: Path, bvid: str) -> list[str]:
     return [str(row["run_id"]) for row in rows]
 
 
+def _history_detail_artifacts(history_db: HistoryDB, run_ids: list[str]) -> tuple[str, list[StoredArtifact]]:
+    bvid = ""
+    artifacts: list[StoredArtifact] = []
+    for run_id in run_ids:
+        detail = history_db.get_run_detail(run_id)
+        if detail is None:
+            continue
+        if not bvid and detail.bvid:
+            bvid = detail.bvid
+        artifacts.extend(
+            StoredArtifact(
+                filename=artifact.filename,
+                storage_key=artifact.storage_key,
+                backend=artifact.backend,
+            )
+            for artifact in detail.artifacts
+        )
+    return bvid, artifacts
+
+
 def _dedupe_artifacts(artifacts: list[StoredArtifact]) -> list[StoredArtifact]:
     deduped: list[StoredArtifact] = []
     seen: set[tuple[str, str]] = set()
@@ -86,36 +126,42 @@ def _find_local_dirs(output_dir: str | Path, bvid: str) -> list[Path]:
     )
 
 
-def _build_plan(config_path: str | None, bvid: str) -> tuple[CleanupPlan, object]:
+def _build_plan(
+    config_path: str | None,
+    *,
+    target_type: str,
+    target: str,
+) -> tuple[CleanupPlan, object]:
     config = load_config(config_path)
     history_db = HistoryDB(config.download.db_dir)
-    storage_backend = create_storage_backend(config)
 
-    run_ids = _find_run_ids(_history_db_path(config.download.db_dir), bvid)
-    artifacts: list[StoredArtifact] = []
-    for run_id in run_ids:
-        detail = history_db.get_run_detail(run_id)
-        if detail is None:
-            continue
-        artifacts.extend(
-            StoredArtifact(
-                filename=artifact.filename,
-                storage_key=artifact.storage_key,
-                backend=artifact.backend,
-            )
-            for artifact in detail.artifacts
-        )
+    if target_type == "bvid":
+        bvid = target
+        run_ids = _find_run_ids(_history_db_path(config.download.db_dir), bvid)
+    elif target_type == "run_id":
+        detail = history_db.get_run_detail(target)
+        run_ids = [target] if detail is not None else []
+        bvid = detail.bvid if detail is not None else ""
+    else:
+        raise ValueError(f"Unsupported target type: {target_type}")
 
-    try:
-        artifacts.extend(storage_backend.list_existing_transcription_artifacts(bvid))
-    except Exception as exc:
-        print(f"Warning: failed to list storage artifacts for {bvid}: {exc}")
+    detail_bvid, artifacts = _history_detail_artifacts(history_db, run_ids)
+    bvid = bvid or detail_bvid
+
+    if bvid:
+        try:
+            storage_backend = create_storage_backend(config)
+            artifacts.extend(storage_backend.list_existing_transcription_artifacts(bvid))
+        except Exception as exc:
+            print(f"Warning: failed to list storage artifacts for {bvid}: {exc}")
 
     plan = CleanupPlan(
+        target=target,
+        target_type=target_type,
         bvid=bvid,
         run_ids=run_ids,
         artifacts=_dedupe_artifacts(artifacts),
-        local_dirs=_find_local_dirs(config.download.output_dir, bvid),
+        local_dirs=_find_local_dirs(config.download.output_dir, bvid) if bvid else [],
     )
     return plan, config
 
@@ -146,7 +192,9 @@ def _delete_rag_runs(config, run_ids: list[str]) -> tuple[int, list[str]]:
 
 def _print_plan(plan: CleanupPlan, *, dry_run: bool) -> None:
     mode = "DRY RUN" if dry_run else "DELETE"
-    print(f"[{mode}] BV: {plan.bvid}")
+    print(f"[{mode}] Target: {plan.target_type}={plan.target}")
+    if plan.bvid:
+        print(f"BV: {plan.bvid}")
     print(f"History runs: {len(plan.run_ids)}")
     for run_id in plan.run_ids:
         print(f"  - {run_id}")
@@ -160,16 +208,22 @@ def _print_plan(plan: CleanupPlan, *, dry_run: bool) -> None:
 
 def _delete_plan(plan: CleanupPlan, config) -> int:
     history_db = HistoryDB(config.download.db_dir)
-    storage_backend = create_storage_backend(config)
 
     deleted_artifacts = 0
     failures: list[str] = []
-    for artifact in plan.artifacts:
-        try:
-            storage_backend.delete_file(artifact.storage_key)
-            deleted_artifacts += 1
-        except Exception as exc:
-            failures.append(f"artifact {artifact.storage_key}: {exc}")
+    try:
+        storage_backend = create_storage_backend(config)
+    except Exception as exc:
+        storage_backend = None
+        failures.append(f"storage backend init: {exc}")
+
+    if storage_backend is not None:
+        for artifact in plan.artifacts:
+            try:
+                storage_backend.delete_file(artifact.storage_key)
+                deleted_artifacts += 1
+            except Exception as exc:
+                failures.append(f"artifact {artifact.storage_key}: {exc}")
 
     deleted_dirs = 0
     for directory in plan.local_dirs:
@@ -208,9 +262,9 @@ def _delete_plan(plan: CleanupPlan, config) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Delete all records and files related to a BV id."
+        description="Delete records and files by BV id, history run_id, or history URL."
     )
-    parser.add_argument("bvid", help="BV id or URL containing a BV id")
+    parser.add_argument("target", help="BV id, history run_id, or URL containing #/history/<run_id>")
     parser.add_argument(
         "--config",
         help="Path to config.toml. Defaults to B2T_CONFIG or ./config.toml.",
@@ -223,8 +277,12 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        bvid = _normalize_bvid(args.bvid)
-        plan, config = _build_plan(args.config, bvid)
+        target_type, target = _parse_target(args.target)
+        plan, config = _build_plan(
+            args.config,
+            target_type=target_type,
+            target=target,
+        )
     except Exception as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 2

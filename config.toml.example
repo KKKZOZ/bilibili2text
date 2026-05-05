@@ -133,6 +133,10 @@ DedeUserID = ""
 DedeUserID__ckMd5 = ""
 refresh_token = ""
 
+[analytics.counterscale]
+site_id = ""
+tracker_url = ""
+
 [monitor]
 enabled = false
 state_file = "./db_data/bilibili_monitor_state.json"

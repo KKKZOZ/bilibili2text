@@ -229,6 +229,17 @@ class BilibiliConfig:
 
 
 @dataclass(frozen=True)
+class CounterscaleConfig:
+    site_id: str = ""
+    tracker_url: str = ""
+
+
+@dataclass(frozen=True)
+class AnalyticsConfig:
+    counterscale: CounterscaleConfig = field(default_factory=CounterscaleConfig)
+
+
+@dataclass(frozen=True)
 class AppConfig:
     download: DownloadConfig
     storage: StorageConfig
@@ -241,6 +252,7 @@ class AppConfig:
     feishu: FeishuConfig = field(default_factory=FeishuConfig)
     monitor: MonitorConfig = field(default_factory=MonitorConfig)
     bilibili: BilibiliConfig = field(default_factory=BilibiliConfig)
+    analytics: AnalyticsConfig = field(default_factory=AnalyticsConfig)
 
 
 def _load_summarize_config(raw_summarize: dict) -> SummarizeConfig:
@@ -1056,6 +1068,46 @@ def _load_bilibili_config(raw_bilibili: dict) -> BilibiliConfig:
     return BilibiliConfig(**normalized)
 
 
+def _load_analytics_config(raw_analytics: dict) -> AnalyticsConfig:
+    if raw_analytics is None:
+        raw_analytics = {}
+    if not isinstance(raw_analytics, dict):
+        raise ValueError("analytics 配置必须是 TOML 表")
+
+    allowed_fields = {"counterscale"}
+    unknown_fields = sorted(set(raw_analytics.keys()) - allowed_fields)
+    if unknown_fields:
+        raise ValueError(f"analytics 包含未知字段: {', '.join(unknown_fields)}")
+
+    raw_counterscale = raw_analytics.get("counterscale", {})
+    if not isinstance(raw_counterscale, dict):
+        raise ValueError("analytics.counterscale 配置必须是 TOML 表")
+
+    counterscale_allowed_fields = {"site_id", "tracker_url"}
+    counterscale_unknown_fields = sorted(
+        set(raw_counterscale.keys()) - counterscale_allowed_fields
+    )
+    if counterscale_unknown_fields:
+        raise ValueError(
+            "analytics.counterscale 包含未知字段: "
+            + ", ".join(counterscale_unknown_fields)
+        )
+
+    site_id = raw_counterscale.get("site_id", "")
+    tracker_url = raw_counterscale.get("tracker_url", "")
+    if not isinstance(site_id, str):
+        raise ValueError("analytics.counterscale.site_id 必须是字符串")
+    if not isinstance(tracker_url, str):
+        raise ValueError("analytics.counterscale.tracker_url 必须是字符串")
+
+    return AnalyticsConfig(
+        counterscale=CounterscaleConfig(
+            site_id=site_id.strip(),
+            tracker_url=tracker_url.strip(),
+        )
+    )
+
+
 def build_bilibili_cookie(config: AppConfig) -> str:
     parts: list[str] = []
     bilibili = config.bilibili
@@ -1169,6 +1221,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         base_dir=config_path.parent.resolve(),
     )
     bilibili_config = _load_bilibili_config(raw.get("bilibili", {}))
+    analytics_config = _load_analytics_config(raw.get("analytics", {}))
 
     return AppConfig(
         download=DownloadConfig(**download_dict),
@@ -1182,6 +1235,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         feishu=feishu_config,
         monitor=monitor_config,
         bilibili=bilibili_config,
+        analytics=analytics_config,
     )
 
 
