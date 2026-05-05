@@ -82,3 +82,10 @@ uv run uvicorn backend.main:app --app-dir web-ui --host 0.0.0.0 --port 8000
 ```
 
 The script builds `web-ui/frontend/dist` and serves it with the official Nginx image. The backend remains on the host, and `/api/*` is proxied to `host.docker.internal:8000`.
+
+For open-public mode:
+
+```bash
+B2T_WEB_UI_MODE=open-public uv run uvicorn backend.main:app --app-dir web-ui --host 0.0.0.0 --port 8000
+./scripts/serve_frontend_nginx.sh up
+```

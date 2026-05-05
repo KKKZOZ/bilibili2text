@@ -27,38 +27,61 @@ Bilibili 视频转文字工具：自动下载音频、语音转录、生成 Mark
 
 ## 效果预览
 
-- 转录页面
+<details>
+<summary>转录页面</summary>
 
 ![](./assets/1.png)
 
-- 转录完成后的文件下载
+</details>
+
+<details>
+<summary>转录完成后的文件下载</summary>
 
 ![](./assets/3.png)
 
-- 历史记录页面
+</details>
+
+<details>
+<summary>历史记录页面</summary>
 
 ![](./assets/4.png)
 
-- 历史详情页面
+</details>
+
+<details>
+<summary>历史详情页面</summary>
 
 ![](./assets/5.png)
 
-- 跨视频知识检索页面
+</details>
+
+<details>
+<summary>跨视频知识检索页面</summary>
 
 ![](./assets/6.png)
 
-- 跨视频知识检索页面效果 1
+</details>
+
+<details>
+<summary>跨视频知识检索页面效果 1</summary>
 
 ![](./assets/7.png)
 
-- 跨视频知识检索页面效果 2
+</details>
+
+<details>
+<summary>跨视频知识检索页面效果 2</summary>
 
 ![](./assets/8.png)
 
-- 生成的 Fancy HTML
+</details>
+
+<details>
+<summary>生成的 Fancy HTML</summary>
 
 ![](./assets/9.png)
 
+</details>
 
 ## 目录结构
 
@@ -242,6 +265,18 @@ uv run uvicorn backend.main:app --app-dir web-ui --host 0.0.0.0 --port 8000
 B2T_FRONTEND_PORT=6011 B2T_BACKEND_PORT=8001 ./scripts/serve_frontend_nginx.sh up
 ```
 
+open-public 模式：
+
+```bash
+# 终端 1：后端
+B2T_WEB_UI_MODE=open-public uv run uvicorn backend.main:app --app-dir web-ui --host 0.0.0.0 --port 8000
+```
+
+```bash
+# 终端 2：前端 Nginx 容器
+./scripts/serve_frontend_nginx.sh up
+```
+
 停止前端容器：
 
 ```bash
@@ -259,7 +294,13 @@ B2T_WEB_UI_MODE=open-public uv run uvicorn backend.main:app --app-dir web-ui --h
 
 ```bash
 # 终端 2：前端
-cd web-ui/frontend && VITE_B2T_WEB_UI_MODE=open-public bun run dev
+cd web-ui/frontend && bun run dev
+```
+
+如果使用 Nginx 容器托管构建后的前端，则改用：
+
+```bash
+./scripts/serve_frontend_nginx.sh up
 ```
 
 > **注意**：open-public 模式依赖 Qwen ASR 的临时 URL 流程，`config.toml` 中仍需配置可用的 MinIO 或阿里云 OSS。
@@ -273,3 +314,13 @@ uv run pytest
 ## License
 
 MIT
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=KKKZOZ%2Fbilibili2text&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=KKKZOZ/bilibili2text&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=KKKZOZ/bilibili2text&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=KKKZOZ/bilibili2text&type=date&legend=top-left" />
+ </picture>
+</a>
