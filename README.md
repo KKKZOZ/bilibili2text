@@ -72,7 +72,7 @@ Bilibili 视频转文字工具：自动下载音频、语音转录、生成 Mark
 ├── scripts/              # 辅助脚本
 ├── config.toml.example   # 配置模板
 ├── summary_presets.toml  # LLM 总结 Prompt 预设
-└── Dockerfile            # 单容器部署
+└── docker/               # Nginx 前端静态服务配置
 ```
 
 ## 环境要求
@@ -220,25 +220,33 @@ cd web-ui/frontend && bun run dev
 B2T_BACKEND_PORT=8001 bun run dev
 ```
 
-## Docker 部署
+## 宿主机后端 + Nginx 容器部署
 
-构建镜像：
-
-```bash
-docker build -t bilibili-to-text:latest .
-```
-
-运行容器：
+后端运行在宿主机上：
 
 ```bash
-docker run --rm \
-  -p 6010:6010 \
-  -v "$(pwd)/config.toml:/app/config.toml:ro" \
-  -v "$(pwd)/transcriptions:/app/transcriptions" \
-  bilibili-to-text:latest
+uv run uvicorn backend.main:app --app-dir web-ui --host 0.0.0.0 --port 8000
 ```
 
-浏览器访问 `http://127.0.0.1:6010`。容器内由 Nginx 托管前端静态资源，FastAPI 提供后端 API，对外只暴露 `6010` 端口。
+另开一个终端，构建前端并用官方 Nginx 容器托管静态文件：
+
+```bash
+./scripts/serve_frontend_nginx.sh up
+```
+
+浏览器访问 `http://127.0.0.1:6010`。Nginx 容器只托管 `web-ui/frontend/dist` 并把 `/api/*` 代理到宿主机后端。
+
+如果端口不是默认值：
+
+```bash
+B2T_FRONTEND_PORT=6011 B2T_BACKEND_PORT=8001 ./scripts/serve_frontend_nginx.sh up
+```
+
+停止前端容器：
+
+```bash
+./scripts/serve_frontend_nginx.sh down
+```
 
 ## open-public 模式
 

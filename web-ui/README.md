@@ -72,15 +72,13 @@ just web-open-public on
 
 This mode disables audio upload, history deletion, and local project API Keys, and requires users to enter their own DashScope API Key on the page. Since this mode uses Qwen ASR, the local `config.toml` still requires a working MinIO or Alibaba Cloud OSS configuration.
 
-### Docker
+### Host Backend + Nginx Container
 
 Run the following in the project root:
 
 ```bash
-docker build -t bilibili-to-text:latest .
-docker run --rm \
-  -p 6010:6010 \
-  -v "$(pwd)/config.toml:/app/config.toml:ro" \
-  -v "$(pwd)/transcriptions:/app/transcriptions" \
-  bilibili-to-text:latest
+uv run uvicorn backend.main:app --app-dir web-ui --host 0.0.0.0 --port 8000
+./scripts/serve_frontend_nginx.sh up
 ```
+
+The script builds `web-ui/frontend/dist` and serves it with the official Nginx image. The backend remains on the host, and `/api/*` is proxied to `host.docker.internal:8000`.

@@ -6,9 +6,10 @@ import shutil
 from datetime import datetime
 from threading import get_ident
 
-from b2t.download.yutto_cli import extract_bvid
+from b2t.download.yutto_cli import extract_bvid, normalize_bilibili_target
 from b2t.pipeline import run_pipeline
 
+from backend.bvid_locks import bvid_transcription_locks
 from backend.existing_transcriptions import existing_transcription_service
 from backend.jobs import _append_job_log, _update_job
 from backend.logging_config import (
@@ -56,6 +57,10 @@ def _run_job(
     normalized_audio_path = (input_audio_path or "").strip()
     bvid = (input_bvid or "").strip() or None
     if bvid is None and normalized_url:
+        try:
+            normalized_url = normalize_bilibili_target(normalized_url)
+        except Exception:
+            pass
         bvid = extract_bvid(normalized_url)
 
     upload_temp_dir: Path | None = None
@@ -103,6 +108,9 @@ def _run_job(
         _cleanup_upload_temp_dir(upload_temp_dir)
         return
 
+    if bvid is not None:
+        _update_job(job_id, bvid=bvid)
+
     if bvid is not None and existing_transcription_service.handle_if_existing(
         job_id=job_id,
         bvid=bvid,
@@ -116,6 +124,31 @@ def _run_job(
     ):
         _cleanup_upload_temp_dir(upload_temp_dir)
         return
+
+    acquired_bvid_lock = False
+    if bvid is not None:
+        claim = bvid_transcription_locks.acquire(bvid, job_id)
+        if not claim.acquired:
+            error_message = (
+                f"{bvid} 的转录任务正在进行中，请稍后再试。"
+                "如果上一个任务超过 10 分钟仍未完成，系统会允许重新提交。"
+            )
+            _update_job(
+                job_id,
+                status="failed",
+                stage="failed",
+                stage_label="转录正在进行",
+                progress=0,
+                bvid=bvid,
+                error=error_message,
+            )
+            _append_job_log(
+                job_id,
+                f"{datetime.now().strftime(JOB_LOG_DATE_FORMAT)} [WARNING] b2t.pipeline: {_redact_text(error_message)}",
+            )
+            _cleanup_upload_temp_dir(upload_temp_dir)
+            return
+        acquired_bvid_lock = True
 
     log_handler = _JobLogHandler(job_id=job_id, thread_id=get_ident())
     root_logger = logging.getLogger()
@@ -267,6 +300,8 @@ def _run_job(
         else:
             _update_job(job_id, fancy_html_status="idle")
     finally:
+        if acquired_bvid_lock and bvid is not None:
+            bvid_transcription_locks.release(bvid, job_id)
         root_logger.removeHandler(log_handler)
         log_handler.close()
         _cleanup_upload_temp_dir(upload_temp_dir)

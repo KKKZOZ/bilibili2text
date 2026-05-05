@@ -62,10 +62,12 @@
       deepseekMaskedKey.value = dsKey ? maskKey(dsKey) : ''
 
       const summaryTemplate = (
-        window.localStorage.getItem(LOCAL_OPEN_PUBLIC_SUMMARY_TEMPLATE_KEY) || ''
+        window.localStorage.getItem(LOCAL_OPEN_PUBLIC_SUMMARY_TEMPLATE_KEY) ||
+        ''
       ).trim()
       summaryTemplateConfigured.value = summaryTemplate.length > 0
-      summaryTemplateInput.value = summaryTemplate || props.summaryDefaultPromptTemplate
+      summaryTemplateInput.value =
+        summaryTemplate || props.summaryDefaultPromptTemplate
     } catch {
       aliyunError.value = '读取本地存储失败'
     }
@@ -428,7 +430,9 @@
 
         <div class="actions">
           <button class="submit" type="button" @click="saveSummaryTemplate">
-            <span>{{ summaryTemplateConfigured ? '更新模板' : '保存模板' }}</span>
+            <span>{{
+              summaryTemplateConfigured ? '更新模板' : '保存模板'
+            }}</span>
           </button>
           <button
             class="ghost-button"

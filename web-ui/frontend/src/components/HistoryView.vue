@@ -194,7 +194,8 @@
   })
 
   const selectedRegenerateProfileName = computed(
-    () => selectedHistorySummaryProfile.value || props.selectedSummaryProfile || ''
+    () =>
+      selectedHistorySummaryProfile.value || props.selectedSummaryProfile || ''
   )
 
   const isSelectedSummaryAlreadyGenerated = computed(() => {
@@ -444,7 +445,8 @@
     ) {
       try {
         customTemplate = (
-          window.localStorage.getItem(LOCAL_OPEN_PUBLIC_SUMMARY_TEMPLATE_KEY) || ''
+          window.localStorage.getItem(LOCAL_OPEN_PUBLIC_SUMMARY_TEMPLATE_KEY) ||
+          ''
         ).trim()
       } catch {
         customTemplate = ''
@@ -468,8 +470,7 @@
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            summary_preset:
-              selectedRegeneratePresetName.value || null,
+            summary_preset: selectedRegeneratePresetName.value || null,
             summary_profile: selectedRegenerateProfileName.value || null,
             summary_prompt_template: customTemplate || null,
             api_key: props.requiresApiKey ? getLocalApiKey() : null,
@@ -728,7 +729,9 @@
                 id="history-summary-preset-select"
                 v-model="selectedHistorySummaryPreset"
                 class="preset-select history-preset-select"
-                :disabled="regenerateLoading || historyPresetOptions.length === 0"
+                :disabled="
+                  regenerateLoading || historyPresetOptions.length === 0
+                "
               >
                 <option v-if="historyPresetOptions.length === 0" value="">
                   未获取到 preset（将使用后端默认）

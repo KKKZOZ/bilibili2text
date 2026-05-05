@@ -266,7 +266,8 @@
     }
     try {
       const stored = (
-        window.localStorage.getItem(LOCAL_OPEN_PUBLIC_SUMMARY_TEMPLATE_KEY) || ''
+        window.localStorage.getItem(LOCAL_OPEN_PUBLIC_SUMMARY_TEMPLATE_KEY) ||
+        ''
       ).trim()
       userSummaryPromptTemplate.value =
         stored || props.summaryDefaultPromptTemplate || ''
@@ -648,7 +649,8 @@
       }
       const hasLocalValue = userSummaryPromptTemplate.value.trim().length > 0
       if (!hasLocalValue) {
-        userSummaryPromptTemplate.value = props.summaryDefaultPromptTemplate || ''
+        userSummaryPromptTemplate.value =
+          props.summaryDefaultPromptTemplate || ''
       }
     },
     { immediate: true }
@@ -661,7 +663,6 @@
     },
     { immediate: true }
   )
-
 </script>
 
 <template>

@@ -172,8 +172,7 @@
           filter_authors: selectedAuthors.value,
           llm_profile: selectedLlmProfile.value || null,
           api_key: readLocalStorage(LOCAL_API_KEY_KEY) || null,
-          deepseek_api_key:
-            readLocalStorage(LOCAL_DEEPSEEK_API_KEY_KEY) || null
+          deepseek_api_key: readLocalStorage(LOCAL_DEEPSEEK_API_KEY_KEY) || null
         })
       })
 
