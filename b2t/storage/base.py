@@ -19,8 +19,14 @@ def classify_artifact_filename(filename: str) -> str | None:
         return "rag_answer"
     if lowered.endswith("_summary_table.pdf"):
         return "summary_table_pdf"
+    if lowered.endswith("_summary_table.png"):
+        return "summary_table_png"
     if lowered.endswith("_summary_table.md"):
         return "summary_table_md"
+    if lowered.endswith("_summary_no_table.png"):
+        return "summary_no_table_png"
+    if lowered.endswith("_summary.png"):
+        return "summary_png"
     if lowered.endswith("_summary.txt"):
         return "summary_text"
     if lowered.endswith("_summary.md"):

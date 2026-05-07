@@ -8,6 +8,7 @@
     { key: 'transcribing', label: '语音转录' },
     { key: 'converting', label: '生成 Markdown' },
     { key: 'summarizing', label: 'LLM 整理总结' },
+    { key: 'postprocessing', label: '后处理及文件导出' },
     { key: 'completed', label: '处理完成' }
   ]
 

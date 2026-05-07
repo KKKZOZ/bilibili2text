@@ -251,6 +251,10 @@ class ConvertRequest(BaseModel):
         default=None,
         description="可选渲染模式，仅用于 HTML -> PNG",
     )
+    source_variant: Literal["summary_no_table"] | None = Field(
+        default=None,
+        description="可选源文件变体，用于命中预生成的派生文件缓存",
+    )
 
 
 class ConvertResponse(BaseModel):

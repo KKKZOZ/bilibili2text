@@ -1,9 +1,13 @@
 from pathlib import Path
 import sys
+from contextlib import contextmanager
+from typing import Iterator
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "web-ui"))
 
 from b2t.storage import StoredArtifact
+from b2t.converter.converter import ConversionFormat
+from backend.routes.download import _find_precomputed_conversion
 from backend.download_registry import DownloadRegistry, media_type_for_filename
 from backend.job_store import JobPatch, JobRepository
 
@@ -59,3 +63,61 @@ def test_download_registry_artifacts_content_and_media_types() -> None:
 
     registry.remove_artifacts_by_storage_keys({"runs/summary.md"})
     assert registry.get_artifact(artifact_id) is None
+
+
+def test_find_precomputed_conversion_uses_summary_sibling_png(monkeypatch) -> None:
+    class FakeStorage:
+        @contextmanager
+        def open_stream(self, storage_key: str) -> Iterator[object]:
+            if storage_key != "runs/BV123_summary.png":
+                raise FileNotFoundError(storage_key)
+            yield object()
+
+    monkeypatch.setattr("backend.routes.download.get_storage_backend", FakeStorage)
+    artifact = StoredArtifact(
+        filename="BV123_summary.md",
+        storage_key="runs/BV123_summary.md",
+        backend="local",
+    )
+
+    found = _find_precomputed_conversion(
+        artifact=artifact,
+        target_format=ConversionFormat.PNG,
+        source_variant=None,
+    )
+
+    assert found == StoredArtifact(
+        filename="BV123_summary.png",
+        storage_key="runs/BV123_summary.png",
+        backend="local",
+    )
+
+
+def test_find_precomputed_conversion_uses_summary_no_table_png(
+    monkeypatch,
+) -> None:
+    class FakeStorage:
+        @contextmanager
+        def open_stream(self, storage_key: str) -> Iterator[object]:
+            if storage_key != "runs/BV123_summary_no_table.png":
+                raise FileNotFoundError(storage_key)
+            yield object()
+
+    monkeypatch.setattr("backend.routes.download.get_storage_backend", FakeStorage)
+    artifact = StoredArtifact(
+        filename="BV123_summary.md",
+        storage_key="runs/BV123_summary.md",
+        backend="local",
+    )
+
+    found = _find_precomputed_conversion(
+        artifact=artifact,
+        target_format=ConversionFormat.PNG,
+        source_variant="summary_no_table",
+    )
+
+    assert found == StoredArtifact(
+        filename="BV123_summary_no_table.png",
+        storage_key="runs/BV123_summary_no_table.png",
+        backend="local",
+    )

@@ -9,13 +9,99 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from b2t.converter.converter import ConversionFormat, convert_file
+from b2t.storage import StoredArtifact
 from b2t.storage.base import classify_artifact_filename
 
 from backend.download_registry import download_registry, media_type_for_filename
 from backend.schemas import ConvertRequest, ConvertResponse
-from backend.dependencies import get_storage_backend
+from backend.dependencies import get_history_db, get_storage_backend
 
 router = APIRouter()
+
+
+def _sibling_storage_key(source_storage_key: str, filename: str) -> str:
+    normalized = source_storage_key.replace("\\", "/")
+    if "/" not in normalized:
+        return filename
+    return f"{normalized.rsplit('/', 1)[0]}/{filename}"
+
+
+def _precomputed_convert_filename(
+    filename: str,
+    source_kind: str,
+    target_format: ConversionFormat,
+    source_variant: str | None,
+) -> str:
+    path = Path(filename)
+    if target_format == ConversionFormat.PNG:
+        if source_kind == "summary":
+            if source_variant == "summary_no_table":
+                return f"{path.stem}_no_table.png"
+            return f"{path.stem}.png"
+        if source_kind == "summary_table_md":
+            return f"{path.stem}.png"
+    if target_format == ConversionFormat.MD_NO_TABLE and source_kind == "summary":
+        return f"{path.stem}_no_table.md"
+    return ""
+
+
+def _find_precomputed_conversion(
+    *,
+    artifact: StoredArtifact,
+    target_format: ConversionFormat,
+    source_variant: str | None,
+) -> StoredArtifact | None:
+    source_kind = classify_artifact_filename(artifact.filename) or ""
+    filename = _precomputed_convert_filename(
+        artifact.filename,
+        source_kind,
+        target_format,
+        source_variant,
+    )
+    if not filename or filename == artifact.filename:
+        return None
+
+    candidate = StoredArtifact(
+        filename=filename,
+        storage_key=_sibling_storage_key(artifact.storage_key, filename),
+        backend=artifact.backend,
+    )
+    storage_backend = get_storage_backend()
+    try:
+        with storage_backend.open_stream(candidate.storage_key):
+            pass
+    except FileNotFoundError:
+        return None
+    return candidate
+
+
+def _convert_response_for_artifact(artifact: StoredArtifact) -> ConvertResponse:
+    download_id = download_registry.store_artifact(artifact)
+    return ConvertResponse(
+        download_url=f"/api/download/{download_id}",
+        filename=artifact.filename,
+    )
+
+
+def _lookup_artifact_pubdate(storage_key: str) -> str:
+    try:
+        db = get_history_db()
+        with db._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT r.pubdate
+                FROM transcription_artifacts a
+                JOIN transcription_runs r ON r.run_id = a.run_id
+                WHERE a.storage_key = ?
+                LIMIT 1
+                """,
+                (storage_key,),
+            ).fetchone()
+    except Exception:
+        return ""
+    if row is None:
+        return ""
+    return str(row["pubdate"] or "").strip()
 
 
 @router.get("/api/download/{download_id}")
@@ -109,6 +195,13 @@ def convert_artifact(payload: ConvertRequest) -> ConvertResponse:
         )
 
     storage_backend = get_storage_backend()
+    precomputed = _find_precomputed_conversion(
+        artifact=artifact,
+        target_format=target_format,
+        source_variant=payload.source_variant,
+    )
+    if precomputed is not None:
+        return _convert_response_for_artifact(precomputed)
 
     # Download source file to temporary directory
     with tempfile.TemporaryDirectory(prefix="b2t-convert-") as temp_dir:
@@ -142,6 +235,10 @@ def convert_artifact(payload: ConvertRequest) -> ConvertResponse:
                 and source_kind == "summary_table_md"
             )
             convert_options = {}
+            if png_is_table:
+                pubdate = _lookup_artifact_pubdate(artifact.storage_key)
+                if pubdate:
+                    convert_options["as_of_date"] = pubdate
             explicit_output_path = None
             if (
                 source_suffix in _html_suffixes

@@ -8,6 +8,7 @@ export function resolveFileType(filename, kind) {
     markdown: 'Markdown',
     txt: 'TXT',
     pdf: 'PDF',
+    png: 'PNG',
     html: 'HTML',
     json: 'JSON',
     m4a: 'M4A',
@@ -19,9 +20,12 @@ export function resolveFileType(filename, kind) {
     text: 'TXT',
     summary: 'Markdown',
     summary_no_table: 'Markdown',
+    summary_png: 'PNG',
+    summary_no_table_png: 'PNG',
     summary_text: 'TXT',
     summary_fancy_html: 'HTML',
     summary_table_md: 'Markdown',
+    summary_table_png: 'PNG',
     summary_table_pdf: 'PDF',
     json: 'JSON',
     audio: '音频',
@@ -71,10 +75,17 @@ export function inferSummaryPresetFromFilename(filename) {
 export function buildArtifactDisplayName(artifact, options = {}) {
   const bvid = options.bvid || inferBvidFromFilename(artifact.filename)
   const stem = (artifact.filename || '').replace(/\.[^.]*$/, '')
-  if (artifact.kind === 'summary' || artifact.kind === 'summary_text') {
+  if (
+    artifact.kind === 'summary' ||
+    artifact.kind === 'summary_text' ||
+    artifact.kind === 'summary_png'
+  ) {
     return `${bvid}_总结`
   }
-  if (artifact.kind === 'summary_no_table') {
+  if (
+    artifact.kind === 'summary_no_table' ||
+    artifact.kind === 'summary_no_table_png'
+  ) {
     return `${bvid}_总结_无表格`
   }
   if (artifact.kind === 'summary_fancy_html') {
@@ -91,6 +102,7 @@ export function buildArtifactDisplayName(artifact, options = {}) {
   }
   if (
     artifact.kind === 'summary_table_md' ||
+    artifact.kind === 'summary_table_png' ||
     artifact.kind === 'summary_table_pdf'
   ) {
     return `${bvid}_表格`

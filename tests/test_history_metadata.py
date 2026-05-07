@@ -63,6 +63,21 @@ def test_record_pipeline_run_persists_summary_metadata(tmp_path) -> None:
     assert markdown_artifacts[0].summary_profile == ""
 
 
+def test_classify_summary_png_artifacts() -> None:
+    assert (
+        classify_artifact_filename("BV1AB411c7mD_demo_summary.png")
+        == "summary_png"
+    )
+    assert (
+        classify_artifact_filename("BV1AB411c7mD_demo_summary_no_table.png")
+        == "summary_no_table_png"
+    )
+    assert (
+        classify_artifact_filename("BV1AB411c7mD_demo_summary_table.png")
+        == "summary_table_png"
+    )
+
+
 def test_record_pipeline_run_merge_keeps_old_and_new_summary(tmp_path) -> None:
     db = HistoryDB(tmp_path)
     bvid = "BV1AB411c7mD"

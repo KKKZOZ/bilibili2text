@@ -47,7 +47,10 @@ def _summary_family_storage_keys(detail, summary_artifact) -> set[str]:
         "summary",
         "summary_text",
         "summary_fancy_html",
+        "summary_png",
+        "summary_no_table_png",
         "summary_table_md",
+        "summary_table_png",
         "summary_table_pdf",
     }
 
@@ -393,7 +396,10 @@ def delete_history_artifact(run_id: str, download_id: str) -> HistoryDetailRespo
             "summary",
             "summary_text",
             "summary_fancy_html",
+            "summary_png",
+            "summary_no_table_png",
             "summary_table_md",
+            "summary_table_png",
             "summary_table_pdf",
         }
         for item in remained_artifacts

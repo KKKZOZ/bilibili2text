@@ -30,6 +30,7 @@ STAGE_KEYS = (
     "transcribing",
     "converting",
     "summarizing",
+    "postprocessing",
     "completed",
 )
 JOB_LOG_LIMIT = 400

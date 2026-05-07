@@ -605,7 +605,10 @@ def build_history_artifacts(
         "summary",
         "summary_text",
         "summary_fancy_html",
+        "summary_png",
+        "summary_no_table_png",
         "summary_table_md",
+        "summary_table_png",
         "summary_table_pdf",
     }
     cleaned_preset = (summary_preset or "").strip()
@@ -683,7 +686,10 @@ def record_pipeline_run(
             "summary",
             "summary_text",
             "summary_fancy_html",
+            "summary_png",
+            "summary_no_table_png",
             "summary_table_md",
+            "summary_table_png",
             "summary_table_pdf",
         }
         for artifact in artifacts
