@@ -12,6 +12,7 @@ import threading
 from urllib.error import URLError
 from urllib.request import urlopen
 
+from b2t.stock_status import build_stock_table_cards_html
 from playwright.sync_api import sync_playwright
 
 logger = logging.getLogger(__name__)
@@ -84,6 +85,125 @@ HTML_TEMPLATE = r"""<!doctype html>
     .markdown-body thead th {{
       background: #f6f8fa;
     }}
+    .markdown-body .stock-table-cards {{
+      display: grid;
+      grid-template-columns: 1fr;
+      justify-items: center;
+      gap: 8px;
+    }}
+    .markdown-body .stock-table-card {{
+      box-sizing: border-box;
+      width: min(100%, 680px);
+      border: 1px solid #d0d7de;
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: #ffffff;
+    }}
+    .markdown-body .stock-table-head {{
+      display: flex;
+      justify-content: flex-start;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    }}
+    .markdown-body .stock-table-head h3 {{
+      margin: 0;
+      font-size: 18px;
+      line-height: 1.25;
+    }}
+    .markdown-body .stock-table-head h3 span,
+    .markdown-body .stock-table-head h3 strong {{
+      vertical-align: baseline;
+    }}
+    .markdown-body .stock-table-head h3 strong {{
+      margin-left: 8px;
+      font-size: 17px;
+      font-weight: 800;
+      color: #64748b;
+    }}
+    .markdown-body .stock-status-up .stock-table-head h3 {{
+      color: #cf222e;
+    }}
+    .markdown-body .stock-status-down .stock-table-head h3 {{
+      color: #1a7f37;
+    }}
+    .markdown-body .stock-status-up .stock-table-head h3 strong {{
+      color: #cf222e;
+    }}
+    .markdown-body .stock-status-down .stock-table-head h3 strong {{
+      color: #1a7f37;
+    }}
+    .markdown-body .stock-status-up .stock-metric-close strong,
+    .markdown-body .stock-status-up .stock-metric-change strong {{
+      color: #cf222e;
+    }}
+    .markdown-body .stock-status-down .stock-metric-close strong,
+    .markdown-body .stock-status-down .stock-metric-change strong {{
+      color: #1a7f37;
+    }}
+    .markdown-body .stock-table-head p {{
+      margin: 0;
+      color: #57606a;
+      font-size: 14px;
+      line-height: 1.3;
+    }}
+    .markdown-body .stock-table-fields {{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 4px 8px;
+      margin-bottom: 6px;
+    }}
+    .markdown-body .stock-table-field {{
+      min-width: 0;
+    }}
+    .markdown-body .stock-table-field span {{
+      display: inline;
+      color: #57606a;
+      font-size: 14px;
+      line-height: 1.2;
+      margin: 0 4px 0 0;
+    }}
+    .markdown-body .stock-table-field p {{
+      display: inline;
+      margin: 0;
+      color: #24292f;
+      font-size: 15px;
+      line-height: 1.45;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+    }}
+    .markdown-body .stock-status-change {{
+      flex-shrink: 0;
+      color: #0969da;
+      font-size: 17px;
+      line-height: 1.25;
+    }}
+    .markdown-body .stock-status-metrics {{
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 4px 8px;
+      padding-top: 6px;
+      border-top: 1px solid #eef2f6;
+    }}
+    .markdown-body .stock-status-metric {{
+      min-width: 0;
+    }}
+    .markdown-body .stock-status-metric span {{
+      display: block;
+      color: #57606a;
+      font-size: 13px;
+      line-height: 1.2;
+      margin-bottom: 2px;
+    }}
+    .markdown-body .stock-status-metric strong {{
+      display: block;
+      color: #24292f;
+      font-size: 15px;
+      line-height: 1.25;
+      white-space: normal;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+    }}
 
     @media (max-width: 520px) {{
       .markdown-body .mobile-table {{
@@ -120,6 +240,13 @@ HTML_TEMPLATE = r"""<!doctype html>
         min-width: 0;
         word-break: break-word;
         overflow-wrap: anywhere;
+      }}
+      .markdown-body .stock-status-metrics {{
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 5px 8px;
+      }}
+      .markdown-body .stock-table-fields {{
+        grid-template-columns: 1fr;
       }}
     }}
   </style>
@@ -361,6 +488,7 @@ class MarkdownToPngConverter:
                 - keep_html: Whether to keep the intermediate HTML file
                 - max_full_page_height: Max CSS height for single full_page screenshot
                 - tile_height: CSS height per tile for tiled screenshots
+                - as_of_date: Date for table stock status lookup
 
         Returns:
             Output PNG file path
@@ -383,10 +511,15 @@ class MarkdownToPngConverter:
         max_full_page_height = options.get("max_full_page_height", 12000)
         tile_height = options.get("tile_height", 1800)
         reuse_browser = options.get("reuse_browser", True)
+        as_of_date = options.get("as_of_date")
 
         # Generate intermediate HTML
         html_path = output_path.with_suffix(".html")
-        body_html = self._run_pandoc(input_path)
+        body_html = (
+            self._run_table_cards(input_path, as_of_date=as_of_date)
+            if is_table
+            else self._run_pandoc(input_path)
+        )
 
         # Resolve CSS href (prefer local cache to avoid external requests)
         css_href = self._resolve_css_href(css_url)
@@ -436,6 +569,17 @@ class MarkdownToPngConverter:
         except subprocess.CalledProcessError as exc:
             detail = exc.stderr.strip() or exc.stdout.strip() or str(exc)
             raise RuntimeError(f"pandoc conversion failed: {detail}") from exc
+
+    def _run_table_cards(self, md_path: Path, *, as_of_date=None) -> str:
+        markdown_content = md_path.read_text(encoding="utf-8")
+        normalized_content = self._normalize_markdown_for_tables(markdown_content)
+        cards_html = build_stock_table_cards_html(
+            normalized_content,
+            as_of_date=as_of_date,
+        )
+        if cards_html:
+            return cards_html
+        return self._run_pandoc(md_path)
 
     def _normalize_markdown_for_tables(self, content: str) -> str:
         """Normalize common full-width table characters before pandoc parsing."""

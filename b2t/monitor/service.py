@@ -483,6 +483,7 @@ class BilibiliMonitorService:
                     summary_table_md_path,
                     summary_table_png_path,
                     is_table=True,
+                    as_of_date=event.publish_time,
                 )
                 generated_pngs.append(summary_table_png_path)
 

@@ -21,6 +21,7 @@ from backend.services import (
     _build_all_download_items,
     _build_success_download_fields,
     _collect_all_artifacts_for_bvid,
+    _generate_summary_png_exports,
     _record_history,
 )
 from backend.dependencies import (
@@ -215,6 +216,35 @@ def _run_job(
                 f"{datetime.now().strftime(JOB_LOG_DATE_FORMAT)} [ERROR] b2t.pipeline: {_redact_text(str(exc))}",
             )
             return
+
+        if not skip_summary and "summary" in results:
+            _update_job(
+                job_id,
+                status="running",
+                stage="postprocessing",
+                stage_label="后处理及文件导出",
+                progress=96,
+            )
+            try:
+                png_results = _generate_summary_png_exports(
+                    results=results,
+                    storage_backend=storage_backend,
+                    config=config,
+                )
+                results.update(png_results)
+            except Exception as exc:
+                _update_job(
+                    job_id,
+                    status="failed",
+                    stage="failed",
+                    stage_label="处理失败",
+                    error=f"后处理及文件导出失败: {exc}",
+                )
+                _append_job_log(
+                    job_id,
+                    f"{datetime.now().strftime(JOB_LOG_DATE_FORMAT)} [ERROR] b2t.pipeline: 后处理及文件导出失败: {_redact_text(str(exc))}",
+                )
+                return
 
         try:
             success_fields = _build_success_download_fields(results)

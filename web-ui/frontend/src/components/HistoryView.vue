@@ -906,6 +906,7 @@
                   'summary_no_table',
                   'summary_fancy_html',
                   'summary_table_md',
+                  'summary_table_pdf',
                   'text',
                   'json',
                   'audio'

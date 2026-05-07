@@ -11,6 +11,8 @@ from b2t.config import (
     resolve_summarize_model_profile,
     resolve_summary_preset_name,
 )
+from b2t.converter.md_remove_table import MarkdownRemoveTableConverter
+from b2t.converter.md_to_png import MarkdownToPngConverter
 from b2t.download.metadata import VideoMetadata
 from b2t.history import HistoryArtifact, infer_run_id, record_pipeline_run
 from b2t.storage import StorageBackend, StoredArtifact
@@ -209,6 +211,111 @@ def _artifact_sibling_object_key(
             parent_key = parent_key[len(base_prefix) + 1 :]
 
     return f"{parent_key}/{filename}" if parent_key else filename
+
+
+def _store_sibling_artifact(
+    *,
+    storage_backend: StorageBackend,
+    config: AppConfig,
+    source_artifact: StoredArtifact,
+    path: Path,
+) -> StoredArtifact:
+    object_key = _artifact_sibling_object_key(
+        storage_backend=storage_backend,
+        config=config,
+        source_storage_key=source_artifact.storage_key,
+        filename=path.name,
+    )
+    return storage_backend.store_file(path, object_key=object_key)
+
+
+def _generate_summary_png_exports(
+    *,
+    results: dict[str, StoredArtifact],
+    storage_backend: StorageBackend,
+    config: AppConfig,
+) -> dict[str, StoredArtifact]:
+    summary_artifact = results.get("summary")
+    if summary_artifact is None:
+        return {}
+    metadata = results.get("_metadata")
+    as_of_date = getattr(metadata, "pubdate", "") if metadata is not None else ""
+
+    cleanup_temp_dir: tempfile.TemporaryDirectory | None = None
+    local_temp_dir: Path | None = None
+    if storage_backend.persist_local_outputs:
+        work_root = Path(config.download.output_dir).expanduser().resolve()
+        work_root.mkdir(parents=True, exist_ok=True)
+        work_dir = work_root / f".tmp-png-export-{uuid4().hex[:8]}"
+        work_dir.mkdir(parents=True, exist_ok=False)
+        local_temp_dir = work_dir
+    else:
+        cleanup_temp_dir = tempfile.TemporaryDirectory(prefix="b2t-png-export-")
+        work_dir = Path(cleanup_temp_dir.name)
+
+    generated: dict[str, StoredArtifact] = {}
+    try:
+        summary_path = _materialize_artifact_to_file(
+            storage_backend,
+            summary_artifact,
+            work_dir,
+        )
+        png_converter = MarkdownToPngConverter()
+
+        summary_png_path = summary_path.with_suffix(".png")
+        png_converter.convert(
+            summary_path,
+            summary_png_path,
+            is_table=False,
+        )
+        generated["summary_png"] = _store_sibling_artifact(
+            storage_backend=storage_backend,
+            config=config,
+            source_artifact=summary_artifact,
+            path=summary_png_path,
+        )
+
+        no_table_md_path = summary_path.with_stem(f"{summary_path.stem}_no_table")
+        MarkdownRemoveTableConverter().convert(summary_path, no_table_md_path)
+        no_table_png_path = no_table_md_path.with_suffix(".png")
+        png_converter.convert(no_table_md_path, no_table_png_path, is_table=False)
+        generated["summary_no_table_png"] = _store_sibling_artifact(
+            storage_backend=storage_backend,
+            config=config,
+            source_artifact=summary_artifact,
+            path=no_table_png_path,
+        )
+
+        summary_table_artifact = results.get("summary_table_md")
+        if summary_table_artifact is not None:
+            table_md_path = _materialize_artifact_to_file(
+                storage_backend,
+                summary_table_artifact,
+                work_dir,
+            )
+            table_png_path = table_md_path.with_suffix(".png")
+            png_converter.convert(
+                table_md_path,
+                table_png_path,
+                is_table=True,
+                as_of_date=as_of_date,
+            )
+            generated["summary_table_png"] = _store_sibling_artifact(
+                storage_backend=storage_backend,
+                config=config,
+                source_artifact=summary_table_artifact,
+                path=table_png_path,
+            )
+    finally:
+        if cleanup_temp_dir is not None:
+            cleanup_temp_dir.cleanup()
+        if local_temp_dir is not None and local_temp_dir.exists():
+            for path in local_temp_dir.iterdir():
+                if path.is_file():
+                    path.unlink(missing_ok=True)
+            local_temp_dir.rmdir()
+
+    return generated
 
 
 def _run_summary_only_from_existing(
@@ -436,7 +543,10 @@ def _merge_history_artifact(
             "summary",
             "summary_text",
             "summary_fancy_html",
+            "summary_png",
+            "summary_no_table_png",
             "summary_table_md",
+            "summary_table_png",
             "summary_table_pdf",
         }
         for item in merged_artifacts

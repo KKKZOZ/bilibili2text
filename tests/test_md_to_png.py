@@ -54,3 +54,47 @@ def test_run_pandoc_uses_pipe_tables_and_parent_cwd(
     ]
     assert kwargs.get("cwd") == str(md_path.parent)
     assert kwargs.get("input") == "| 列1 | 列2 |\n| --- | --- |\n| A | B |\n"
+
+
+def test_convert_table_markdown_uses_stock_card_renderer(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    md_path = tmp_path / "summary_table.md"
+    png_path = tmp_path / "summary_table.png"
+    md_path.write_text(
+        "| 股票代码 | 股票名称 |\n| --- | --- |\n| 600000.SH | 浦发银行 |\n",
+        encoding="utf-8",
+    )
+
+    converter = MarkdownToPngConverter()
+
+    monkeypatch.setattr(converter, "_resolve_css_href", lambda css_url: "fallback.css")
+    captured = {}
+
+    def fake_build_stock_table_cards_html(markdown, as_of_date=None):
+        captured["as_of_date"] = as_of_date
+        return '<section class="stock-table-cards">cards</section>'
+
+    monkeypatch.setattr(
+        "b2t.converter.md_to_png.build_stock_table_cards_html",
+        fake_build_stock_table_cards_html,
+    )
+
+    def fake_render(html_path, output_path, **kwargs):
+        assert 'class="stock-table-cards"' in html_path.read_text(encoding="utf-8")
+        output_path.write_bytes(b"png")
+
+    monkeypatch.setattr(converter, "_render_html_to_png", fake_render)
+
+    result = converter.convert(
+        md_path,
+        png_path,
+        is_table=True,
+        keep_html=True,
+        as_of_date="2026-02-05 21:00:00",
+    )
+
+    assert result == png_path.resolve()
+    assert png_path.exists()
+    assert captured["as_of_date"] == "2026-02-05 21:00:00"

@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "alibabacloud-oss-v2>=1.2.4",
+    "baostock>=0.9.1",
     "chromadb>=0.6.0",
     "dashscope>=1.25.12",
     "groq>=1.0.0",
@@ -18,6 +19,7 @@ dependencies = [
     "reportlab>=4.4.9",
     "requests>=2.31.0",
     "rich>=13.7.1",
+    "tickflow[all]>=0.1.21",
     "yutto>=2.1.1",
 ]
 

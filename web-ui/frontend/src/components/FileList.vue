@@ -128,15 +128,26 @@
     kind === 'summary' ||
     kind === 'summary_text' ||
     kind === 'summary_no_table' ||
+    kind === 'summary_png' ||
+    kind === 'summary_no_table_png' ||
     kind === 'summary_fancy_html' ||
     kind === 'summary_table_md' ||
+    kind === 'summary_table_png' ||
     kind === 'summary_table_pdf'
 
   const isSummaryDerivedKind = (kind) =>
     kind === 'summary_no_table' ||
+    kind === 'summary_png' ||
+    kind === 'summary_no_table_png' ||
     kind === 'summary_fancy_html' ||
     kind === 'summary_table_md' ||
+    kind === 'summary_table_png' ||
     kind === 'summary_table_pdf'
+
+  const isHiddenDerivedPngKind = (kind) =>
+    kind === 'summary_png' ||
+    kind === 'summary_no_table_png' ||
+    kind === 'summary_table_png'
 
   const resolveSummaryProfileLabel = (profileName) => {
     const effectiveName = (profileName || '').trim()
@@ -164,13 +175,16 @@
     if (
       kind === 'summary' ||
       kind === 'summary_no_table' ||
+      kind === 'summary_png' ||
+      kind === 'summary_no_table_png' ||
       kind === 'summary_text'
     ) {
-      return stem
+      return stem.replace(/_no_table$/i, '')
     }
     if (
       kind === 'summary_fancy_html' ||
       kind === 'summary_table_md' ||
+      kind === 'summary_table_png' ||
       kind === 'summary_table_pdf'
     ) {
       return stem.replace(/_fancy$/i, '').replace(/_table$/i, '')
@@ -192,8 +206,11 @@
       markdown: 100,
       summary: 200,
       summary_no_table: 210,
+      summary_png: 211,
+      summary_no_table_png: 212,
       summary_fancy_html: 220,
       summary_table_md: 230,
+      summary_table_png: 231,
       summary_table_pdf: 231,
       text: 300,
       summary_text: 310,
@@ -228,8 +245,11 @@
           kind === 'summary' ||
           kind === 'summary_text' ||
           kind === 'summary_no_table' ||
+          kind === 'summary_png' ||
+          kind === 'summary_no_table_png' ||
           kind === 'summary_fancy_html' ||
-          kind === 'summary_table_md'
+          kind === 'summary_table_md' ||
+          kind === 'summary_table_png'
             ? resolveSummaryPresetLabel(item.presetName || '')
             : '',
         modelProfileLabel: isSummaryKind(kind)
@@ -255,6 +275,8 @@
         isWideLayout:
           kind === 'markdown' ||
           kind === 'summary_no_table' ||
+          kind === 'summary_png' ||
+          kind === 'summary_no_table_png' ||
           kind === 'summary_fancy_html',
         primaryTargetFormat: kind === 'summary_no_table' ? 'md_no_table' : '',
         noTableBadge: kind === 'summary_no_table',
@@ -264,8 +286,10 @@
 
     const rows = []
     const sourceItems = [...props.items, ...generatedItems.value]
-    const filteredItems = sourceItems.filter((item) =>
-      props.filterKinds.includes(item.kind)
+    const filteredItems = sourceItems.filter(
+      (item) =>
+        !isHiddenDerivedPngKind(item.kind) &&
+        props.filterKinds.includes(item.kind)
     )
     const summaryRowsByFamily = new Map()
     const summaryRowsBySignature = new Map()
@@ -319,6 +343,7 @@
       if (
         item.kind === 'summary_fancy_html' ||
         item.kind === 'summary_table_md' ||
+        item.kind === 'summary_table_png' ||
         item.kind === 'summary_table_pdf'
       ) {
         const signature = `${(item.presetName || '').trim()}::${(item.summaryProfile || '').trim()}`
@@ -337,9 +362,13 @@
         const derivedOffset =
           item.kind === 'summary_fancy_html'
             ? 0.15
-            : item.kind === 'summary_table_pdf'
-              ? 0.25
-              : 0.2
+            : item.kind === 'summary_table_md'
+              ? 0.2
+              : item.kind === 'summary_table_png'
+                ? 0.21
+                : item.kind === 'summary_table_pdf'
+                  ? 0.25
+                  : 0.18
         rows.push(
           toDisplayItem(item, index, {
             parentSummaryRowId: parentSummary?.summaryRowId || '',
@@ -416,7 +445,11 @@
       noTableConvertKey(item.downloadId, targetFormat)
     )
 
-  const requestConvert = async (downloadId, targetFormat) => {
+  const requestConvert = async (
+    downloadId,
+    targetFormat,
+    extraPayload = {}
+  ) => {
     const resp = await fetch('/api/convert', {
       method: 'POST',
       headers: {
@@ -424,7 +457,8 @@
       },
       body: JSON.stringify({
         download_id: downloadId,
-        target_format: targetFormat
+        target_format: targetFormat,
+        ...extraPayload
       })
     })
     const data = await resp.json()
@@ -483,7 +517,9 @@
       if (!noTableDownloadId) {
         throw new Error('无表格文件转换后下载链接无效')
       }
-      const finalData = await requestConvert(noTableDownloadId, targetFormat)
+      const finalData = await requestConvert(noTableDownloadId, targetFormat, {
+        source_variant: 'summary_no_table'
+      })
       download(finalData.download_url, finalData.filename)
     } catch (err) {
       conversionError.value = err instanceof Error ? err.message : '转换失败'
