@@ -127,9 +127,78 @@ def _fetch_status_for_symbol(
     symbol: str,
     as_of_date: date,
 ) -> StockDailyStatus | None:
-    if symbol.upper().endswith(".HK"):
-        return _fetch_tickflow_hk_status_for_symbol(symbol, as_of_date)
-    return _fetch_baostock_status_for_symbol(symbol, as_of_date)
+    return _fetch_yfinance_status_for_symbol(symbol, as_of_date)
+
+
+def _fetch_yfinance_status_for_symbol(
+    symbol: str,
+    as_of_date: date,
+) -> StockDailyStatus | None:
+    yahoo_symbol = _to_yfinance_symbol(symbol)
+    if not yahoo_symbol:
+        return None
+    try:
+        import yfinance as yf
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("yfinance unavailable: %s", exc)
+        return None
+
+    try:
+        ticker = yf.Ticker(yahoo_symbol)
+        history = ticker.history(
+            period="60d",
+            interval="1d",
+            auto_adjust=False,
+            actions=False,
+        )
+        if history.empty:
+            return None
+
+        selected_position = None
+        for position, index in enumerate(history.index):
+            trade_date = _yfinance_index_to_date(index)
+            if trade_date is not None and trade_date <= as_of_date:
+                selected_position = position
+        if selected_position is None:
+            return None
+
+        row = history.iloc[selected_position]
+        previous_row = (
+            history.iloc[selected_position - 1] if selected_position > 0 else None
+        )
+        info = ticker.info or {}
+        return _yfinance_row_to_status(
+            symbol,
+            row,
+            previous_row,
+            info,
+            _yfinance_index_to_date(history.index[selected_position]),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("yfinance query failed for %s: %s", symbol, exc)
+        return None
+
+
+def _to_yfinance_symbol(symbol: str) -> str:
+    code, _, suffix = symbol.upper().partition(".")
+    if not code or suffix not in _SUPPORTED_SUFFIXES:
+        return ""
+    if suffix == "SH":
+        return f"{code}.SS"
+    if suffix == "SZ":
+        return f"{code}.SZ"
+    if suffix == "HK":
+        return f"{code[-4:]}.HK"
+    return ""
+
+
+def _yfinance_index_to_date(value: Any) -> date | None:
+    try:
+        if hasattr(value, "date"):
+            return value.date()
+        return datetime.fromisoformat(str(value)[:10]).date()
+    except (TypeError, ValueError):
+        return None
 
 
 def _fetch_baostock_status_for_symbol(
@@ -347,6 +416,53 @@ def _tickflow_row_to_status(
         pe="-",
         volume=_format_large_number(_first_value(row, "volume")),
         amount=_format_large_number(_first_value(row, "amount")),
+        direction=_direction(change),
+    )
+
+
+def _yfinance_row_to_status(
+    symbol: str,
+    row: Any,
+    previous_row: Any,
+    info: dict[str, Any],
+    trade_date: date | None,
+) -> StockDailyStatus:
+    close = _first_value(row.to_dict(), "Close", "close")
+    previous_close = (
+        _first_value(previous_row.to_dict(), "Close", "close")
+        if previous_row is not None
+        else None
+    )
+    change = None
+    pct_change = None
+    if not _is_blank(close) and not _is_blank(previous_close):
+        change = _to_float(close) - _to_float(previous_close)
+        previous = _to_float(previous_close)
+        if previous:
+            pct_change = change / previous * 100
+
+    amount = None
+    volume = _first_value(row.to_dict(), "Volume", "volume")
+    if not _is_blank(close) and not _is_blank(volume):
+        amount = _to_float(close) * _to_float(volume)
+
+    name = (
+        _first_value(info, "shortName", "longName", "displayName", "symbol")
+        or symbol
+    )
+    pe = _first_value(info, "trailingPE", "forwardPE")
+
+    return StockDailyStatus(
+        symbol=symbol,
+        name=str(name),
+        trade_date=trade_date.isoformat() if trade_date is not None else "-",
+        close=_format_number(close),
+        change=_format_signed_number(change),
+        pct_change=_format_pct(pct_change),
+        market_cap=_format_large_number(_first_value(info, "marketCap")),
+        pe=_format_number(pe),
+        volume=_format_large_number(volume),
+        amount=_format_large_number(amount),
         direction=_direction(change),
     )
 
@@ -601,16 +717,10 @@ def _render_table_card(row: StockTableRow, status: StockDailyStatus | None) -> s
         _first_matching_value(row.values, ("股票名称", "名称", "标的", "公司"))
         or ""
     )
-    source_name = status.name if status is not None else ""
-    status_matches_table_name = not (
-        table_name
-        and source_name
-        and _normalize_stock_name(table_name) != _normalize_stock_name(source_name)
-    )
-    effective_status = status if status_matches_table_name else None
+    effective_status = status
     title = (
-        (source_name if effective_status is not None else "")
-        or table_name
+        table_name
+        or (effective_status.name if effective_status is not None else "")
         or "未命名标的"
     )
     symbol = (
