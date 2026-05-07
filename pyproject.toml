@@ -20,6 +20,7 @@ dependencies = [
     "requests>=2.31.0",
     "rich>=13.7.1",
     "tickflow[all]>=0.1.21",
+    "yfinance>=1.3.0",
     "yutto>=2.1.1",
 ]
 

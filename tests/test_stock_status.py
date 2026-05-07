@@ -5,6 +5,7 @@ from b2t.stock_status import (
     _parse_as_of_date,
     _tickflow_row_to_status,
     _to_baostock_code,
+    _to_yfinance_symbol,
     build_stock_table_cards_html,
     extract_stock_symbols,
     fetch_stock_daily_status,
@@ -38,6 +39,13 @@ def test_to_baostock_code_uses_lowercase_suffix() -> None:
     assert _to_baostock_code("600000.SH") == "sh.600000"
     assert _to_baostock_code("000001.SZ") == "sz.000001"
     assert _to_baostock_code("00700.HK") == "hk.00700"
+
+
+def test_to_yfinance_symbol_maps_a_share_and_hk_suffixes() -> None:
+    assert _to_yfinance_symbol("688041.SH") == "688041.SS"
+    assert _to_yfinance_symbol("000001.SZ") == "000001.SZ"
+    assert _to_yfinance_symbol("00506.HK") == "0506.HK"
+    assert _to_yfinance_symbol("01099.HK") == "1099.HK"
 
 
 def test_baostock_row_to_status_calculates_fields() -> None:
@@ -95,7 +103,7 @@ def test_fetch_stock_daily_status_uses_as_of_date(monkeypatch) -> None:
         captured["as_of_date"] = as_of_date
         return None
 
-    monkeypatch.setattr("b2t.stock_status._fetch_baostock_status_for_symbol", fake_fetch)
+    monkeypatch.setattr("b2t.stock_status._fetch_yfinance_status_for_symbol", fake_fetch)
 
     assert fetch_stock_daily_status(["600000.SH"], as_of_date="2026-02-05 21:00:00") == []
     assert captured["symbol"] == "600000.SH"
@@ -119,7 +127,7 @@ def test_fetch_stock_daily_status_hides_stale_a_share_after_market_close(
     )
 
     monkeypatch.setattr(
-        "b2t.stock_status._fetch_baostock_status_for_symbol",
+        "b2t.stock_status._fetch_yfinance_status_for_symbol",
         lambda symbol, as_of_date: status,
     )
 
@@ -143,7 +151,7 @@ def test_fetch_stock_daily_status_keeps_previous_trade_day_before_market_close(
     )
 
     monkeypatch.setattr(
-        "b2t.stock_status._fetch_baostock_status_for_symbol",
+        "b2t.stock_status._fetch_yfinance_status_for_symbol",
         lambda symbol, as_of_date: status,
     )
 
@@ -170,7 +178,7 @@ def test_fetch_stock_daily_status_keeps_previous_trade_day_on_weekend(
     )
 
     monkeypatch.setattr(
-        "b2t.stock_status._fetch_baostock_status_for_symbol",
+        "b2t.stock_status._fetch_yfinance_status_for_symbol",
         lambda symbol, as_of_date: status,
     )
 
@@ -180,7 +188,7 @@ def test_fetch_stock_daily_status_keeps_previous_trade_day_on_weekend(
     ) == [status]
 
 
-def test_fetch_status_dispatches_hk_to_tickflow(monkeypatch) -> None:
+def test_fetch_status_uses_yfinance_for_all_markets(monkeypatch) -> None:
     calls = []
     status = _tickflow_row_to_status(
         "00700.HK",
@@ -194,22 +202,20 @@ def test_fetch_status_dispatches_hk_to_tickflow(monkeypatch) -> None:
         {"name": "腾讯控股", "ext": {"total_shares": 9500000000}},
     )
 
-    def fake_hk(symbol, as_of_date):
-        calls.append(("hk", symbol, str(as_of_date)))
+    def fake_yfinance(symbol, as_of_date):
+        calls.append((symbol, str(as_of_date)))
         return status
 
-    def fake_a(symbol, as_of_date):
-        calls.append(("a", symbol, str(as_of_date)))
-        return None
-
-    monkeypatch.setattr("b2t.stock_status._fetch_tickflow_hk_status_for_symbol", fake_hk)
-    monkeypatch.setattr("b2t.stock_status._fetch_baostock_status_for_symbol", fake_a)
+    monkeypatch.setattr(
+        "b2t.stock_status._fetch_yfinance_status_for_symbol",
+        fake_yfinance,
+    )
 
     assert _fetch_status_for_symbol("00700.HK", _parse_as_of_date("2026-05-06")) == status
-    assert _fetch_status_for_symbol("600000.SH", _parse_as_of_date("2026-05-06")) is None
+    assert _fetch_status_for_symbol("600000.SH", _parse_as_of_date("2026-05-06")) == status
     assert calls == [
-        ("hk", "00700.HK", "2026-05-06"),
-        ("a", "600000.SH", "2026-05-06"),
+        ("00700.HK", "2026-05-06"),
+        ("600000.SH", "2026-05-06"),
     ]
 
 
@@ -342,7 +348,7 @@ def test_build_stock_table_cards_html_cleans_inline_markdown_for_name_match(
     assert "<strong>-0.97%</strong>" in html
 
 
-def test_build_stock_table_cards_html_hides_status_when_name_mismatches(
+def test_build_stock_table_cards_html_keeps_status_when_name_mismatches(
     monkeypatch,
 ) -> None:
     markdown = """| 股票代码 | 股票名称 | 投资逻辑 |
@@ -370,11 +376,11 @@ def test_build_stock_table_cards_html_hides_status_when_name_mismatches(
 
     html = build_stock_table_cards_html(markdown, as_of_date="2026-02-05 21:00:00")
 
-    assert 'class="stock-table-card stock-status-flat"' in html
+    assert 'class="stock-table-card stock-status-down"' in html
     assert "<span>幻觉银行</span>" in html
     assert "银行估值修复" in html
     assert "浦发银行" not in html
-    assert "3057.48亿" not in html
-    assert "-0.97%" not in html
+    assert "3057.48亿" in html
+    assert "-0.97%" in html
     assert "<strong>-</strong>" not in html
-    assert "stock-status-metrics" not in html
+    assert "stock-status-metrics" in html
