@@ -19,6 +19,10 @@ from b2t.summarize.litellm_client import (
     collect_stream_result,
     stream_summary_completion,
 )
+from b2t.summary_context import (
+    render_summary_context_block,
+    resolve_author_summary_context,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -254,6 +258,7 @@ def summarize(
     md_path: Path | str,
     config: SummarizeConfig,
     summary_presets: SummaryPresetsConfig,
+    summary_context_config=None,
     preset: str | None = None,
     profile: str | None = None,
     prompt_template_override: str | None = None,
@@ -265,6 +270,7 @@ def summarize(
         md_path: Markdown file path
         config: Summarization config
         summary_presets: Summary preset config
+        summary_context_config: Optional author-specific context config
         preset: Optional, override the default preset name
         profile: Optional, override the default summary profile name
         prompt_template_override: Optional, override the preset prompt template
@@ -288,7 +294,17 @@ def summarize(
         if prompt_template_override is not None
         else summary_presets.presets[preset_name].prompt_template
     )
-    prompt = template.format(content=content)
+    resolved_context = resolve_author_summary_context(summary_context_config, metadata)
+    context_block = render_summary_context_block(resolved_context)
+    prompt_content = content
+    if context_block:
+        prompt_content = f"{context_block}\n\n转录正文如下：\n\n{content}"
+        logger.info(
+            "Injected summary context for author `%s` (%s)",
+            resolved_context.author.id,
+            resolved_context.matched_by,
+        )
+    prompt = template.format(content=prompt_content)
     selected_profile = (profile or config.profile).strip()
     model_profile = resolve_summarize_model_profile(config, override=selected_profile)
 

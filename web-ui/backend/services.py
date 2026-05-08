@@ -385,6 +385,7 @@ def _run_summary_only_from_existing(
             markdown_path,
             config.summarize,
             config.summary_presets,
+            summary_context_config=config.summary_context,
             preset=summary_preset,
             profile=summary_profile,
             prompt_template_override=summary_prompt_template,

@@ -1,0 +1,274 @@
+[stock_pool."速腾聚创"]
+code = "02498.HK"
+sector = "智能驾驶"
+description = "激光雷达与智能驾驶相关标的"
+common_misrecognitions = ["速腾", "速腾聚创科技"]
+common_aliases = ["速腾"]
+
+[stock_pool."澜起科技"]
+code = "688008.SH"
+sector = "半导体"
+description = "内存接口及互连芯片，常被归类为算力链或服务器链相关标的"
+common_misrecognitions = ["蓝起科技", "蓝企科技", "蓝起", "兰起科技", "南起科技"]
+common_aliases = ["澜起"]
+
+[stock_pool."东芯股份"]
+code = "688110.SH"
+sector = "半导体"
+description = "存储芯片相关标的"
+common_misrecognitions = ["东芯", "东西股份"]
+common_aliases = ["东芯"]
+
+[stock_pool."ST臻镭科技"]
+code = ""
+sector = "军工电子"
+description = "作者语境里常以真雷、真嘞等谐音指代的军工电子标的；当前代码待确认"
+common_misrecognitions = ["真雷", "真嘞", "ST臻镭科技", "臻镭科技", "铖镭科技"]
+common_aliases = ["臻镭", "ST臻镭科技"]
+
+[stock_pool."思特威"]
+code = "688213.SH"
+sector = "半导体"
+description = "CMOS 图像传感器相关标的"
+common_misrecognitions = ["思特威电子科技", "思特威电子", "斯特威"]
+common_aliases = ["思特威"]
+
+[stock_pool."中芯国际"]
+code = "00981.HK"
+sector = "半导体"
+description = "晶圆代工龙头，A/H 两地上市场景下优先记港股代码"
+common_misrecognitions = ["中芯"]
+common_aliases = ["中芯"]
+
+[stock_pool."华虹公司"]
+code = "01347.HK"
+sector = "半导体"
+description = "特色工艺晶圆代工相关标的，A/H 两地上市场景下优先记港股代码"
+common_misrecognitions = ["华虹", "华宏"]
+common_aliases = ["华虹"]
+
+[stock_pool."华力微"]
+code = ""
+sector = "半导体"
+description = "中芯/华虹产业链语境中常被提及的未上市晶圆制造主体，用于术语纠错，不用于输出股票代码"
+common_misrecognitions = ["华力威", "华立微"]
+common_aliases = ["华力微"]
+
+[stock_pool."天岳先进"]
+code = "688234.SH"
+sector = "第三代半导体"
+description = "碳化硅衬底厂商"
+common_misrecognitions = ["天悦先进", "天月先进", "天悦新", "天悦"]
+common_aliases = ["天岳"]
+
+[stock_pool."中创新航"]
+code = "03931.HK"
+sector = "锂电池"
+description = "动力及储能电池相关标的"
+common_misrecognitions = ["中创新航科技", "中创航"]
+common_aliases = ["中创新航"]
+
+[stock_pool."海光信息"]
+code = "688041.SH"
+sector = "算力芯片"
+description = "国产 CPU/GPU 与算力链相关标的"
+common_misrecognitions = ["海光", "海光芯片"]
+common_aliases = ["海光"]
+
+[stock_pool."立昂微"]
+code = "605358.SH"
+sector = "半导体"
+description = "半导体硅片及功率器件相关标的"
+common_misrecognitions = ["立昂", "利昂", "利昂微"]
+common_aliases = ["立昂微"]
+
+[stock_pool."华大智造"]
+code = "688114.SH"
+sector = "医疗设备"
+description = "基因测序设备相关标的"
+common_misrecognitions = ["华大制造", "华大"]
+common_aliases = ["华大"]
+
+[stock_pool."融捷股份"]
+code = "002192.SZ"
+sector = "锂资源"
+description = "锂矿与锂电产业链相关标的"
+common_misrecognitions = ["融捷", "融解股份"]
+common_aliases = ["融捷"]
+
+[stock_pool."通富微电"]
+code = "002156.SZ"
+sector = "半导体"
+description = "封装测试相关标的"
+common_misrecognitions = ["通富", "通富微电子"]
+common_aliases = ["通富"]
+
+[stock_pool."思瑞浦"]
+code = "688536.SH"
+sector = "模拟芯片"
+description = "模拟及电源管理芯片相关标的"
+common_misrecognitions = ["思瑞普", "思瑞浦电子"]
+common_aliases = ["思瑞浦"]
+
+[stock_pool."龙芯中科"]
+code = "688047.SH"
+sector = "算力芯片"
+description = "国产 CPU 相关标的"
+common_misrecognitions = ["龙芯", "龙芯科技"]
+common_aliases = ["龙芯"]
+
+[stock_pool."风华高科"]
+code = "000636.SZ"
+sector = "被动元件"
+description = "MLCC 等被动元件相关标的"
+common_misrecognitions = ["风华", "风华科技"]
+common_aliases = ["风华"]
+
+[stock_pool."哔哩哔哩-W"]
+code = "09626.HK"
+sector = "互联网"
+description = "港股上市的内容平台标的，作者会直接简称为 B 站"
+common_misrecognitions = ["b站", "B 站"]
+common_aliases = ["B站"]
+
+[stock_pool."阿特斯"]
+code = "688472.SH"
+sector = "光伏"
+description = "光伏组件及电站相关标的"
+common_misrecognitions = ["阿特斯阳光电力", "阿特斯阳光", "阿特斯电力"]
+common_aliases = ["阿特斯"]
+
+[stock_pool."禾望电气"]
+code = "603063.SH"
+sector = "电力设备"
+description = "风电变流器、储能及电气传动相关标的"
+common_misrecognitions = ["禾望", "和望电气"]
+common_aliases = ["禾望"]
+
+[stock_pool."中际联合"]
+code = "605305.SH"
+sector = "高空作业设备"
+description = "风电高空安全作业设备相关标的"
+common_misrecognitions = ["中际", "中际联和"]
+common_aliases = ["中际联合"]
+
+[stock_pool."锦浪科技"]
+code = "300763.SZ"
+sector = "光伏"
+description = "逆变器相关标的"
+common_misrecognitions = ["锦浪", "景浪科技"]
+common_aliases = ["锦浪"]
+
+[stock_pool."兆易创新"]
+code = "603986.SH"
+sector = "半导体"
+description = "存储及 MCU 相关标的"
+common_misrecognitions = ["兆易", "赵易创新"]
+common_aliases = ["兆易"]
+
+[stock_pool."ST京机"]
+code = ""
+sector = "机械设备"
+description = "图片中显示为 ST 京机，代码待确认"
+common_misrecognitions = ["京机", "ST京机"]
+common_aliases = ["ST京机"]
+
+[stock_pool."三美股份"]
+code = "603379.SH"
+sector = "化工"
+description = "氟化工相关标的"
+common_misrecognitions = ["三美", "三美化工"]
+common_aliases = ["三美"]
+
+[stock_pool."ST得润"]
+code = "002055.SZ"
+sector = "汽车电子"
+description = "汽车电子及连接器相关标的"
+common_misrecognitions = ["得润", "ST得润"]
+common_aliases = ["ST得润"]
+
+[stock_pool."金山办公"]
+code = "688111.SH"
+sector = "软件"
+description = "办公软件相关标的"
+common_misrecognitions = ["金山", "金山软件办公"]
+common_aliases = ["金山办公"]
+
+[stock_pool."深信服"]
+code = "300454.SZ"
+sector = "网络安全"
+description = "网络安全与云计算相关标的"
+common_misrecognitions = ["深信服科技", "深信服安全"]
+common_aliases = ["深信服"]
+
+[stock_pool."超威半导体"]
+code = "AMD.US"
+sector = "半导体"
+description = "美国半导体公司，作者会直接使用 AMD 称呼"
+common_misrecognitions = ["amg", "A M D", "amd"]
+common_aliases = ["AMD"]
+
+[stock_pool."佰维存储"]
+code = "688525.SH"
+sector = "存储"
+description = "存储器及封测相关标的"
+common_misrecognitions = ["百威存储", "百维存储"]
+common_aliases = ["佰维"]
+
+[[authors]]
+id = "bbzdjc"
+match_author_names = ["笨笨的韭菜"]
+match_author_uids = []
+prompt_note = "偏好讨论科技成长、半导体、新能源与高端制造，常直接使用简称、黑话或转录易错名称"
+theme_terms = ["CPU", "存储", "锂矿", "易中天", "单压", "吃息", "戴帽", "光模块", "PCB"]
+
+[authors.portfolio]
+stocks = [
+  "速腾聚创",
+  "澜起科技",
+  "东芯股份",
+  "ST臻镭科技",
+  "思特威",
+  "中芯国际",
+  "华虹公司",
+  "华力微",
+  "天岳先进",
+  "中创新航",
+  "海光信息",
+  "立昂微",
+  "华大智造",
+  "融捷股份",
+  "通富微电",
+  "思瑞浦",
+  "龙芯中科",
+  "风华高科",
+  "哔哩哔哩-W",
+  "阿特斯",
+  "禾望电气",
+  "中际联合",
+  "锦浪科技",
+  "兆易创新",
+  "ST京机",
+  "三美股份",
+  "ST得润",
+  "金山办公",
+  "深信服",
+  "超威半导体",
+  "佰维存储"
+]
+
+[authors.alias_overrides]
+"蓝起" = "澜起科技"
+"天悦新" = "天岳先进"
+"百威存储" = "佰维存储"
+"百维存储" = "佰维存储"
+"通穷" = "通富微电"
+"真雷" = "ST臻镭科技"
+"真嘞" = "ST臻镭科技"
+"铖镭科技" = "ST臻镭科技"
+"思特威电子科技" = "思特威"
+"阿特斯阳光电力" = "阿特斯"
+"B站" = "哔哩哔哩-W"
+"道昂威" = "立昂微"
+"华虹" = "华虹公司"
+"华力威" = "华力微"

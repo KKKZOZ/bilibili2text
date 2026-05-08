@@ -35,6 +35,64 @@ def test_extract_stock_symbols_from_markdown_tables_only() -> None:
     ]
 
 
+def test_extract_stock_symbols_from_tables_without_outer_pipes() -> None:
+    markdown = """
+正文里提到 600000 不应该被提取。
+
+股票代码 | 股票名称 | 逻辑
+---|---|---
+600000 | 浦发银行 | 示例
+000001.SZ | 平安银行 | 示例
+688001 | 华兴源创 | 示例
+600000.SH | 重复 | 示例
+00700.HK | 腾讯控股 | 示例
+"""
+
+    assert extract_stock_symbols(markdown) == [
+        "600000.SH",
+        "000001.SZ",
+        "688001.SH",
+        "00700.HK",
+    ]
+
+
+def test_build_stock_table_cards_html_supports_tables_without_outer_pipes(
+    monkeypatch,
+) -> None:
+    markdown = """
+股票名称 | 股票代码 | 板块 | 逻辑
+---|---|---|---
+金山办公 | 688111.SH | 软件 | 趋势改善
+中芯国际 | 00981.HK | 半导体 | 晶圆代工龙头
+"""
+
+    status = _tickflow_row_to_status(
+        "688111.SH",
+        {
+            "date": "2026-05-06",
+            "close": 300.0,
+            "preclose": 290.0,
+            "amount": 123456789.0,
+            "volume": 1000000,
+        },
+        {"name": "金山办公", "ext": {"total_shares": 1000000000}},
+    )
+
+    monkeypatch.setattr(
+        "b2t.stock_status.fetch_stock_daily_status",
+        lambda symbols, **kwargs: [status] if symbols == ["688111.SH", "00981.HK"] else [],
+    )
+
+    html = build_stock_table_cards_html(markdown, as_of_date="2026-05-06 15:00:00")
+
+    assert "stock-table-cards" in html
+    assert "金山办公" in html
+    assert "688111.SH" in html
+    assert "+3.45%" in html
+    assert "中芯国际" in html
+    assert "00981.HK" in html
+
+
 def test_to_baostock_code_uses_lowercase_suffix() -> None:
     assert _to_baostock_code("600000.SH") == "sh.600000"
     assert _to_baostock_code("000001.SZ") == "sz.000001"

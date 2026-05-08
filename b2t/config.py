@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_SUMMARY_PRESETS_FILE = "summary_presets.toml"
+DEFAULT_SUMMARY_CONTEXT_FILE = "context.toml"
 DEFAULT_STT_PROFILE = "qwen"
 DEFAULT_BILIBILI_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -138,6 +139,7 @@ class SummarizeConfig:
     enable_thinking: bool = True
     preset: str | None = None
     presets_file: str = DEFAULT_SUMMARY_PRESETS_FILE
+    context_file: str = DEFAULT_SUMMARY_CONTEXT_FILE
 
 
 @dataclass(frozen=True)
@@ -155,6 +157,34 @@ class SummaryPreset:
 class SummaryPresetsConfig:
     default: str
     presets: dict[str, SummaryPreset]
+    source_path: Path
+
+
+@dataclass(frozen=True)
+class SummaryContextStock:
+    name: str
+    code: str = ""
+    sector: str = ""
+    description: str = ""
+    common_misrecognitions: tuple[str, ...] = ()
+    common_aliases: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class SummaryContextAuthor:
+    id: str
+    match_author_names: tuple[str, ...] = ()
+    match_author_uids: tuple[int, ...] = ()
+    prompt_note: str = ""
+    portfolio_stocks: tuple[str, ...] = ()
+    alias_overrides: dict[str, str] = field(default_factory=dict)
+    theme_terms: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class SummaryContextConfig:
+    stocks: dict[str, SummaryContextStock]
+    authors: tuple[SummaryContextAuthor, ...]
     source_path: Path
 
 
@@ -248,6 +278,7 @@ class AppConfig:
     fancy_html: FancyHtmlConfig
     summary_presets: SummaryPresetsConfig
     converter: ConverterConfig
+    summary_context: SummaryContextConfig | None = None
     rag: RagConfig = field(default_factory=RagConfig)
     feishu: FeishuConfig = field(default_factory=FeishuConfig)
     monitor: MonitorConfig = field(default_factory=MonitorConfig)
@@ -266,6 +297,7 @@ def _load_summarize_config(raw_summarize: dict) -> SummarizeConfig:
         "enable_thinking",
         "preset",
         "presets_file",
+        "context_file",
     }
     unknown_top_level_fields = sorted(set(summarize.keys()) - allowed_top_level_fields)
     if unknown_top_level_fields:
@@ -387,12 +419,206 @@ def _load_summarize_config(raw_summarize: dict) -> SummarizeConfig:
     if not isinstance(presets_file, str) or not presets_file.strip():
         raise ValueError("summarize.presets_file 必须是非空字符串")
 
+    context_file = summarize.get("context_file", DEFAULT_SUMMARY_CONTEXT_FILE)
+    if not isinstance(context_file, str) or not context_file.strip():
+        raise ValueError("summarize.context_file 必须是非空字符串")
+
     return SummarizeConfig(
         profile=profile,
         profiles=profiles,
         enable_thinking=enable_thinking,
         preset=preset,
         presets_file=presets_file.strip(),
+        context_file=context_file.strip(),
+    )
+
+
+def _normalize_unique_str_tuple(
+    value: object,
+    *,
+    field_name: str,
+) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise ValueError(f"{field_name} 必须是字符串数组")
+
+    items: list[str] = []
+    seen: set[str] = set()
+    for index, item in enumerate(value):
+        if not isinstance(item, str) or not item.strip():
+            raise ValueError(f"{field_name}[{index}] 必须是非空字符串")
+        normalized = item.strip()
+        dedupe_key = normalized.casefold()
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        items.append(normalized)
+    return tuple(items)
+
+
+def _load_summary_context(path: Path) -> SummaryContextConfig | None:
+    if not path.exists():
+        return None
+
+    with open(path, "rb") as f:
+        raw = tomllib.load(f)
+
+    if not isinstance(raw, dict):
+        raise ValueError("summary context 配置必须是 TOML 对象")
+
+    allowed_top_level_fields = {"stock_pool", "authors"}
+    unknown_top_level_fields = sorted(set(raw.keys()) - allowed_top_level_fields)
+    if unknown_top_level_fields:
+        raise ValueError(
+            f"summary context 配置包含未知字段: {', '.join(unknown_top_level_fields)}"
+        )
+
+    raw_stock_pool = raw.get("stock_pool", {})
+    if not isinstance(raw_stock_pool, dict):
+        raise ValueError("summary context 的 stock_pool 必须是 TOML 表")
+
+    stocks: dict[str, SummaryContextStock] = {}
+    for raw_name, raw_value in raw_stock_pool.items():
+        if not isinstance(raw_name, str) or not raw_name.strip():
+            raise ValueError("summary context 的股票名称必须是非空字符串")
+        if not isinstance(raw_value, dict):
+            raise ValueError(f"summary context 股票 `{raw_name}` 必须是 TOML 表")
+
+        name = raw_name.strip()
+        code = raw_value.get("code", "")
+        sector = raw_value.get("sector", "")
+        description = raw_value.get("description", "")
+        if not isinstance(code, str):
+            raise ValueError(f"summary context 股票 `{name}` 的 code 必须是字符串")
+        if not isinstance(sector, str):
+            raise ValueError(f"summary context 股票 `{name}` 的 sector 必须是字符串")
+        if not isinstance(description, str):
+            raise ValueError(
+                f"summary context 股票 `{name}` 的 description 必须是字符串"
+            )
+
+        stocks[name] = SummaryContextStock(
+            name=name,
+            code=code.strip(),
+            sector=sector.strip(),
+            description=description.strip(),
+            common_misrecognitions=_normalize_unique_str_tuple(
+                raw_value.get("common_misrecognitions"),
+                field_name=f"stock_pool.{name}.common_misrecognitions",
+            ),
+            common_aliases=_normalize_unique_str_tuple(
+                raw_value.get("common_aliases"),
+                field_name=f"stock_pool.{name}.common_aliases",
+            ),
+        )
+
+    raw_authors = raw.get("authors", [])
+    if not isinstance(raw_authors, list):
+        raise ValueError("summary context 的 authors 必须是 TOML 数组表")
+
+    authors: list[SummaryContextAuthor] = []
+    author_ids: set[str] = set()
+    for index, raw_author in enumerate(raw_authors):
+        if not isinstance(raw_author, dict):
+            raise ValueError(f"summary context authors[{index}] 必须是 TOML 表")
+
+        raw_id = raw_author.get("id")
+        if not isinstance(raw_id, str) or not raw_id.strip():
+            raise ValueError(f"summary context authors[{index}].id 必须是非空字符串")
+        author_id = raw_id.strip()
+        if author_id in author_ids:
+            raise ValueError(f"summary context authors.id `{author_id}` 重复")
+        author_ids.add(author_id)
+
+        raw_match_author_uids = raw_author.get("match_author_uids")
+        if raw_match_author_uids is None:
+            match_author_uids = ()
+        elif not isinstance(raw_match_author_uids, list):
+            raise ValueError(
+                f"summary context authors[{index}].match_author_uids 必须是整数数组"
+            )
+        else:
+            parsed_uids: list[int] = []
+            seen_uids: set[int] = set()
+            for uid_index, uid_value in enumerate(raw_match_author_uids):
+                if not isinstance(uid_value, int) or uid_value <= 0:
+                    raise ValueError(
+                        f"summary context authors[{index}].match_author_uids[{uid_index}] 必须是正整数"
+                    )
+                if uid_value in seen_uids:
+                    continue
+                seen_uids.add(uid_value)
+                parsed_uids.append(uid_value)
+            match_author_uids = tuple(parsed_uids)
+
+        prompt_note = raw_author.get("prompt_note", "")
+        if not isinstance(prompt_note, str):
+            raise ValueError(
+                f"summary context authors[{index}].prompt_note 必须是字符串"
+            )
+
+        portfolio = raw_author.get("portfolio", {})
+        if portfolio is None:
+            portfolio = {}
+        if not isinstance(portfolio, dict):
+            raise ValueError(f"summary context authors[{index}].portfolio 必须是 TOML 表")
+        portfolio_stocks = _normalize_unique_str_tuple(
+            portfolio.get("stocks"),
+            field_name=f"authors[{index}].portfolio.stocks",
+        )
+        for stock_name in portfolio_stocks:
+            if stock_name not in stocks:
+                raise ValueError(
+                    f"summary context authors[{index}].portfolio.stocks 引用了不存在的股票 `{stock_name}`"
+                )
+
+        raw_alias_overrides = raw_author.get("alias_overrides", {})
+        if raw_alias_overrides is None:
+            raw_alias_overrides = {}
+        if not isinstance(raw_alias_overrides, dict):
+            raise ValueError(
+                f"summary context authors[{index}].alias_overrides 必须是 TOML 表"
+            )
+        alias_overrides: dict[str, str] = {}
+        for alias, target_name in raw_alias_overrides.items():
+            if not isinstance(alias, str) or not alias.strip():
+                raise ValueError(
+                    f"summary context authors[{index}].alias_overrides 的键必须是非空字符串"
+                )
+            if not isinstance(target_name, str) or not target_name.strip():
+                raise ValueError(
+                    f"summary context authors[{index}].alias_overrides.{alias} 必须是非空字符串"
+                )
+            target_stock_name = target_name.strip()
+            if target_stock_name not in stocks:
+                raise ValueError(
+                    f"summary context authors[{index}].alias_overrides.{alias} 引用了不存在的股票 `{target_stock_name}`"
+                )
+            alias_overrides[alias.strip()] = target_stock_name
+
+        authors.append(
+            SummaryContextAuthor(
+                id=author_id,
+                match_author_names=_normalize_unique_str_tuple(
+                    raw_author.get("match_author_names"),
+                    field_name=f"authors[{index}].match_author_names",
+                ),
+                match_author_uids=match_author_uids,
+                prompt_note=prompt_note.strip(),
+                portfolio_stocks=portfolio_stocks,
+                alias_overrides=alias_overrides,
+                theme_terms=_normalize_unique_str_tuple(
+                    raw_author.get("theme_terms"),
+                    field_name=f"authors[{index}].theme_terms",
+                ),
+            )
+        )
+
+    return SummaryContextConfig(
+        stocks=stocks,
+        authors=tuple(authors),
+        source_path=path,
     )
 
 
@@ -1185,7 +1411,13 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         enable_thinking=summarize_config.enable_thinking,
         preset=selected_preset,
         presets_file=summarize_config.presets_file,
+        context_file=summarize_config.context_file,
     )
+    summary_context_path = _resolve_relative_path(
+        summarize_config.context_file,
+        base_dir=config_path.parent.resolve(),
+    )
+    summary_context = _load_summary_context(summary_context_path)
     fancy_html_config = _load_fancy_html_config(
         raw.get("fancy_html"),
         summarize=summarize_config,
@@ -1230,6 +1462,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         summarize=summarize_config,
         fancy_html=fancy_html_config,
         summary_presets=summary_presets,
+        summary_context=summary_context,
         converter=ConverterConfig(**raw.get("converter", {})),
         rag=rag_config,
         feishu=feishu_config,
@@ -1360,6 +1593,7 @@ def create_app_config(
     summarize_config = SummarizeConfig(
         profile="default",
         profiles={"default": default_summarize_profile},
+        context_file=DEFAULT_SUMMARY_CONTEXT_FILE,
     )
 
     # Build remaining configs with defaults
@@ -1377,6 +1611,7 @@ def create_app_config(
             presets=summary_presets,
             source_path=Path("."),
         ),
+        summary_context=None,
         converter=ConverterConfig(),
         rag=RagConfig(),
         feishu=FeishuConfig(),

@@ -269,6 +269,7 @@ def build_open_public_config(
         enable_thinking=config.summarize.enable_thinking,
         preset=config.summarize.preset,
         presets_file=config.summarize.presets_file,
+        context_file=config.summarize.context_file,
     )
 
     # RAG: embedding always uses Aliyun (bailian).  LLM queries follow

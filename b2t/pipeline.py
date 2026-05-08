@@ -190,6 +190,7 @@ def run_pipeline(
                 md_path,
                 config.summarize,
                 config.summary_presets,
+                summary_context_config=config.summary_context,
                 preset=summary_preset,
                 profile=summary_profile,
                 prompt_template_override=summary_prompt_template,

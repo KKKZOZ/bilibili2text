@@ -297,6 +297,8 @@ HTML_TEMPLATE = r"""<!doctype html>
 </html>
 """
 
+STOCK_CARD_MARKER = 'class="stock-table-cards"'
+
 FALLBACK_MARKDOWN_CSS = """
 .markdown-body {
   color: #24292f;
@@ -348,6 +350,8 @@ FALLBACK_MARKDOWN_CSS = """
   margin: 24px 0;
 }
 """
+
+STOCK_CARD_VIEWPORT_WIDTH = 720
 
 
 class _BrowserTask:
@@ -503,7 +507,7 @@ class MarkdownToPngConverter:
             output_path = output_path.expanduser().resolve()
 
         # Extract options
-        width = 1200 if is_table else options.get("width", self.width)
+        width = options.get("width", self.width)
         height = options.get("height", self.height)
         dpr = options.get("dpr", self.dpr)
         css_url = options.get("css_url", self.css_url)
@@ -520,6 +524,11 @@ class MarkdownToPngConverter:
             if is_table
             else self._run_pandoc(input_path)
         )
+        if is_table:
+            if STOCK_CARD_MARKER in body_html:
+                width = options.get("stock_card_width", STOCK_CARD_VIEWPORT_WIDTH)
+            else:
+                width = 1200
 
         # Resolve CSS href (prefer local cache to avoid external requests)
         css_href = self._resolve_css_href(css_url)
