@@ -14,7 +14,6 @@ from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
 
-_TABLE_LINE_RE = re.compile(r"^\s*\|.*\|\s*$", re.MULTILINE)
 _STOCK_CODE_RE = re.compile(
     r"(?<![A-Z0-9])((?:(?:[03468]\d{5})(?:\.(?:SH|SZ|BJ))?)|(?:\d{5}\.HK))(?![A-Z0-9])",
     re.IGNORECASE,
@@ -44,8 +43,10 @@ def extract_stock_symbols(markdown: str) -> list[str]:
     symbols: list[str] = []
     seen: set[str] = set()
 
-    for table_match in _TABLE_LINE_RE.finditer(markdown):
-        for code_match in _STOCK_CODE_RE.finditer(table_match.group(0)):
+    for line in markdown.splitlines():
+        if not _looks_like_table_row(line):
+            continue
+        for code_match in _STOCK_CODE_RE.finditer(line):
             symbol = _normalize_symbol(code_match.group(1))
             if symbol is None or symbol in seen:
                 continue
@@ -653,7 +654,10 @@ def _to_baostock_code(symbol: str) -> str:
 
 def _looks_like_table_row(line: str) -> bool:
     stripped = line.strip()
-    return stripped.startswith("|") and stripped.endswith("|") and stripped.count("|") >= 2
+    if "|" not in stripped:
+        return False
+    cells = _split_table_cells(stripped)
+    return len(cells) >= 2 and any(cell for cell in cells)
 
 
 def _looks_like_table_separator(line: str) -> bool:

@@ -103,6 +103,7 @@ Bilibili 视频转文字工具：自动下载音频、语音转录、生成 Mark
 ├── scripts/              # 辅助脚本
 ├── config.toml.example   # 配置模板
 ├── summary_presets.toml  # LLM 总结 Prompt 预设
+├── context.toml          # 按 UP 主注入的总结术语上下文（可选）
 └── docker/               # Nginx 前端静态服务配置
 ```
 

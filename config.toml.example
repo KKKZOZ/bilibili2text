@@ -64,6 +64,9 @@ profile = "bailian-main"
 enable_thinking = true
 preset = "timeline_merge"
 presets_file = "summary_presets.toml"
+# 可选：按 UP 主注入术语纠错上下文，默认读取项目根目录的 context.toml。
+# 文件不存在时会自动跳过，不影响总结流程。
+context_file = "context.toml"
 
 [summarize.profiles.bailian-main]
 provider = "bailian"

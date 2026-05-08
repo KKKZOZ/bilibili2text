@@ -83,6 +83,7 @@ def test_convert_table_markdown_uses_stock_card_renderer(
 
     def fake_render(html_path, output_path, **kwargs):
         assert 'class="stock-table-cards"' in html_path.read_text(encoding="utf-8")
+        captured["width"] = kwargs["width"]
         output_path.write_bytes(b"png")
 
     monkeypatch.setattr(converter, "_render_html_to_png", fake_render)
@@ -98,3 +99,49 @@ def test_convert_table_markdown_uses_stock_card_renderer(
     assert result == png_path.resolve()
     assert png_path.exists()
     assert captured["as_of_date"] == "2026-02-05 21:00:00"
+    assert captured["width"] == 720
+
+
+def test_convert_plain_table_markdown_keeps_wide_table_viewport(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    md_path = tmp_path / "summary_table.md"
+    png_path = tmp_path / "summary_table.png"
+    md_path.write_text(
+        "| 列1 | 列2 |\n| --- | --- |\n| A | B |\n",
+        encoding="utf-8",
+    )
+
+    converter = MarkdownToPngConverter()
+    captured = {}
+
+    monkeypatch.setattr(
+        converter,
+        "_resolve_css_href",
+        lambda css_url: "fallback.css",
+    )
+    monkeypatch.setattr(
+        "b2t.converter.md_to_png.build_stock_table_cards_html",
+        lambda markdown, as_of_date=None: "",
+    )
+    monkeypatch.setattr(
+        converter,
+        "_run_pandoc",
+        lambda path: "<table><tbody><tr><td>A</td><td>B</td></tr></tbody></table>",
+    )
+
+    def fake_render(html_path, output_path, **kwargs):
+        captured["width"] = kwargs["width"]
+        output_path.write_bytes(b"png")
+
+    monkeypatch.setattr(converter, "_render_html_to_png", fake_render)
+
+    converter.convert(
+        md_path,
+        png_path,
+        is_table=True,
+        keep_html=True,
+    )
+
+    assert captured["width"] == 1200

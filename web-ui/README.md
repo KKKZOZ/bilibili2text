@@ -13,6 +13,7 @@ The Web UI uses the following files from the project root:
 
 - `config.toml`
 - `summary_presets.toml`
+- `context.toml` (optional, used to inject author-specific stock/alias context into the summary prompt)
 
 First, copy the configuration template in the project root:
 
