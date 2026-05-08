@@ -2,9 +2,14 @@
 
 from datetime import datetime
 import logging
+from pathlib import Path
 
+from b2t.config import resolve_summarize_model_profile, resolve_summary_preset_name
+from b2t.history import infer_run_id
+from b2t.storage.base import StoredArtifact
 from b2t.storage import StorageBackend
 
+from backend.dependencies import get_history_db
 from backend.jobs import _append_job_log, _update_job
 from backend.logging_config import JOB_LOG_DATE_FORMAT, _redact_text
 from backend.postprocess import postprocess_scheduler
@@ -17,6 +22,102 @@ from backend.services import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _storage_parent_key(storage_key: str) -> str:
+    normalized = storage_key.replace("\\", "/").strip("/")
+    if "/" not in normalized:
+        return ""
+    return normalized.rsplit("/", 1)[0]
+
+
+def _resolve_requested_summary_selection(
+    *,
+    config,
+    summary_preset: str | None,
+    summary_profile: str | None,
+) -> tuple[str, str]:
+    resolved_preset = resolve_summary_preset_name(
+        summarize=config.summarize,
+        summary_presets=config.summary_presets,
+        override=(summary_preset or "").strip() or None,
+    )
+    resolved_profile = (summary_profile or "").strip() or config.summarize.profile.strip()
+    resolve_summarize_model_profile(
+        config.summarize,
+        override=resolved_profile,
+    )
+    return resolved_preset, resolved_profile
+
+
+def _find_existing_summary_results_for_selection(
+    *,
+    bvid: str,
+    existing_results: dict[str, StoredArtifact],
+    resolved_preset: str,
+    resolved_profile: str,
+) -> tuple[str, dict[str, StoredArtifact]] | None:
+    markdown_artifact = existing_results.get("markdown")
+    if markdown_artifact is None:
+        return None
+
+    run_id = infer_run_id(markdown_artifact.storage_key, bvid=bvid)
+    detail = get_history_db().get_run_detail(run_id)
+    if detail is None:
+        return None
+
+    matched_summary = next(
+        (
+            artifact
+            for artifact in reversed(detail.artifacts)
+            if artifact.kind == "summary"
+            and artifact.summary_preset.strip() == resolved_preset
+            and artifact.summary_profile.strip() == resolved_profile
+        ),
+        None,
+    )
+    if matched_summary is None:
+        return None
+
+    summary_stem = Path(matched_summary.filename).stem
+    expected_filenames = {
+        matched_summary.filename,
+        f"{summary_stem}.txt",
+        f"{summary_stem}_fancy.html",
+        f"{summary_stem}_table.md",
+        f"{summary_stem}_table.pdf",
+        f"{summary_stem}.png",
+        f"{summary_stem}_no_table.png",
+        f"{summary_stem}_table.png",
+    }
+    parent_key = _storage_parent_key(matched_summary.storage_key)
+    summary_kinds = {
+        "summary",
+        "summary_text",
+        "summary_fancy_html",
+        "summary_png",
+        "summary_no_table_png",
+        "summary_table_md",
+        "summary_table_png",
+        "summary_table_pdf",
+    }
+
+    selected_results = dict(existing_results)
+    for artifact in detail.artifacts:
+        if artifact.kind not in summary_kinds:
+            continue
+        if artifact.storage_key != matched_summary.storage_key:
+            if _storage_parent_key(artifact.storage_key) != parent_key:
+                continue
+            if artifact.filename not in expected_filenames:
+                continue
+        selected_results[artifact.kind] = StoredArtifact(
+            filename=artifact.filename,
+            storage_key=artifact.storage_key,
+            backend=artifact.backend,
+        )
+
+    return run_id, selected_results
 
 
 class ExistingTranscriptionService:
@@ -117,6 +218,49 @@ class ExistingTranscriptionService:
         summary_prompt_template: str | None,
         auto_generate_fancy_html: bool,
     ) -> bool:
+        resolved_preset, resolved_profile = _resolve_requested_summary_selection(
+            config=config,
+            summary_preset=summary_preset,
+            summary_profile=summary_profile,
+        )
+        existing_summary_match = _find_existing_summary_results_for_selection(
+            bvid=bvid,
+            existing_results=existing_results,
+            resolved_preset=resolved_preset,
+            resolved_profile=resolved_profile,
+        )
+        if existing_summary_match is not None:
+            run_id, matched_results = existing_summary_match
+            try:
+                success_fields = _build_success_download_fields(matched_results)
+            except ValueError:
+                return False
+
+            all_artifacts = _collect_all_artifacts_for_bvid(
+                storage_backend,
+                bvid,
+                matched_results,
+            )
+            notice = (
+                f"检测到 {bvid} 已存在使用模型配置 {resolved_profile} "
+                f"与总结模板 {resolved_preset} 生成的总结，已直接返回历史文件。"
+            )
+            _update_job(
+                job_id,
+                status="succeeded",
+                stage="completed",
+                stage_label="已命中历史总结结果",
+                progress=100,
+                already_transcribed=True,
+                notice=notice,
+                all_downloads=_build_all_download_items(all_artifacts),
+                error=None,
+                **success_fields,
+            )
+            _append_info(job_id, notice)
+            postprocess_scheduler.trigger_rag_index(run_id, config)
+            return True
+
         _update_job(
             job_id,
             status="running",

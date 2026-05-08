@@ -145,3 +145,111 @@ def test_convert_plain_table_markdown_keeps_wide_table_viewport(
     )
 
     assert captured["width"] == 1200
+
+
+def test_convert_mixed_markdown_enhances_stock_tables(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    md_path = tmp_path / "summary.md"
+    png_path = tmp_path / "summary.png"
+    md_path.write_text(
+        "# AI Summary\n\n"
+        "开头正文。\n\n"
+        "| 股票代码 | 股票名称 | 逻辑 |\n"
+        "| --- | --- | --- |\n"
+        "| 600000.SH | 浦发银行 | 示例 |\n\n"
+        "结尾正文。\n",
+        encoding="utf-8",
+    )
+
+    converter = MarkdownToPngConverter()
+    monkeypatch.setattr(converter, "_resolve_css_href", lambda css_url: "fallback.css")
+
+    pandoc_inputs: list[str] = []
+
+    def fake_run_pandoc_markdown(markdown, *, cwd):
+        pandoc_inputs.append(markdown)
+        compact = markdown.strip().replace("\n", " ")
+        return f"<section>{compact}</section>" if compact else ""
+
+    captured = {}
+
+    def fake_build_stock_table_cards_html(markdown, as_of_date=None):
+        captured["table_markdown"] = markdown
+        captured["as_of_date"] = as_of_date
+        return '<section class="stock-table-cards">cards</section>'
+
+    def fake_render(html_path, output_path, **kwargs):
+        captured["html"] = html_path.read_text(encoding="utf-8")
+        output_path.write_bytes(b"png")
+
+    monkeypatch.setattr(converter, "_run_pandoc_markdown", fake_run_pandoc_markdown)
+    monkeypatch.setattr(
+        "b2t.converter.md_to_png.build_stock_table_cards_html",
+        fake_build_stock_table_cards_html,
+    )
+    monkeypatch.setattr(converter, "_render_html_to_png", fake_render)
+
+    converter.convert(
+        md_path,
+        png_path,
+        is_table=False,
+        keep_html=True,
+        enhance_stock_tables=True,
+        as_of_date="2026-02-05 21:00:00",
+    )
+
+    assert png_path.exists()
+    assert captured["as_of_date"] == "2026-02-05 21:00:00"
+    assert "| 600000.SH | 浦发银行 | 示例 |" in captured["table_markdown"]
+    assert len(pandoc_inputs) == 2
+    assert "开头正文。" in pandoc_inputs[0]
+    assert "结尾正文。" in pandoc_inputs[1]
+    assert 'class="stock-table-cards"' in captured["html"]
+
+
+def test_convert_mixed_markdown_skips_non_stock_tables(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    md_path = tmp_path / "summary.md"
+    png_path = tmp_path / "summary.png"
+    md_path.write_text(
+        "# AI Summary\n\n"
+        "| 列1 | 列2 |\n"
+        "| --- | --- |\n"
+        "| A | B |\n",
+        encoding="utf-8",
+    )
+
+    converter = MarkdownToPngConverter()
+    monkeypatch.setattr(converter, "_resolve_css_href", lambda css_url: "fallback.css")
+    captured = {}
+
+    def fake_run_pandoc_markdown(markdown, *, cwd):
+        captured["markdown"] = markdown
+        return "<section>plain</section>"
+
+    def fake_render(html_path, output_path, **kwargs):
+        captured["html"] = html_path.read_text(encoding="utf-8")
+        output_path.write_bytes(b"png")
+
+    monkeypatch.setattr(converter, "_run_pandoc_markdown", fake_run_pandoc_markdown)
+    monkeypatch.setattr(
+        "b2t.converter.md_to_png.build_stock_table_cards_html",
+        lambda markdown, as_of_date=None: '<section class="stock-table-cards">cards</section>',
+    )
+    monkeypatch.setattr(converter, "_render_html_to_png", fake_render)
+
+    converter.convert(
+        md_path,
+        png_path,
+        is_table=False,
+        keep_html=True,
+        enhance_stock_tables=True,
+    )
+
+    assert png_path.exists()
+    assert "| A | B |" in captured["markdown"]
+    assert 'class="stock-table-cards"' not in captured["html"]

@@ -234,8 +234,16 @@ def convert_artifact(payload: ConvertRequest) -> ConvertResponse:
                 target_format == ConversionFormat.PNG
                 and source_kind == "summary_table_md"
             )
+            pdf_is_table = (
+                target_format == ConversionFormat.PDF
+                and source_kind == "summary_table_md"
+            )
             convert_options = {}
-            if png_is_table:
+            if target_format == ConversionFormat.PNG and source_kind == "summary":
+                convert_options["dpr"] = 4
+            if target_format == ConversionFormat.PDF and source_kind == "summary":
+                convert_options["enhance_stock_tables"] = True
+            if png_is_table or pdf_is_table:
                 pubdate = _lookup_artifact_pubdate(artifact.storage_key)
                 if pubdate:
                     convert_options["as_of_date"] = pubdate
@@ -269,7 +277,7 @@ def convert_artifact(payload: ConvertRequest) -> ConvertResponse:
                 source_path,
                 target_format,
                 output_path=explicit_output_path,
-                is_table=png_is_table,
+                is_table=(png_is_table or pdf_is_table),
                 **convert_options,
             )
         except RuntimeError as exc:

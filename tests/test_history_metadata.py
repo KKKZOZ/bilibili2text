@@ -125,6 +125,47 @@ def test_record_pipeline_run_merge_keeps_old_and_new_summary(tmp_path) -> None:
     assert ("financial_blog", "profile_b") in metadata_pairs
 
 
+def test_record_pipeline_run_merge_preserves_existing_author_and_pubdate(tmp_path) -> None:
+    db = HistoryDB(tmp_path)
+    bvid = "BV1AB411c7mD"
+    markdown_key = "BV1AB411c7mD-11111111/BV1AB411c7mD_demo_transcription.md"
+
+    first = _mock_results(
+        markdown_key=markdown_key,
+        summary_key="BV1AB411c7mD-22222222/BV1AB411c7mD_demo_summary.md",
+    )
+    second = _mock_results(
+        markdown_key=markdown_key,
+        summary_key="BV1AB411c7mD-33333333/BV1AB411c7mD_demo_summary.md",
+    )
+
+    run_id = record_pipeline_run(
+        db=db,
+        bvid=bvid,
+        results=first,
+        author="测试UP主",
+        pubdate="2026-05-01 12:34:56",
+        merge_existing_artifacts=True,
+    )
+    assert run_id is not None
+
+    record_pipeline_run(
+        db=db,
+        bvid=bvid,
+        results=second,
+        author="",
+        pubdate="",
+        summary_preset="financial_blog",
+        summary_profile="profile_b",
+        merge_existing_artifacts=True,
+    )
+
+    detail = db.get_run_detail(run_id)
+    assert detail is not None
+    assert detail.author == "测试UP主"
+    assert detail.pubdate == "2026-05-01 12:34:56"
+
+
 def test_list_runs_supports_search_by_author(tmp_path) -> None:
     db = HistoryDB(tmp_path)
     db.record_run(

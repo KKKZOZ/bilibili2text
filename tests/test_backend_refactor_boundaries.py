@@ -2,14 +2,16 @@ from pathlib import Path
 import sys
 from contextlib import contextmanager
 from typing import Iterator
+import tempfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "web-ui"))
 
 from b2t.storage import StoredArtifact
 from b2t.converter.converter import ConversionFormat
-from backend.routes.download import _find_precomputed_conversion
+from backend.routes.download import _find_precomputed_conversion, convert_artifact
 from backend.download_registry import DownloadRegistry, media_type_for_filename
 from backend.job_store import JobPatch, JobRepository
+from backend.schemas import ConvertRequest
 
 
 def test_job_repository_create_patch_cancel() -> None:
@@ -121,3 +123,138 @@ def test_find_precomputed_conversion_uses_summary_no_table_png(
         storage_key="runs/BV123_summary_no_table.png",
         backend="local",
     )
+
+
+def test_convert_artifact_uses_higher_dpr_only_for_summary_png(monkeypatch) -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_root = Path(temp_dir)
+        summary_path = temp_root / "BV123_summary.md"
+        summary_path.write_text("# summary\n", encoding="utf-8")
+        table_path = temp_root / "BV123_summary_table.md"
+        table_path.write_text("| code |\n| --- |\n| 600000.SH |\n", encoding="utf-8")
+
+        summary_artifact = StoredArtifact(
+            filename=summary_path.name,
+            storage_key=str(summary_path),
+            backend="local",
+        )
+        table_artifact = StoredArtifact(
+            filename=table_path.name,
+            storage_key=str(table_path),
+            backend="local",
+        )
+
+        captured: list[dict[str, object]] = []
+
+        class FakeStorage:
+            @contextmanager
+            def open_stream(self, storage_key: str) -> Iterator[object]:
+                with open(storage_key, "rb") as handle:
+                    yield handle
+
+            def store_file(self, local_path: Path, *, object_key: str) -> StoredArtifact:
+                return StoredArtifact(
+                    filename=Path(local_path).name,
+                    storage_key=object_key,
+                    backend="local",
+                )
+
+        def fake_convert_file(input_path, target_format, output_path=None, **options):
+            output = Path(output_path or Path(input_path).with_suffix(".png"))
+            output.write_bytes(b"png")
+            captured.append(
+                {
+                    "name": Path(input_path).name,
+                    "target_format": target_format,
+                    "options": options,
+                }
+            )
+            return output
+
+        monkeypatch.setattr(
+            "backend.routes.download.download_registry.get_artifact",
+            lambda download_id: summary_artifact if download_id == "summary" else table_artifact,
+        )
+        monkeypatch.setattr("backend.routes.download.get_storage_backend", FakeStorage)
+        monkeypatch.setattr("backend.routes.download._find_precomputed_conversion", lambda **kwargs: None)
+        monkeypatch.setattr("backend.routes.download.convert_file", fake_convert_file)
+        monkeypatch.setattr("backend.routes.download._lookup_artifact_pubdate", lambda storage_key: "2026-02-05 21:00:00")
+
+        convert_artifact(ConvertRequest(download_id="summary", target_format="png"))
+        convert_artifact(ConvertRequest(download_id="table", target_format="png"))
+
+        assert captured[0]["name"] == "BV123_summary.md"
+        assert captured[0]["options"]["dpr"] == 4
+        assert captured[0]["options"]["is_table"] is False
+
+        assert captured[1]["name"] == "BV123_summary_table.md"
+        assert "dpr" not in captured[1]["options"]
+        assert captured[1]["options"]["is_table"] is True
+        assert captured[1]["options"]["as_of_date"] == "2026-02-05 21:00:00"
+
+
+def test_convert_artifact_uses_stock_status_options_for_summary_pdf(monkeypatch) -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_root = Path(temp_dir)
+        summary_path = temp_root / "BV123_summary.md"
+        summary_path.write_text("# summary\n", encoding="utf-8")
+        table_path = temp_root / "BV123_summary_table.md"
+        table_path.write_text("| code |\n| --- |\n| 600000.SH |\n", encoding="utf-8")
+
+        summary_artifact = StoredArtifact(
+            filename=summary_path.name,
+            storage_key=str(summary_path),
+            backend="local",
+        )
+        table_artifact = StoredArtifact(
+            filename=table_path.name,
+            storage_key=str(table_path),
+            backend="local",
+        )
+
+        captured: list[dict[str, object]] = []
+
+        class FakeStorage:
+            @contextmanager
+            def open_stream(self, storage_key: str) -> Iterator[object]:
+                with open(storage_key, "rb") as handle:
+                    yield handle
+
+            def store_file(self, local_path: Path, *, object_key: str) -> StoredArtifact:
+                return StoredArtifact(
+                    filename=Path(local_path).name,
+                    storage_key=object_key,
+                    backend="local",
+                )
+
+        def fake_convert_file(input_path, target_format, output_path=None, **options):
+            output = Path(output_path or Path(input_path).with_suffix(".pdf"))
+            output.write_bytes(b"pdf")
+            captured.append(
+                {
+                    "name": Path(input_path).name,
+                    "target_format": target_format,
+                    "options": options,
+                }
+            )
+            return output
+
+        monkeypatch.setattr(
+            "backend.routes.download.download_registry.get_artifact",
+            lambda download_id: summary_artifact if download_id == "summary" else table_artifact,
+        )
+        monkeypatch.setattr("backend.routes.download.get_storage_backend", FakeStorage)
+        monkeypatch.setattr("backend.routes.download._find_precomputed_conversion", lambda **kwargs: None)
+        monkeypatch.setattr("backend.routes.download.convert_file", fake_convert_file)
+        monkeypatch.setattr("backend.routes.download._lookup_artifact_pubdate", lambda storage_key: "2026-02-05 21:00:00")
+
+        convert_artifact(ConvertRequest(download_id="summary", target_format="pdf"))
+        convert_artifact(ConvertRequest(download_id="table", target_format="pdf"))
+
+        assert captured[0]["name"] == "BV123_summary.md"
+        assert captured[0]["options"]["enhance_stock_tables"] is True
+        assert captured[0]["options"]["is_table"] is False
+
+        assert captured[1]["name"] == "BV123_summary_table.md"
+        assert captured[1]["options"]["is_table"] is True
+        assert captured[1]["options"]["as_of_date"] == "2026-02-05 21:00:00"

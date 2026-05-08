@@ -12,7 +12,7 @@ import threading
 from urllib.error import URLError
 from urllib.request import urlopen
 
-from b2t.stock_status import build_stock_table_cards_html
+from b2t.stock_status import build_stock_table_cards_html, extract_stock_symbols
 from playwright.sync_api import sync_playwright
 
 logger = logging.getLogger(__name__)
@@ -493,6 +493,7 @@ class MarkdownToPngConverter:
                 - max_full_page_height: Max CSS height for single full_page screenshot
                 - tile_height: CSS height per tile for tiled screenshots
                 - as_of_date: Date for table stock status lookup
+                - enhance_stock_tables: Whether to enhance stock tables inside mixed Markdown
 
         Returns:
             Output PNG file path
@@ -516,13 +517,21 @@ class MarkdownToPngConverter:
         tile_height = options.get("tile_height", 1800)
         reuse_browser = options.get("reuse_browser", True)
         as_of_date = options.get("as_of_date")
+        enhance_stock_tables = options.get("enhance_stock_tables", False)
 
         # Generate intermediate HTML
         html_path = output_path.with_suffix(".html")
         body_html = (
             self._run_table_cards(input_path, as_of_date=as_of_date)
             if is_table
-            else self._run_pandoc(input_path)
+            else (
+                self._run_markdown_with_stock_table_cards(
+                    input_path,
+                    as_of_date=as_of_date,
+                )
+                if enhance_stock_tables
+                else self._run_pandoc(input_path)
+            )
         )
         if is_table:
             if STOCK_CARD_MARKER in body_html:
@@ -559,11 +568,13 @@ class MarkdownToPngConverter:
 
     def _run_pandoc(self, md_path: Path) -> str:
         """Convert Markdown to an HTML fragment using pandoc."""
-        if shutil.which("pandoc") is None:
-            raise RuntimeError("pandoc not found, please install pandoc first")
-
         markdown_content = md_path.read_text(encoding="utf-8")
         normalized_content = self._normalize_markdown_for_tables(markdown_content)
+        return self._run_pandoc_markdown(normalized_content, cwd=md_path.parent)
+
+    def _run_pandoc_markdown(self, markdown_content: str, *, cwd: Path) -> str:
+        if shutil.which("pandoc") is None:
+            raise RuntimeError("pandoc not found, please install pandoc first")
 
         try:
             proc = subprocess.run(
@@ -571,8 +582,8 @@ class MarkdownToPngConverter:
                 check=True,
                 capture_output=True,
                 text=True,
-                input=normalized_content,
-                cwd=str(md_path.parent),
+                input=markdown_content,
+                cwd=str(cwd),
             )
             return proc.stdout
         except subprocess.CalledProcessError as exc:
@@ -590,6 +601,54 @@ class MarkdownToPngConverter:
             return cards_html
         return self._run_pandoc(md_path)
 
+    def _run_markdown_with_stock_table_cards(self, md_path: Path, *, as_of_date=None) -> str:
+        markdown_content = md_path.read_text(encoding="utf-8")
+        normalized_content = self._normalize_markdown_for_tables(markdown_content)
+        lines = normalized_content.splitlines()
+        if not lines:
+            return self._run_pandoc_markdown(normalized_content, cwd=md_path.parent)
+
+        fragments: list[str] = []
+        markdown_buffer: list[str] = []
+        index = 0
+
+        while index < len(lines):
+            if self._looks_like_markdown_table_start(lines, index):
+                end = index + 2
+                while end < len(lines) and self._looks_like_markdown_table_row(lines[end]):
+                    end += 1
+                table_markdown = "\n".join(lines[index:end]).strip()
+                if table_markdown and extract_stock_symbols(table_markdown):
+                    cards_html = build_stock_table_cards_html(
+                        table_markdown,
+                        as_of_date=as_of_date,
+                    )
+                    if cards_html:
+                        if markdown_buffer:
+                            fragments.append(
+                                self._run_pandoc_markdown(
+                                    self._join_markdown_lines(markdown_buffer),
+                                    cwd=md_path.parent,
+                                )
+                            )
+                            markdown_buffer = []
+                        fragments.append(cards_html)
+                        index = end
+                        continue
+
+            markdown_buffer.append(lines[index])
+            index += 1
+
+        if markdown_buffer:
+            fragments.append(
+                self._run_pandoc_markdown(
+                    self._join_markdown_lines(markdown_buffer),
+                    cwd=md_path.parent,
+                )
+            )
+
+        return "\n".join(fragment for fragment in fragments if fragment)
+
     def _normalize_markdown_for_tables(self, content: str) -> str:
         """Normalize common full-width table characters before pandoc parsing."""
         trailing_newline = content.endswith("\n")
@@ -606,6 +665,39 @@ class MarkdownToPngConverter:
         if trailing_newline:
             normalized_content += "\n"
         return normalized_content
+
+    def _join_markdown_lines(self, lines: list[str]) -> str:
+        if not lines:
+            return ""
+        return "\n".join(lines) + "\n"
+
+    def _looks_like_markdown_table_start(self, lines: list[str], index: int) -> bool:
+        if index + 1 >= len(lines):
+            return False
+        return self._looks_like_markdown_table_row(
+            lines[index]
+        ) and self._looks_like_markdown_table_separator(lines[index + 1])
+
+    def _looks_like_markdown_table_row(self, line: str) -> bool:
+        stripped = line.strip()
+        if "|" not in stripped:
+            return False
+        cells = self._split_markdown_table_cells(stripped)
+        return len(cells) >= 2 and any(cell for cell in cells)
+
+    def _looks_like_markdown_table_separator(self, line: str) -> bool:
+        if not self._looks_like_markdown_table_row(line):
+            return False
+        cells = self._split_markdown_table_cells(line)
+        return bool(cells) and all(TABLE_DELIMITER_CELL_RE.match(cell.strip()) for cell in cells)
+
+    def _split_markdown_table_cells(self, line: str) -> list[str]:
+        stripped = line.strip()
+        if stripped.startswith("|"):
+            stripped = stripped[1:]
+        if stripped.endswith("|"):
+            stripped = stripped[:-1]
+        return [cell.strip() for cell in stripped.split("|")]
 
     def _looks_like_table_delimiter_line(self, line: str) -> bool:
         text = line.strip()

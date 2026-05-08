@@ -667,6 +667,7 @@ def record_pipeline_run(
         summary_preset=summary_preset,
         summary_profile=summary_profile,
     )
+    existing = None
     if merge_existing_artifacts:
         existing = db.get_run_detail(run_id)
         if existing is not None:
@@ -680,6 +681,10 @@ def record_pipeline_run(
                 seen_storage_keys.add(artifact.storage_key)
                 deduped_artifacts.append(artifact)
             artifacts = deduped_artifacts
+            if not author.strip():
+                author = existing.author
+            if not pubdate.strip():
+                pubdate = existing.pubdate
     has_summary = any(
         artifact.kind
         in {

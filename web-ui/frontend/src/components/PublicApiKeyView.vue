@@ -234,10 +234,7 @@
         </div>
         <h2>API Key 配置</h2>
         <p>
-          语音识别（ASR）需要<strong>阿里云 DashScope</strong> API
-          Key，<strong>必须配置</strong>。 如需使用 DeepSeek 模型进行 LLM
-          总结、知识库问答或 Fancy HTML 生成，可<strong>额外配置</strong>
-          DeepSeek API Key， 然后在转录页面模型下拉框中切换到 DeepSeek 模型。
+          语音识别（ASR）需要<strong>阿里云 DashScope</strong> API Key，<strong>必须配置</strong>。如需使用 DeepSeek 模型进行 LLM 总结、知识库问答或 Fancy HTML 生成，可<strong>额外配置</strong> DeepSeek API Key，然后在转录页面模型下拉框中切换到 DeepSeek 模型。
         </p>
       </header>
 
@@ -494,7 +491,6 @@
     margin: 0;
     color: var(--text-soft);
     line-height: 1.6;
-    max-width: 68ch;
   }
 
   .privacy-notice {

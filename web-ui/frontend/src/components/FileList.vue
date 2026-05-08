@@ -65,10 +65,16 @@
     allowDelete: {
       type: Boolean,
       default: true
+    },
+    requiresApiKey: {
+      type: Boolean,
+      default: false
     }
   })
 
   const emit = defineEmits(['artifactDeleted', 'artifactGenerated'])
+  const LOCAL_API_KEY_KEY = 'b2t.public-api-key'
+  const LOCAL_DEEPSEEK_API_KEY_KEY = 'b2t.public-deepseek-api-key'
 
   const { conversionError, convertAndDownload, isConverting, download } =
     useConversion()
@@ -108,6 +114,14 @@
 
   const getFormatLabel = (format) =>
     formatLabelMap[normalizeFormatKey(format)] || format || '文件'
+
+  const readLocalStorage = (key) => {
+    try {
+      return (window.localStorage.getItem(key) || '').trim()
+    } catch {
+      return ''
+    }
+  }
 
   const resolveSummaryPresetLabel = (presetName) => {
     let effectiveName = (presetName || '').trim()
@@ -554,7 +568,13 @@
           history_run_id: props.historyRunId || null,
           summary_preset: item.presetName || null,
           summary_profile:
-            item.summaryProfile || props.selectedSummaryProfile || null
+            item.summaryProfile || props.selectedSummaryProfile || null,
+          api_key: props.requiresApiKey
+            ? readLocalStorage(LOCAL_API_KEY_KEY) || null
+            : null,
+          deepseek_api_key: props.requiresApiKey
+            ? readLocalStorage(LOCAL_DEEPSEEK_API_KEY_KEY) || null
+            : null
         })
       })
       const data = await resp.json()

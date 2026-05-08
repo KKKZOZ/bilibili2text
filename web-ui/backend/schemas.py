@@ -234,6 +234,14 @@ class GenerateFancyHtmlRequest(BaseModel):
         default=None,
         description="生成 fancy HTML 使用的 profile；为空时使用后端默认",
     )
+    api_key: str | None = Field(
+        default=None,
+        description="open-public 模式下用户自带的阿里云 DashScope API Key",
+    )
+    deepseek_api_key: str | None = Field(
+        default=None,
+        description="open-public 模式下用户自带的 DeepSeek API Key（可选，用于 Fancy HTML）",
+    )
 
 
 class GenerateFancyHtmlResponse(BaseModel):

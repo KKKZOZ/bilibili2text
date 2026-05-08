@@ -382,7 +382,11 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           download_id: downloadId,
-          history_run_id: historyDetail.value?.run_id || null
+          history_run_id: historyDetail.value?.run_id || null,
+          api_key: props.requiresApiKey ? getLocalApiKey() || null : null,
+          deepseek_api_key: props.requiresApiKey
+            ? getLocalDeepseekApiKey() || null
+            : null
         })
       })
       const data = await resp.json()
@@ -896,6 +900,7 @@
           :bvid="historyDetail.bvid"
           :history-run-id="historyDetail.run_id"
           :allow-delete="allowDelete"
+          :requires-api-key="requiresApiKey"
           title="文件列表"
           :filter-kinds="
             historyDetail.record_type === 'rag_query'

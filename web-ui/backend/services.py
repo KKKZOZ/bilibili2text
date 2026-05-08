@@ -267,6 +267,9 @@ def _generate_summary_png_exports(
             summary_path,
             summary_png_path,
             is_table=False,
+            as_of_date=as_of_date,
+            enhance_stock_tables=True,
+            dpr=4,
         )
         generated["summary_png"] = _store_sibling_artifact(
             storage_backend=storage_backend,

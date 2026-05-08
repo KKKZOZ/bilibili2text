@@ -55,7 +55,11 @@
       const resp = await fetch('/api/summary/fancy-html', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ download_id: answerDownloadId.value })
+        body: JSON.stringify({
+          download_id: answerDownloadId.value,
+          api_key: readLocalStorage(LOCAL_API_KEY_KEY) || null,
+          deepseek_api_key: readLocalStorage(LOCAL_DEEPSEEK_API_KEY_KEY) || null
+        })
       })
       const data = await resp.json()
       if (!resp.ok) throw new Error(data.detail || '生成 Fancy HTML 失败')
