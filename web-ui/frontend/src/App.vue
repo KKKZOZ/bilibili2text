@@ -363,7 +363,8 @@
   .shell {
     position: relative;
     min-height: 100vh;
-    padding: clamp(24px, 4vw, 48px);
+    padding: clamp(12px, 2vw, 24px) clamp(24px, 4vw, 48px)
+      clamp(24px, 4vw, 48px);
     overflow: hidden;
   }
 

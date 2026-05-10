@@ -14,8 +14,7 @@
     CheckCircle2,
     FileAudio2,
     Link2,
-    LoaderCircle,
-    Sparkles
+    LoaderCircle
   } from 'lucide-vue-next'
   import ProgressPanel from './ProgressPanel.vue'
   import FileList from './FileList.vue'
@@ -670,10 +669,6 @@
     <section class="layout">
       <article class="panel panel-main">
         <header class="header">
-          <div class="badge">
-            <Sparkles :size="14" />
-            <span>AI Workflow</span>
-          </div>
           <h1>bilibili-to-text</h1>
           <p>
             {{
@@ -787,7 +782,6 @@
 
           <div v-if="enableSummary" class="process-summary-config">
             <div class="process-summary-head">
-              <p class="process-summary-kicker">Summary Config</p>
               <h3>总结参数</h3>
               <p>
                 选择模型配置与总结模板，生成更符合用途的总结内容。
@@ -818,12 +812,13 @@
                   >
                 </label>
                 <p class="preset-hint">
-                  不阻塞总结文件展示；总结可下载后，Fancy HTML
-                  会在后台补生成并自动出现在文件列表中。
+                  总结文件会先显示，Fancy HTML 稍后在后台生成并自动加入列表。
                 </p>
               </div>
 
-              <div class="summary-preset process-summary-field">
+              <div
+                class="summary-preset process-summary-field process-summary-inline-field"
+              >
                 <label for="summary-profile-select">模型配置</label>
                 <select
                   id="summary-profile-select"
@@ -868,7 +863,9 @@
                 </p>
               </div>
 
-              <div class="summary-preset process-summary-field">
+              <div
+                class="summary-preset process-summary-field process-summary-inline-field"
+              >
                 <label for="summary-preset-select">总结模板</label>
                 <select
                   id="summary-preset-select"
@@ -1094,7 +1091,7 @@
     max-width: 1160px;
     margin: 0 auto;
     display: grid;
-    grid-template-columns: minmax(0, 1.12fr) minmax(0, 0.88fr);
+    grid-template-columns: minmax(0, 1.16fr) minmax(320px, 0.84fr);
     gap: 20px;
   }
 
@@ -1109,7 +1106,7 @@
   /* ─── Panel variants ─────────────────────────────────────────── */
 
   .panel-main {
-    padding: 40px;
+    padding: 24px 40px 40px;
   }
 
   .panel-download {
@@ -1125,7 +1122,7 @@
   /* ─── Header ─────────────────────────────────────────────────── */
 
   .header h1 {
-    margin: 18px 0 10px;
+    margin: 8px 0 10px;
     font-size: clamp(1.8rem, 3vw, 2.5rem);
     font-weight: 800;
     line-height: 1.1;
@@ -1138,28 +1135,6 @@
     color: var(--text-soft);
     line-height: 1.65;
     font-size: 1.05rem;
-  }
-
-  /* ─── Badge ──────────────────────────────────────────────────── */
-
-  .badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 14px;
-    border-radius: 999px;
-    border: 1px solid rgba(167, 243, 208, 0.6);
-    background: linear-gradient(
-      140deg,
-      rgba(240, 253, 250, 0.8),
-      rgba(236, 254, 255, 0.8)
-    );
-    backdrop-filter: blur(8px);
-    color: #0f766e;
-    font-size: 0.76rem;
-    font-weight: 800;
-    text-transform: uppercase;
-    letter-spacing: 0.12em;
   }
 
   /* ─── Hero pills ─────────────────────────────────────────────── */
@@ -1401,15 +1376,6 @@
     gap: 6px;
   }
 
-  .process-summary-kicker {
-    margin: 0;
-    font-size: 0.78rem;
-    font-weight: 800;
-    letter-spacing: 0.08em;
-    color: #0284c7;
-    text-transform: uppercase;
-  }
-
   .process-summary-head h3 {
     margin: 0;
     font-size: 1.15rem;
@@ -1434,6 +1400,13 @@
     gap: 8px;
   }
 
+  .process-summary-inline-field {
+    grid-template-columns: max-content minmax(0, 1fr);
+    column-gap: 14px;
+    row-gap: 8px;
+    align-items: center;
+  }
+
   .process-summary-toggle {
     grid-column: 1 / -1;
   }
@@ -1444,8 +1417,14 @@
     color: #334155;
   }
 
+  .process-summary-inline-field .preset-hint {
+    grid-column: 2 / 3;
+  }
+
   .process-preset-select {
-    min-height: 50px;
+    min-height: 42px;
+    padding-inline: 14px;
+    font-size: 0.9rem;
     border-color: #cbd5e1;
     background: linear-gradient(
       145deg,
@@ -1615,6 +1594,14 @@
 
     .process-summary-config {
       padding: 18px;
+    }
+
+    .process-summary-inline-field {
+      grid-template-columns: 1fr;
+    }
+
+    .process-summary-inline-field .preset-hint {
+      grid-column: 1 / 2;
     }
 
     .log-view {
