@@ -82,7 +82,9 @@ def _find_run_ids(db_path: Path, bvid: str) -> list[str]:
     return [str(row["run_id"]) for row in rows]
 
 
-def _history_detail_artifacts(history_db: HistoryDB, run_ids: list[str]) -> tuple[str, list[StoredArtifact]]:
+def _history_detail_artifacts(
+    history_db: HistoryDB, run_ids: list[str]
+) -> tuple[str, list[StoredArtifact]]:
     bvid = ""
     artifacts: list[StoredArtifact] = []
     for run_id in run_ids:
@@ -151,7 +153,9 @@ def _build_plan(
     if bvid:
         try:
             storage_backend = create_storage_backend(config)
-            artifacts.extend(storage_backend.list_existing_transcription_artifacts(bvid))
+            artifacts.extend(
+                storage_backend.list_existing_transcription_artifacts(bvid)
+            )
         except Exception as exc:
             print(f"Warning: failed to list storage artifacts for {bvid}: {exc}")
 
@@ -264,7 +268,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Delete records and files by BV id, history run_id, or history URL."
     )
-    parser.add_argument("target", help="BV id, history run_id, or URL containing #/history/<run_id>")
+    parser.add_argument(
+        "target", help="BV id, history run_id, or URL containing #/history/<run_id>"
+    )
     parser.add_argument(
         "--config",
         help="Path to config.toml. Defaults to B2T_CONFIG or ./config.toml.",

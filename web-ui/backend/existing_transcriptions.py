@@ -42,7 +42,9 @@ def _resolve_requested_summary_selection(
         summary_presets=config.summary_presets,
         override=(summary_preset or "").strip() or None,
     )
-    resolved_profile = (summary_profile or "").strip() or config.summarize.profile.strip()
+    resolved_profile = (
+        summary_profile or ""
+    ).strip() or config.summarize.profile.strip()
     resolve_summarize_model_profile(
         config.summarize,
         override=resolved_profile,

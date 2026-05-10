@@ -216,10 +216,7 @@ def test_convert_mixed_markdown_skips_non_stock_tables(
     md_path = tmp_path / "summary.md"
     png_path = tmp_path / "summary.png"
     md_path.write_text(
-        "# AI Summary\n\n"
-        "| 列1 | 列2 |\n"
-        "| --- | --- |\n"
-        "| A | B |\n",
+        "# AI Summary\n\n| 列1 | 列2 |\n| --- | --- |\n| A | B |\n",
         encoding="utf-8",
     )
 
@@ -238,7 +235,9 @@ def test_convert_mixed_markdown_skips_non_stock_tables(
     monkeypatch.setattr(converter, "_run_pandoc_markdown", fake_run_pandoc_markdown)
     monkeypatch.setattr(
         "b2t.converter.md_to_png.build_stock_table_cards_html",
-        lambda markdown, as_of_date=None: '<section class="stock-table-cards">cards</section>',
+        lambda markdown, as_of_date=None: (
+            '<section class="stock-table-cards">cards</section>'
+        ),
     )
     monkeypatch.setattr(converter, "_render_html_to_png", fake_render)
 

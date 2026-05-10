@@ -92,7 +92,9 @@ def test_build_stock_table_cards_html_supports_tables_without_outer_pipes(
 
     monkeypatch.setattr(
         "b2t.stock_status.fetch_stock_daily_status",
-        lambda symbols, **kwargs: [status] if symbols == ["688111.SH", "00981.HK"] else [],
+        lambda symbols, **kwargs: (
+            [status] if symbols == ["688111.SH", "00981.HK"] else []
+        ),
     )
 
     html = build_stock_table_cards_html(markdown, as_of_date="2026-05-06 15:00:00")
@@ -178,9 +180,13 @@ def test_fetch_stock_daily_status_uses_as_of_date(monkeypatch) -> None:
         captured["as_of_date"] = as_of_date
         return None
 
-    monkeypatch.setattr("b2t.stock_status._fetch_yfinance_status_for_symbol", fake_fetch)
+    monkeypatch.setattr(
+        "b2t.stock_status._fetch_yfinance_status_for_symbol", fake_fetch
+    )
 
-    assert fetch_stock_daily_status(["600000.SH"], as_of_date="2026-02-05 21:00:00") == []
+    assert (
+        fetch_stock_daily_status(["600000.SH"], as_of_date="2026-02-05 21:00:00") == []
+    )
     assert captured["symbol"] == "600000.SH"
     assert str(captured["as_of_date"]) == "2026-02-05"
 
@@ -206,7 +212,9 @@ def test_fetch_stock_daily_status_hides_stale_a_share_after_market_close(
         lambda symbol, as_of_date: status,
     )
 
-    assert fetch_stock_daily_status(["600000.SH"], as_of_date="2026-05-06 16:30:00") == []
+    assert (
+        fetch_stock_daily_status(["600000.SH"], as_of_date="2026-05-06 16:30:00") == []
+    )
 
 
 def test_fetch_stock_daily_status_keeps_previous_trade_day_before_market_close(
@@ -286,8 +294,12 @@ def test_fetch_status_uses_yfinance_for_all_markets(monkeypatch) -> None:
         fake_yfinance,
     )
 
-    assert _fetch_status_for_symbol("00700.HK", _parse_as_of_date("2026-05-06")) == status
-    assert _fetch_status_for_symbol("600000.SH", _parse_as_of_date("2026-05-06")) == status
+    assert (
+        _fetch_status_for_symbol("00700.HK", _parse_as_of_date("2026-05-06")) == status
+    )
+    assert (
+        _fetch_status_for_symbol("600000.SH", _parse_as_of_date("2026-05-06")) == status
+    )
     assert calls == [
         ("00700.HK", "2026-05-06"),
         ("600000.SH", "2026-05-06"),
@@ -297,8 +309,7 @@ def test_fetch_status_uses_yfinance_for_all_markets(monkeypatch) -> None:
 def test_tickflow_daily_row_uses_latest_row_before_as_of_date() -> None:
     def ts(day: int) -> int:
         return int(
-            datetime(2026, 5, day, tzinfo=ZoneInfo("Asia/Hong_Kong")).timestamp()
-            * 1000
+            datetime(2026, 5, day, tzinfo=ZoneInfo("Asia/Hong_Kong")).timestamp() * 1000
         )
 
     class FakeClient:
@@ -352,7 +363,9 @@ def test_tickflow_row_to_status_calculates_hk_fields() -> None:
     assert status.direction == "up"
 
 
-def test_build_stock_table_cards_html_merges_table_content_and_status(monkeypatch) -> None:
+def test_build_stock_table_cards_html_merges_table_content_and_status(
+    monkeypatch,
+) -> None:
     markdown = """| 股票代码 | 股票名称 | 投资逻辑 |
 | --- | --- | --- |
 | 600000.SH | 浦发银行 | 银行估值修复 |

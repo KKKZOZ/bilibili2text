@@ -101,9 +101,7 @@ def test_convert_raises_if_pandoc_not_found(tmp_path: Path, monkeypatch) -> None
         assert "pandoc not found" in str(exc)
 
 
-def test_convert_summary_pdf_enhances_stock_tables(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_convert_summary_pdf_enhances_stock_tables(tmp_path: Path, monkeypatch) -> None:
     md_path = tmp_path / "summary.md"
     output_path = tmp_path / "summary.pdf"
     md_path.write_text(

@@ -152,7 +152,9 @@ def test_convert_artifact_uses_higher_dpr_only_for_summary_png(monkeypatch) -> N
                 with open(storage_key, "rb") as handle:
                     yield handle
 
-            def store_file(self, local_path: Path, *, object_key: str) -> StoredArtifact:
+            def store_file(
+                self, local_path: Path, *, object_key: str
+            ) -> StoredArtifact:
                 return StoredArtifact(
                     filename=Path(local_path).name,
                     storage_key=object_key,
@@ -173,12 +175,20 @@ def test_convert_artifact_uses_higher_dpr_only_for_summary_png(monkeypatch) -> N
 
         monkeypatch.setattr(
             "backend.routes.download.download_registry.get_artifact",
-            lambda download_id: summary_artifact if download_id == "summary" else table_artifact,
+            lambda download_id: (
+                summary_artifact if download_id == "summary" else table_artifact
+            ),
         )
         monkeypatch.setattr("backend.routes.download.get_storage_backend", FakeStorage)
-        monkeypatch.setattr("backend.routes.download._find_precomputed_conversion", lambda **kwargs: None)
+        monkeypatch.setattr(
+            "backend.routes.download._find_precomputed_conversion",
+            lambda **kwargs: None,
+        )
         monkeypatch.setattr("backend.routes.download.convert_file", fake_convert_file)
-        monkeypatch.setattr("backend.routes.download._lookup_artifact_pubdate", lambda storage_key: "2026-02-05 21:00:00")
+        monkeypatch.setattr(
+            "backend.routes.download._lookup_artifact_pubdate",
+            lambda storage_key: "2026-02-05 21:00:00",
+        )
 
         convert_artifact(ConvertRequest(download_id="summary", target_format="png"))
         convert_artifact(ConvertRequest(download_id="table", target_format="png"))
@@ -193,7 +203,9 @@ def test_convert_artifact_uses_higher_dpr_only_for_summary_png(monkeypatch) -> N
         assert captured[1]["options"]["as_of_date"] == "2026-02-05 21:00:00"
 
 
-def test_convert_artifact_uses_stock_status_options_for_summary_pdf(monkeypatch) -> None:
+def test_convert_artifact_uses_stock_status_options_for_summary_pdf(
+    monkeypatch,
+) -> None:
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_root = Path(temp_dir)
         summary_path = temp_root / "BV123_summary.md"
@@ -220,7 +232,9 @@ def test_convert_artifact_uses_stock_status_options_for_summary_pdf(monkeypatch)
                 with open(storage_key, "rb") as handle:
                     yield handle
 
-            def store_file(self, local_path: Path, *, object_key: str) -> StoredArtifact:
+            def store_file(
+                self, local_path: Path, *, object_key: str
+            ) -> StoredArtifact:
                 return StoredArtifact(
                     filename=Path(local_path).name,
                     storage_key=object_key,
@@ -241,12 +255,20 @@ def test_convert_artifact_uses_stock_status_options_for_summary_pdf(monkeypatch)
 
         monkeypatch.setattr(
             "backend.routes.download.download_registry.get_artifact",
-            lambda download_id: summary_artifact if download_id == "summary" else table_artifact,
+            lambda download_id: (
+                summary_artifact if download_id == "summary" else table_artifact
+            ),
         )
         monkeypatch.setattr("backend.routes.download.get_storage_backend", FakeStorage)
-        monkeypatch.setattr("backend.routes.download._find_precomputed_conversion", lambda **kwargs: None)
+        monkeypatch.setattr(
+            "backend.routes.download._find_precomputed_conversion",
+            lambda **kwargs: None,
+        )
         monkeypatch.setattr("backend.routes.download.convert_file", fake_convert_file)
-        monkeypatch.setattr("backend.routes.download._lookup_artifact_pubdate", lambda storage_key: "2026-02-05 21:00:00")
+        monkeypatch.setattr(
+            "backend.routes.download._lookup_artifact_pubdate",
+            lambda storage_key: "2026-02-05 21:00:00",
+        )
 
         convert_artifact(ConvertRequest(download_id="summary", target_format="pdf"))
         convert_artifact(ConvertRequest(download_id="table", target_format="pdf"))

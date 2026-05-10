@@ -23,6 +23,7 @@ _SUPPORTED_SUFFIXES = {"SH", "SZ", "BJ", "HK"}
 _MARKDOWN_LINK_RE = re.compile(r"!?\[([^\]]*)\]\(([^)]*)\)")
 _MARKDOWN_INLINE_MARKER_RE = re.compile(r"(\*\*|__|`|~~)")
 
+
 @dataclass(frozen=True)
 class StockDailyStatus:
     symbol: str
@@ -214,7 +215,9 @@ def _fetch_baostock_status_for_symbol(
 
     login_result = bs.login()
     if getattr(login_result, "error_code", "") != "0":
-        logger.warning("baostock login failed: %s", getattr(login_result, "error_msg", ""))
+        logger.warning(
+            "baostock login failed: %s", getattr(login_result, "error_msg", "")
+        )
         return None
 
     try:
@@ -359,7 +362,11 @@ def _baostock_row_to_status(
 
     if _is_blank(change) and not _is_blank(close) and not _is_blank(previous_close):
         change = _to_float(close) - _to_float(previous_close)
-    if _is_blank(pct_change) and not _is_blank(change) and not _is_blank(previous_close):
+    if (
+        _is_blank(pct_change)
+        and not _is_blank(change)
+        and not _is_blank(previous_close)
+    ):
         previous = _to_float(previous_close)
         if previous:
             pct_change = _to_float(change) / previous * 100
@@ -452,8 +459,7 @@ def _yfinance_row_to_status(
         amount = _to_float(close) * _to_float(volume)
 
     name = (
-        _first_value(info, "shortName", "longName", "displayName", "symbol")
-        or symbol
+        _first_value(info, "shortName", "longName", "displayName", "symbol") or symbol
     )
     pe = _first_value(info, "trailingPE", "forwardPE")
 
@@ -668,7 +674,9 @@ def _looks_like_table_separator(line: str) -> bool:
     if not _looks_like_table_row(line):
         return False
     cells = _split_table_cells(line)
-    return bool(cells) and all(re.fullmatch(r":?-{3,}:?", cell.strip()) for cell in cells)
+    return bool(cells) and all(
+        re.fullmatch(r":?-{3,}:?", cell.strip()) for cell in cells
+    )
 
 
 def _split_table_cells(line: str) -> list[str]:
@@ -698,7 +706,11 @@ def _parse_markdown_table(markdown: str) -> list[StockTableRow]:
 
     header_line = lines[0]
     separator_index = next(
-        (index for index, line in enumerate(lines[1:], start=1) if _looks_like_table_separator(line)),
+        (
+            index
+            for index, line in enumerate(lines[1:], start=1)
+            if _looks_like_table_separator(line)
+        ),
         -1,
     )
     if separator_index < 1:
@@ -722,8 +734,7 @@ def _parse_markdown_table(markdown: str) -> list[StockTableRow]:
 
 def _render_table_card(row: StockTableRow, status: StockDailyStatus | None) -> str:
     table_name = (
-        _first_matching_value(row.values, ("股票名称", "名称", "标的", "公司"))
-        or ""
+        _first_matching_value(row.values, ("股票名称", "名称", "标的", "公司")) or ""
     )
     effective_status = status
     title = (
@@ -731,18 +742,20 @@ def _render_table_card(row: StockTableRow, status: StockDailyStatus | None) -> s
         or (effective_status.name if effective_status is not None else "")
         or "未命名标的"
     )
-    symbol = (
-        _first_matching_value(row.values, ("股票代码", "代码", "证券代码"))
-        or (effective_status.symbol if effective_status else "")
+    symbol = _first_matching_value(row.values, ("股票代码", "代码", "证券代码")) or (
+        effective_status.symbol if effective_status else ""
     )
     body_items = [
         (key, value)
         for key, value in row.values.items()
-        if key not in {"股票名称", "名称", "标的", "公司", "股票代码", "代码", "证券代码"}
+        if key
+        not in {"股票名称", "名称", "标的", "公司", "股票代码", "代码", "证券代码"}
         and value.strip()
     ]
 
-    status_class = effective_status.direction if effective_status is not None else "flat"
+    status_class = (
+        effective_status.direction if effective_status is not None else "flat"
+    )
     status_html = ""
     if effective_status is not None:
         status_html = _render_status_metrics(effective_status)

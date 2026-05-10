@@ -601,7 +601,9 @@ class MarkdownToPngConverter:
             return cards_html
         return self._run_pandoc(md_path)
 
-    def _run_markdown_with_stock_table_cards(self, md_path: Path, *, as_of_date=None) -> str:
+    def _run_markdown_with_stock_table_cards(
+        self, md_path: Path, *, as_of_date=None
+    ) -> str:
         markdown_content = md_path.read_text(encoding="utf-8")
         normalized_content = self._normalize_markdown_for_tables(markdown_content)
         lines = normalized_content.splitlines()
@@ -615,7 +617,9 @@ class MarkdownToPngConverter:
         while index < len(lines):
             if self._looks_like_markdown_table_start(lines, index):
                 end = index + 2
-                while end < len(lines) and self._looks_like_markdown_table_row(lines[end]):
+                while end < len(lines) and self._looks_like_markdown_table_row(
+                    lines[end]
+                ):
                     end += 1
                 table_markdown = "\n".join(lines[index:end]).strip()
                 if table_markdown and extract_stock_symbols(table_markdown):
@@ -689,7 +693,9 @@ class MarkdownToPngConverter:
         if not self._looks_like_markdown_table_row(line):
             return False
         cells = self._split_markdown_table_cells(line)
-        return bool(cells) and all(TABLE_DELIMITER_CELL_RE.match(cell.strip()) for cell in cells)
+        return bool(cells) and all(
+            TABLE_DELIMITER_CELL_RE.match(cell.strip()) for cell in cells
+        )
 
     def _split_markdown_table_cells(self, line: str) -> list[str]:
         stripped = line.strip()

@@ -106,13 +106,13 @@ def render_summary_context_block(context: ResolvedSummaryContext | None) -> str:
         lines.append(f"- 常提标的/股票池：{'；'.join(stock_descriptions)}")
 
     if context.alias_map:
-        alias_items = [f"{alias} -> {target}" for alias, target in context.alias_map.items()]
+        alias_items = [
+            f"{alias} -> {target}" for alias, target in context.alias_map.items()
+        ]
         lines.append(f"- 常见别名或转录错误：{'；'.join(alias_items)}")
 
     if context.theme_terms:
-        lines.append(
-            f"- 常讨论的泛主题词或组合黑话：{'；'.join(context.theme_terms)}"
-        )
+        lines.append(f"- 常讨论的泛主题词或组合黑话：{'；'.join(context.theme_terms)}")
         lines.append(
             "- 这些词只能作为题材、方向或组合语义的辅助提示，不能直接等同于某一只股票。"
         )

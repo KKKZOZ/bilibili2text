@@ -165,42 +165,23 @@ def _parse_pubdate_datetime(pubdate: str) -> datetime | None:
     return parsed
 
 
-def _format_publish_age(
-    metadata: VideoMetadata | None,
-    *,
-    now: datetime | None = None,
-) -> str:
+def _format_publish_time(metadata: VideoMetadata | None) -> str:
     if metadata is None:
         return "Unknown"
 
     pubdate = (metadata.pubdate or "").strip()
-    published_at: datetime | None = None
     if metadata.pubdate_timestamp > 0:
-        published_at = datetime.fromtimestamp(metadata.pubdate_timestamp)
         if not pubdate:
-            pubdate = published_at.strftime("%Y-%m-%d %H:%M:%S")
-    else:
-        published_at = _parse_pubdate_datetime(pubdate)
+            return datetime.fromtimestamp(metadata.pubdate_timestamp).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+        return pubdate
 
-    if published_at is None:
-        return pubdate or "Unknown"
+    published_at = _parse_pubdate_datetime(pubdate)
+    if published_at is not None:
+        return pubdate or published_at.strftime("%Y-%m-%d %H:%M:%S")
 
-    current = now or datetime.now()
-    delta_seconds = max(0, int((current - published_at).total_seconds()))
-    if delta_seconds < 60:
-        relative = "just now"
-    elif delta_seconds < 3600:
-        relative = f"{delta_seconds // 60} minutes ago"
-    elif delta_seconds < 86400:
-        relative = f"{delta_seconds // 3600} hours ago"
-    elif delta_seconds < 86400 * 45:
-        relative = f"{delta_seconds // 86400} days ago"
-    elif delta_seconds < 86400 * 365:
-        relative = f"{delta_seconds // (86400 * 30)} months ago"
-    else:
-        relative = f"{delta_seconds // (86400 * 365)} years ago"
-
-    return f"{pubdate or published_at.strftime('%Y-%m-%d %H:%M:%S')} ({relative})"
+    return pubdate or "Unknown"
 
 
 def _demote_top_level_headings(markdown: str) -> str:
@@ -238,16 +219,14 @@ def post_process_summary_markdown(
         or "Untitled Video"
     )
     author = (metadata.author.strip() if metadata else "") or "Unknown"
-    publish_age = _format_publish_age(metadata, now=now)
+    publish_time = _format_publish_time(metadata)
     body = _demote_top_level_headings(summary.strip())
 
     parts = [
         f"# {title}",
         "",
-        "## Key Information",
-        "",
         f"- Creator: {author}",
-        f"- Published: {publish_age}",
+        f"- Published: {publish_time}",
     ]
     if body:
         parts.extend(["", body])

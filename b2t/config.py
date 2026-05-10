@@ -562,7 +562,9 @@ def _load_summary_context(path: Path) -> SummaryContextConfig | None:
         if portfolio is None:
             portfolio = {}
         if not isinstance(portfolio, dict):
-            raise ValueError(f"summary context authors[{index}].portfolio 必须是 TOML 表")
+            raise ValueError(
+                f"summary context authors[{index}].portfolio 必须是 TOML 表"
+            )
         portfolio_stocks = _normalize_unique_str_tuple(
             portfolio.get("stocks"),
             field_name=f"authors[{index}].portfolio.stocks",

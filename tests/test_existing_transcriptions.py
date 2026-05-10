@@ -141,8 +141,11 @@ def test_existing_transcription_reuses_same_summary_config_without_regenerating(
     )
     monkeypatch.setattr(
         "backend.existing_transcriptions._record_history",
-        lambda **kwargs: (_ for _ in ()).throw(AssertionError("should not record history")),
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("should not record history")
+        ),
     )
+
     def fake_build_success_download_fields(results):
         captured_success_summary["summary_key"] = results["summary"].storage_key
         return {
@@ -201,5 +204,8 @@ def test_existing_transcription_reuses_same_summary_config_without_regenerating(
     )
     assert captured_update["status"] == "succeeded"
     assert captured_update["stage_label"] == "已命中历史总结结果"
-    assert "已存在使用模型配置 qwen3-5-plus 与总结模板 financial_timeline_merge" in captured_update["notice"]
+    assert (
+        "已存在使用模型配置 qwen3-5-plus 与总结模板 financial_timeline_merge"
+        in captured_update["notice"]
+    )
     assert triggered_run_ids == ["BV1bLdgBEEKu-11111111"]
