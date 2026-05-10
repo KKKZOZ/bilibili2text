@@ -2,6 +2,7 @@ from b2t.stock_status import (
     _baostock_row_to_status,
     _fetch_status_for_symbol,
     _fetch_tickflow_daily_row,
+    _normalize_symbol,
     _parse_as_of_date,
     _tickflow_row_to_status,
     _to_baostock_code,
@@ -56,6 +57,17 @@ def test_extract_stock_symbols_from_tables_without_outer_pipes() -> None:
     ]
 
 
+def test_extract_stock_symbols_normalizes_four_digit_hk_codes() -> None:
+    markdown = """
+| 股票代码 | 股票名称 | 逻辑 |
+| --- | --- | --- |
+| 3968.HK | 招商银行 | 示例 |
+| 03968.HK | 重复 | 示例 |
+"""
+
+    assert extract_stock_symbols(markdown) == ["03968.HK"]
+
+
 def test_build_stock_table_cards_html_supports_tables_without_outer_pipes(
     monkeypatch,
 ) -> None:
@@ -91,6 +103,11 @@ def test_build_stock_table_cards_html_supports_tables_without_outer_pipes(
     assert "+3.45%" in html
     assert "中芯国际" in html
     assert "00981.HK" in html
+
+
+def test_normalize_symbol_zero_pads_four_digit_hk_codes() -> None:
+    assert _normalize_symbol("3968.HK") == "03968.HK"
+    assert _normalize_symbol("03968.HK") == "03968.HK"
 
 
 def test_to_baostock_code_uses_lowercase_suffix() -> None:

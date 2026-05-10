@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 logger = logging.getLogger(__name__)
 
 _STOCK_CODE_RE = re.compile(
-    r"(?<![A-Z0-9])((?:(?:[03468]\d{5})(?:\.(?:SH|SZ|BJ))?)|(?:\d{5}\.HK))(?![A-Z0-9])",
+    r"(?<![A-Z0-9])((?:(?:[03468]\d{5})(?:\.(?:SH|SZ|BJ))?)|(?:\d{4,5}\.HK))(?![A-Z0-9])",
     re.IGNORECASE,
 )
 
@@ -327,6 +327,10 @@ def _normalize_symbol(raw: str) -> str | None:
     if "." in value:
         code, suffix = value.split(".", 1)
         if suffix in _SUPPORTED_SUFFIXES:
+            if suffix == "HK":
+                if not code.isdigit() or len(code) not in {4, 5}:
+                    return None
+                return f"{code.zfill(5)}.{suffix}"
             return f"{code}.{suffix}"
         return None
 
