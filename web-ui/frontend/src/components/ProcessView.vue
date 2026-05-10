@@ -12,6 +12,7 @@
     AlertCircle,
     ArrowLeft,
     CheckCircle2,
+    ChevronDown,
     FileAudio2,
     Link2,
     LoaderCircle
@@ -147,6 +148,9 @@
   const uploadFilenamePattern =
     /^(BV[0-9A-Za-z]{10})_.+\.(aac|flac|m4a|mp3|ogg|opus|wav|webm)$/i
   const userSummaryPromptTemplate = ref('')
+  const summaryPresetDropdownRef = ref(null)
+  const isSummaryPresetMenuOpen = ref(false)
+  const hoveredSummaryPresetName = ref('')
 
   // Job from route param
   const routeJobId = computed(() => String(route.params.jobId || ''))
@@ -177,6 +181,68 @@
     }
     return userSummaryPromptTemplate.value.trim()
   })
+  const selectedSummaryPresetOption = computed(
+    () =>
+      presetOptions.value.find(
+        (item) => item.name === props.selectedSummaryPreset
+      ) ||
+      presetOptions.value[0] ||
+      null
+  )
+  const previewedSummaryPresetName = computed(
+    () =>
+      hoveredSummaryPresetName.value ||
+      selectedSummaryPresetOption.value?.name ||
+      ''
+  )
+  const previewedSummaryPresetOption = computed(
+    () =>
+      presetOptions.value.find(
+        (item) => item.name === previewedSummaryPresetName.value
+      ) ||
+      selectedSummaryPresetOption.value ||
+      null
+  )
+
+  const buildSummaryPresetPreviewText = (template) => {
+    const normalized = String(template || '')
+      .replace(/\r\n/g, '\n')
+      .split('\n')
+      .map((line) => line.replace(/[^\S\n]+/g, ' ').trim())
+      .join('\n')
+      .trim()
+
+    if (!normalized) {
+      return '此模板暂无可预览内容。'
+    }
+
+    return normalized
+  }
+
+  const getSummaryPresetPromptTemplate = (presetName) => {
+    if (presetName === CUSTOM_SUMMARY_PRESET_VALUE) {
+      return (
+        userSummaryPromptTemplate.value.trim() ||
+        props.summaryDefaultPromptTemplate ||
+        ''
+      )
+    }
+
+    const matched = props.summaryPresets.find(
+      (item) => item.name === presetName
+    )
+    return typeof matched?.prompt_template === 'string'
+      ? matched.prompt_template
+      : ''
+  }
+
+  const previewedSummaryPresetText = computed(() =>
+    buildSummaryPresetPreviewText(
+      getSummaryPresetPromptTemplate(
+        previewedSummaryPresetOption.value?.name || ''
+      )
+    )
+  )
 
   // Multi-job localStorage helpers (shared with HistoryView for active job tracking)
   const readActiveJobIds = () => {
@@ -404,6 +470,46 @@
     return ''
   }
 
+  const openSummaryPresetMenu = () => {
+    if (props.isLoadingSummaryPresets || presetOptions.value.length === 0) {
+      return
+    }
+    hoveredSummaryPresetName.value = props.selectedSummaryPreset || ''
+    isSummaryPresetMenuOpen.value = true
+  }
+
+  const closeSummaryPresetMenu = () => {
+    isSummaryPresetMenuOpen.value = false
+    hoveredSummaryPresetName.value = ''
+  }
+
+  const toggleSummaryPresetMenu = () => {
+    if (isSummaryPresetMenuOpen.value) {
+      closeSummaryPresetMenu()
+      return
+    }
+    openSummaryPresetMenu()
+  }
+
+  const previewSummaryPreset = (presetName) => {
+    hoveredSummaryPresetName.value = presetName
+  }
+
+  const selectSummaryPreset = (presetName) => {
+    emit('update:selectedSummaryPreset', presetName)
+    closeSummaryPresetMenu()
+  }
+
+  const onDocumentPointerDown = (event) => {
+    if (!isSummaryPresetMenuOpen.value) {
+      return
+    }
+    if (summaryPresetDropdownRef.value?.contains(event.target)) {
+      return
+    }
+    closeSummaryPresetMenu()
+  }
+
   const pollStatus = async () => {
     if (!jobId.value || isPolling.value) {
       return
@@ -620,6 +726,7 @@
   }
 
   onMounted(async () => {
+    document.addEventListener('mousedown', onDocumentPointerDown)
     loadLocalSummaryPromptTemplate()
     if (!routeJobId.value) {
       return
@@ -638,6 +745,7 @@
 
   onBeforeUnmount(() => {
     stopPolling()
+    document.removeEventListener('mousedown', onDocumentPointerDown)
   })
 
   watch(
@@ -661,6 +769,16 @@
       loadLocalSummaryPromptTemplate()
     },
     { immediate: true }
+  )
+
+  watch(
+    () => props.selectedSummaryPreset,
+    () => {
+      if (!isSummaryPresetMenuOpen.value) {
+        return
+      }
+      hoveredSummaryPresetName.value = props.selectedSummaryPreset || ''
+    }
   )
 </script>
 
@@ -820,31 +938,38 @@
                 class="summary-preset process-summary-field process-summary-inline-field"
               >
                 <label for="summary-profile-select">模型配置</label>
-                <select
-                  id="summary-profile-select"
-                  :value="selectedSummaryProfile"
-                  class="preset-select process-preset-select"
-                  :disabled="
-                    isLoadingSummaryProfiles || summaryProfiles.length === 0
-                  "
-                  @change="
-                    emit('update:selectedSummaryProfile', $event.target.value)
-                  "
-                >
-                  <option v-if="isLoadingSummaryProfiles" value="">
-                    正在加载模型配置...
-                  </option>
-                  <option v-else-if="summaryProfiles.length === 0" value="">
-                    未获取到模型配置（将使用后端默认）
-                  </option>
-                  <option
-                    v-for="profile in summaryProfiles"
-                    :key="profile.name"
-                    :value="profile.name"
+                <div class="summary-profile-select-wrap">
+                  <select
+                    id="summary-profile-select"
+                    :value="selectedSummaryProfile"
+                    class="preset-select process-preset-select summary-profile-select"
+                    :disabled="
+                      isLoadingSummaryProfiles || summaryProfiles.length === 0
+                    "
+                    @change="
+                      emit('update:selectedSummaryProfile', $event.target.value)
+                    "
                   >
-                    {{ profile.name }} ({{ profile.model }})
-                  </option>
-                </select>
+                    <option v-if="isLoadingSummaryProfiles" value="">
+                      正在加载模型配置...
+                    </option>
+                    <option v-else-if="summaryProfiles.length === 0" value="">
+                      未获取到模型配置（将使用后端默认）
+                    </option>
+                    <option
+                      v-for="profile in summaryProfiles"
+                      :key="profile.name"
+                      :value="profile.name"
+                    >
+                      {{ profile.name }} ({{ profile.model }})
+                    </option>
+                  </select>
+                  <ChevronDown
+                    :size="16"
+                    class="summary-profile-select-icon"
+                    aria-hidden="true"
+                  />
+                </div>
                 <p
                   v-if="summaryProfileError"
                   class="preset-hint preset-hint-error"
@@ -867,31 +992,83 @@
                 class="summary-preset process-summary-field process-summary-inline-field"
               >
                 <label for="summary-preset-select">总结模板</label>
-                <select
-                  id="summary-preset-select"
-                  :value="selectedSummaryPreset"
-                  class="preset-select process-preset-select"
-                  :disabled="
-                    isLoadingSummaryPresets || presetOptions.length === 0
-                  "
-                  @change="
-                    emit('update:selectedSummaryPreset', $event.target.value)
-                  "
+                <div
+                  ref="summaryPresetDropdownRef"
+                  class="summary-preset-dropdown"
+                  :class="{ open: isSummaryPresetMenuOpen }"
+                  @keydown.esc.stop="closeSummaryPresetMenu"
                 >
-                  <option v-if="isLoadingSummaryPresets" value="">
-                    正在加载模板...
-                  </option>
-                  <option v-else-if="presetOptions.length === 0" value="">
-                    未获取到模板（将使用后端默认）
-                  </option>
-                  <option
-                    v-for="preset in presetOptions"
-                    :key="preset.name"
-                    :value="preset.name"
+                  <button
+                    id="summary-preset-select"
+                    type="button"
+                    class="preset-select process-preset-select summary-preset-trigger"
+                    :disabled="
+                      isLoadingSummaryPresets || presetOptions.length === 0
+                    "
+                    aria-haspopup="listbox"
+                    :aria-expanded="isSummaryPresetMenuOpen ? 'true' : 'false'"
+                    @click="toggleSummaryPresetMenu"
                   >
-                    {{ preset.label }}
-                  </option>
-                </select>
+                    <span class="summary-preset-trigger-text">
+                      {{
+                        isLoadingSummaryPresets
+                          ? '正在加载模板...'
+                          : presetOptions.length === 0
+                            ? '未获取到模板（将使用后端默认）'
+                            : selectedSummaryPresetOption?.label ||
+                              '请选择总结模板'
+                      }}
+                    </span>
+                    <ChevronDown :size="16" />
+                  </button>
+
+                  <div
+                    v-if="
+                      isSummaryPresetMenuOpen &&
+                      !isLoadingSummaryPresets &&
+                      presetOptions.length > 0
+                    "
+                    class="summary-preset-popover"
+                  >
+                    <div class="summary-preset-option-list" role="listbox">
+                      <button
+                        v-for="preset in presetOptions"
+                        :id="`summary-preset-option-${preset.name}`"
+                        :key="preset.name"
+                        type="button"
+                        class="summary-preset-option"
+                        :class="{
+                          active: preset.name === selectedSummaryPreset,
+                          previewing:
+                            preset.name === previewedSummaryPresetOption?.name
+                        }"
+                        @mouseenter="previewSummaryPreset(preset.name)"
+                        @focus="previewSummaryPreset(preset.name)"
+                        @click="selectSummaryPreset(preset.name)"
+                      >
+                        <span class="summary-preset-option-label">
+                          {{ preset.label }}
+                        </span>
+                        <span
+                          v-if="preset.name === selectedSummaryPreset"
+                          class="summary-preset-option-tag"
+                        >
+                          当前
+                        </span>
+                      </button>
+                    </div>
+
+                    <div class="summary-preset-preview">
+                      <p class="summary-preset-preview-kicker">模板预览</p>
+                      <h4>
+                        {{ previewedSummaryPresetOption?.label || '总结模板' }}
+                      </h4>
+                      <p class="summary-preset-preview-body">
+                        {{ previewedSummaryPresetText }}
+                      </p>
+                    </div>
+                  </div>
+                </div>
                 <p
                   v-if="summaryPresetError"
                   class="preset-hint preset-hint-error"
@@ -1087,7 +1264,7 @@
 
   .layout {
     position: relative;
-    z-index: 2;
+    z-index: 3;
     max-width: 1160px;
     margin: 0 auto;
     display: grid;
@@ -1106,6 +1283,8 @@
   /* ─── Panel variants ─────────────────────────────────────────── */
 
   .panel-main {
+    position: relative;
+    z-index: 2;
     padding: 24px 40px 40px;
   }
 
@@ -1421,6 +1600,16 @@
     grid-column: 2 / 3;
   }
 
+  .summary-preset-dropdown {
+    position: relative;
+    min-width: 0;
+  }
+
+  .summary-profile-select-wrap {
+    position: relative;
+    min-width: 0;
+  }
+
   .process-preset-select {
     min-height: 42px;
     padding-inline: 14px;
@@ -1434,6 +1623,169 @@
     box-shadow:
       inset 0 1px 2px rgba(255, 255, 255, 1),
       0 2px 6px rgba(15, 23, 42, 0.04);
+  }
+
+  .summary-profile-select {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    padding-right: 42px;
+  }
+
+  .summary-profile-select-icon {
+    position: absolute;
+    top: 50%;
+    right: 14px;
+    transform: translateY(-50%);
+    color: #64748b;
+    pointer-events: none;
+  }
+
+  .summary-preset-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    width: 100%;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .summary-preset-trigger svg {
+    flex-shrink: 0;
+    color: #64748b;
+    transition: transform 0.2s ease;
+  }
+
+  .summary-preset-dropdown.open .summary-preset-trigger svg {
+    transform: rotate(180deg);
+  }
+
+  .summary-preset-trigger-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .summary-preset-popover {
+    position: absolute;
+    left: 0;
+    top: calc(100% + 10px);
+    z-index: 30;
+    width: min(700px, calc(100vw - 96px));
+    display: grid;
+    grid-template-columns: 248px 410px;
+    gap: 14px;
+    padding: 14px;
+    border: 1px solid rgba(203, 213, 225, 0.85);
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow:
+      0 16px 40px -18px rgba(15, 23, 42, 0.28),
+      0 8px 20px -12px rgba(15, 23, 42, 0.16);
+    backdrop-filter: blur(18px);
+  }
+
+  .summary-preset-option-list {
+    display: grid;
+    gap: 8px;
+    max-height: 280px;
+    overflow: auto;
+  }
+
+  .summary-preset-option {
+    width: 100%;
+    border: 1px solid rgba(203, 213, 225, 0.7);
+    border-radius: 12px;
+    background: rgba(248, 250, 252, 0.9);
+    color: #334155;
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    text-align: left;
+    cursor: pointer;
+    transition:
+      border-color 0.18s ease,
+      background-color 0.18s ease,
+      transform 0.18s ease;
+  }
+
+  .summary-preset-option:hover,
+  .summary-preset-option.previewing {
+    border-color: #7dd3fc;
+    background: #f0f9ff;
+  }
+
+  .summary-preset-option.active {
+    border-color: #5eead4;
+    background: #ecfeff;
+    color: #0f766e;
+  }
+
+  .summary-preset-option:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.16);
+  }
+
+  .summary-preset-option-label {
+    min-width: 0;
+    font-size: 0.86rem;
+    font-weight: 700;
+    line-height: 1.45;
+  }
+
+  .summary-preset-option-tag {
+    flex-shrink: 0;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: rgba(20, 184, 166, 0.14);
+    color: #0f766e;
+    font-size: 0.74rem;
+    font-weight: 800;
+  }
+
+  .summary-preset-preview {
+    width: 410px;
+    height: 280px;
+    min-width: 0;
+    padding: 14px 16px;
+    border-radius: 14px;
+    border: 1px solid rgba(191, 219, 254, 0.8);
+    background: linear-gradient(
+      180deg,
+      rgba(248, 250, 252, 0.96),
+      rgba(239, 246, 255, 0.92)
+    );
+    display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr);
+  }
+
+  .summary-preset-preview-kicker {
+    margin: 0;
+    font-size: 0.75rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    color: #0284c7;
+    text-transform: uppercase;
+  }
+
+  .summary-preset-preview h4 {
+    margin: 8px 0 10px;
+    font-size: 0.95rem;
+    color: #0f172a;
+  }
+
+  .summary-preset-preview-body {
+    margin: 0;
+    color: #475569;
+    font-size: 0.84rem;
+    line-height: 1.65;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow: auto;
   }
 
   .preset-select.process-preset-select:hover:not(:disabled) {
@@ -1598,6 +1950,17 @@
 
     .process-summary-inline-field {
       grid-template-columns: 1fr;
+    }
+
+    .summary-preset-popover {
+      left: 0;
+      width: 100%;
+      grid-template-columns: 1fr;
+    }
+
+    .summary-preset-preview {
+      width: 100%;
+      height: 240px;
     }
 
     .process-summary-inline-field .preset-hint {
