@@ -5,6 +5,7 @@ from b2t.storage.base import StorageBackend
 from b2t.stt.base import STTProvider
 from b2t.stt.groq_asr import GroqSTTProvider
 from b2t.stt.qwen_asr import QwenSTTProvider
+from b2t.stt.volc_asr import VolcSTTProvider
 
 
 def create_stt_provider(
@@ -22,9 +23,16 @@ def create_stt_provider(
         return QwenSTTProvider(config.stt, storage_backend)
     if provider == "groq":
         return GroqSTTProvider(config.stt)
+    if provider == "volc":
+        if not storage_backend.supports_public_url():
+            raise ValueError(
+                "Volc transcription requires a storage backend that supports public URLs for audio upload. "
+                "Please set the storage_profile for the current stt.profile (or storage.backend) to minio or alicloud."
+            )
+        return VolcSTTProvider(config.stt, storage_backend)
 
     raise ValueError(
-        f"Unsupported stt.provider: {config.stt.provider}, supported values: qwen, groq"
+        f"Unsupported stt.provider: {config.stt.provider}, supported values: qwen, groq, volc"
     )
 
 

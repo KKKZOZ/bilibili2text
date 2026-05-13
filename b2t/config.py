@@ -78,6 +78,17 @@ class STTProfile:
     groq_overlap: int = 10
     groq_bitrate: str = "64k"
 
+    volc_api_key: str = ""
+    volc_resource_id: str = "volc.seedasr.auc"
+    volc_submit_url: str = "https://openspeech.bytedance.com/api/v3/auc/bigmodel/submit"
+    volc_query_url: str = "https://openspeech.bytedance.com/api/v3/auc/bigmodel/query"
+    volc_enable_itn: bool = True
+    volc_enable_punc: bool = True
+    volc_enable_ddc: bool = False
+    volc_show_utterances: bool = True
+    volc_poll_interval_seconds: int = 5
+    volc_timeout_seconds: int = 1800
+
 
 def _default_stt_profiles() -> dict[str, "STTProfile"]:
     return {
@@ -100,6 +111,21 @@ def _default_stt_profiles() -> dict[str, "STTProfile"]:
             groq_overlap=10,
             groq_bitrate="64k",
         ),
+        "volc": STTProfile(
+            provider="volc",
+            language="zh-CN",
+            storage_profile="alicloud",
+            volc_api_key="",
+            volc_resource_id="volc.seedasr.auc",
+            volc_submit_url="https://openspeech.bytedance.com/api/v3/auc/bigmodel/submit",
+            volc_query_url="https://openspeech.bytedance.com/api/v3/auc/bigmodel/query",
+            volc_enable_itn=True,
+            volc_enable_punc=True,
+            volc_enable_ddc=False,
+            volc_show_utterances=True,
+            volc_poll_interval_seconds=5,
+            volc_timeout_seconds=1800,
+        ),
     }
 
 
@@ -121,6 +147,17 @@ class STTConfig:
     groq_chunk_length: int = 1800
     groq_overlap: int = 10
     groq_bitrate: str = "64k"
+
+    volc_api_key: str = ""
+    volc_resource_id: str = "volc.seedasr.auc"
+    volc_submit_url: str = "https://openspeech.bytedance.com/api/v3/auc/bigmodel/submit"
+    volc_query_url: str = "https://openspeech.bytedance.com/api/v3/auc/bigmodel/query"
+    volc_enable_itn: bool = True
+    volc_enable_punc: bool = True
+    volc_enable_ddc: bool = False
+    volc_show_utterances: bool = True
+    volc_poll_interval_seconds: int = 5
+    volc_timeout_seconds: int = 1800
 
 
 @dataclass(frozen=True)
@@ -725,6 +762,10 @@ def _load_stt_profile(
         "groq_model",
         "groq_base_url",
         "groq_bitrate",
+        "volc_api_key",
+        "volc_resource_id",
+        "volc_submit_url",
+        "volc_query_url",
     }
     for field_name in string_fields:
         value = merged[field_name]
@@ -736,10 +777,22 @@ def _load_stt_profile(
         raise ValueError(f"{section_name}.groq_chunk_length 必须是整数")
     if not isinstance(merged["groq_overlap"], int):
         raise ValueError(f"{section_name}.groq_overlap 必须是整数")
+    if not isinstance(merged["volc_enable_itn"], bool):
+        raise ValueError(f"{section_name}.volc_enable_itn 必须是布尔值")
+    if not isinstance(merged["volc_enable_punc"], bool):
+        raise ValueError(f"{section_name}.volc_enable_punc 必须是布尔值")
+    if not isinstance(merged["volc_enable_ddc"], bool):
+        raise ValueError(f"{section_name}.volc_enable_ddc 必须是布尔值")
+    if not isinstance(merged["volc_show_utterances"], bool):
+        raise ValueError(f"{section_name}.volc_show_utterances 必须是布尔值")
+    if not isinstance(merged["volc_poll_interval_seconds"], int):
+        raise ValueError(f"{section_name}.volc_poll_interval_seconds 必须是整数")
+    if not isinstance(merged["volc_timeout_seconds"], int):
+        raise ValueError(f"{section_name}.volc_timeout_seconds 必须是整数")
 
     provider = str(merged["provider"]).strip().lower()
-    if provider not in {"qwen", "groq"}:
-        raise ValueError(f"{section_name}.provider 仅支持 qwen 或 groq")
+    if provider not in {"qwen", "groq", "volc"}:
+        raise ValueError(f"{section_name}.provider 仅支持 qwen、groq 或 volc")
     merged["provider"] = provider
 
     if not str(merged["language"]).strip():
@@ -807,6 +860,16 @@ def _load_stt_config(raw_stt: dict) -> STTConfig:
         groq_chunk_length=selected_profile.groq_chunk_length,
         groq_overlap=selected_profile.groq_overlap,
         groq_bitrate=selected_profile.groq_bitrate,
+        volc_api_key=selected_profile.volc_api_key,
+        volc_resource_id=selected_profile.volc_resource_id,
+        volc_submit_url=selected_profile.volc_submit_url,
+        volc_query_url=selected_profile.volc_query_url,
+        volc_enable_itn=selected_profile.volc_enable_itn,
+        volc_enable_punc=selected_profile.volc_enable_punc,
+        volc_enable_ddc=selected_profile.volc_enable_ddc,
+        volc_show_utterances=selected_profile.volc_show_utterances,
+        volc_poll_interval_seconds=selected_profile.volc_poll_interval_seconds,
+        volc_timeout_seconds=selected_profile.volc_timeout_seconds,
     )
 
 
@@ -1502,7 +1565,7 @@ def create_app_config(
     Args:
         stt_api_key: DashScope API key for ASR (required for the default
             ``qwen`` STT provider).
-        stt_provider: STT provider name (``"qwen"`` or ``"groq"``).
+        stt_provider: STT provider name (``"qwen"``, ``"groq"``, or ``"volc"``).
         summarize_api_key: API key for LLM summarization.
         summarize_base_url: Custom API base URL for summarization.
         summarize_model: Model name for summarization (e.g. ``"deepseek-chat"``).
@@ -1535,7 +1598,7 @@ def create_app_config(
     profile_key = stt_provider.strip().lower()
     if profile_key not in stt_profiles:
         raise ValueError(
-            f"Unsupported stt_provider: {stt_provider!r}, must be 'qwen' or 'groq'"
+            f"Unsupported stt_provider: {stt_provider!r}, must be 'qwen', 'groq', or 'volc'"
         )
 
     stt_profile = stt_profiles[profile_key]
@@ -1557,6 +1620,18 @@ def create_app_config(
             groq_chunk_length=stt_profile.groq_chunk_length,
             groq_overlap=stt_profile.groq_overlap,
             groq_bitrate=stt_profile.groq_bitrate,
+            volc_api_key=stt_api_key
+            if profile_key == "volc"
+            else stt_profile.volc_api_key,
+            volc_resource_id=stt_profile.volc_resource_id,
+            volc_submit_url=stt_profile.volc_submit_url,
+            volc_query_url=stt_profile.volc_query_url,
+            volc_enable_itn=stt_profile.volc_enable_itn,
+            volc_enable_punc=stt_profile.volc_enable_punc,
+            volc_enable_ddc=stt_profile.volc_enable_ddc,
+            volc_show_utterances=stt_profile.volc_show_utterances,
+            volc_poll_interval_seconds=stt_profile.volc_poll_interval_seconds,
+            volc_timeout_seconds=stt_profile.volc_timeout_seconds,
         )
 
     stt_profiles[profile_key] = stt_profile
@@ -1575,6 +1650,16 @@ def create_app_config(
         groq_chunk_length=stt_profile.groq_chunk_length,
         groq_overlap=stt_profile.groq_overlap,
         groq_bitrate=stt_profile.groq_bitrate,
+        volc_api_key=stt_profile.volc_api_key,
+        volc_resource_id=stt_profile.volc_resource_id,
+        volc_submit_url=stt_profile.volc_submit_url,
+        volc_query_url=stt_profile.volc_query_url,
+        volc_enable_itn=stt_profile.volc_enable_itn,
+        volc_enable_punc=stt_profile.volc_enable_punc,
+        volc_enable_ddc=stt_profile.volc_enable_ddc,
+        volc_show_utterances=stt_profile.volc_show_utterances,
+        volc_poll_interval_seconds=stt_profile.volc_poll_interval_seconds,
+        volc_timeout_seconds=stt_profile.volc_timeout_seconds,
     )
 
     # Build summarization config

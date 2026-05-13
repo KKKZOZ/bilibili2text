@@ -123,6 +123,7 @@ def test_to_yfinance_symbol_maps_a_share_and_hk_suffixes() -> None:
     assert _to_yfinance_symbol("000001.SZ") == "000001.SZ"
     assert _to_yfinance_symbol("00506.HK") == "0506.HK"
     assert _to_yfinance_symbol("01099.HK") == "1099.HK"
+    assert _to_yfinance_symbol("87001.HK") == "87001.HK"
 
 
 def test_baostock_row_to_status_calculates_fields() -> None:

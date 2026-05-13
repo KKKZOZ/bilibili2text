@@ -190,7 +190,9 @@ def _to_yfinance_symbol(symbol: str) -> str:
     if suffix == "SZ":
         return f"{code}.SZ"
     if suffix == "HK":
-        return f"{code[-4:]}.HK"
+        if len(code) == 5 and code.startswith("0"):
+            return f"{code[1:]}.HK"
+        return f"{code}.HK"
     return ""
 
 

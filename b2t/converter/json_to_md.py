@@ -51,8 +51,24 @@ def _extract_timed_sentences(data: dict) -> list[tuple[int, str]]:
                 timed_sentences.append((int(start_seconds * 1000), text))
         return timed_sentences
 
+    # Volc format: result.utterances[]
+    result = data.get("result")
+    if isinstance(result, dict):
+        utterances = result.get("utterances", [])
+        if isinstance(utterances, list) and utterances:
+            for utterance in utterances:
+                if not isinstance(utterance, dict):
+                    continue
+                start_time = int(utterance.get("start_time", 0))
+                text = str(utterance.get("text", "")).strip()
+                if text:
+                    timed_sentences.append((start_time, text))
+            return timed_sentences
+
     # Fallback: full text
     text = str(data.get("text", "")).strip()
+    if not text and isinstance(result, dict):
+        text = str(result.get("text", "")).strip()
     if text:
         timed_sentences.append((0, text))
 
