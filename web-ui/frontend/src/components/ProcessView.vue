@@ -1191,6 +1191,8 @@
               :selected-summary-preset="selectedSummaryPreset"
               :summary-profiles="summaryProfiles"
               :selected-summary-profile="selectedSummaryProfile"
+              :history-run-id="jobId"
+              :requires-api-key="requiresApiKey"
             />
           </template>
           <p v-else class="download-placeholder">
