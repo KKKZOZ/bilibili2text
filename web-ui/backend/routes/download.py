@@ -6,9 +6,11 @@ from urllib.parse import quote
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 
 from b2t.converter.converter import ConversionFormat, convert_file
+from b2t.converter.md_remove_table import MarkdownRemoveTableConverter
+from b2t.converter.md_to_png import MarkdownToPngConverter
 from b2t.storage import StoredArtifact
 from b2t.storage.base import classify_artifact_filename
 
@@ -83,6 +85,66 @@ def _convert_response_for_artifact(artifact: StoredArtifact) -> ConvertResponse:
     )
 
 
+def _uses_summary_render_html(
+    source_kind: str,
+    target_format: ConversionFormat,
+    source_variant: str | None,
+) -> bool:
+    if target_format != ConversionFormat.HTML:
+        return False
+    return (
+        source_kind == "summary"
+        or source_kind == "summary_table_md"
+        or source_kind == "summary_fancy_html"
+        or source_variant == "summary_no_table"
+    )
+
+
+def _summary_render_html_options(
+    *,
+    artifact: StoredArtifact,
+    source_kind: str,
+    source_variant: str | None,
+) -> dict:
+    options = {"inline_css": True}
+    if source_kind == "summary_table_md":
+        options["is_table"] = True
+    if source_kind == "summary" and source_variant != "summary_no_table":
+        options["enhance_stock_tables"] = True
+    if source_kind in {"summary", "summary_table_md"}:
+        pubdate = _lookup_artifact_pubdate(artifact.storage_key)
+        if pubdate:
+            options["as_of_date"] = pubdate
+    return options
+
+
+def _summary_preview_filename(filename: str, source_variant: str | None) -> str:
+    path = Path(filename)
+    if source_variant == "summary_no_table":
+        return f"{path.stem}_no_table.html"
+    return f"{path.stem}.html"
+
+
+def _build_summary_render_html(
+    *,
+    artifact: StoredArtifact,
+    source_path: Path,
+    source_kind: str,
+    source_variant: str | None,
+) -> str:
+    html_options = _summary_render_html_options(
+        artifact=artifact,
+        source_kind=source_kind,
+        source_variant=source_variant,
+    )
+    is_table = bool(html_options.pop("is_table", False))
+    return MarkdownToPngConverter().build_render_html(
+        source_path,
+        is_table=is_table,
+        **html_options,
+    )
+
+
 def _lookup_artifact_pubdate(storage_key: str) -> str:
     try:
         db = get_history_db()
@@ -153,6 +215,104 @@ def download_markdown(download_id: str) -> StreamingResponse:
         headers={
             "Content-Disposition": f"attachment; filename*=UTF-8''{quoted_filename}"
         },
+    )
+
+
+@router.get("/api/preview/html/{download_id}")
+def preview_rendered_html(
+    download_id: str,
+    source_variant: str | None = None,
+) -> HTMLResponse:
+    artifact = download_registry.get_artifact(download_id)
+    if artifact is None:
+        raise HTTPException(status_code=404, detail="下载链接不存在或已过期")
+
+    source_kind = classify_artifact_filename(artifact.filename) or ""
+    if not _uses_summary_render_html(
+        source_kind,
+        ConversionFormat.HTML,
+        source_variant,
+    ):
+        raise HTTPException(status_code=400, detail="此文件不支持 HTML 预览")
+
+    storage_backend = get_storage_backend()
+    source_suffix = Path(artifact.filename).suffix.lower().lstrip(".")
+    if source_kind == "summary_fancy_html":
+        if source_suffix != "html":
+            raise HTTPException(
+                status_code=400,
+                detail=f"不支持预览此文件类型: {source_suffix}",
+            )
+        try:
+            with storage_backend.open_stream(artifact.storage_key) as stream:
+                html = stream.read().decode("utf-8")
+        except FileNotFoundError:
+            raise HTTPException(
+                status_code=410,
+                detail="源文件不存在，请重新生成",
+            ) from None
+        except UnicodeDecodeError as exc:
+            raise HTTPException(status_code=500, detail="HTML 文件编码无效") from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"读取源文件失败: {exc}",
+            ) from exc
+        quoted_filename = quote(artifact.filename)
+        return HTMLResponse(
+            html,
+            headers={"Content-Disposition": f"inline; filename*=UTF-8''{quoted_filename}"},
+        )
+
+    if source_suffix not in ("md", "markdown"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"不支持预览此文件类型: {source_suffix}",
+        )
+
+    with tempfile.TemporaryDirectory(prefix="b2t-preview-") as temp_dir:
+        temp_dir_path = Path(temp_dir)
+        source_path = temp_dir_path / artifact.filename
+        try:
+            with storage_backend.open_stream(artifact.storage_key) as stream:
+                with source_path.open("wb") as output:
+                    while True:
+                        chunk = stream.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        output.write(chunk)
+        except FileNotFoundError:
+            raise HTTPException(
+                status_code=410,
+                detail="源文件不存在，请重新生成",
+            ) from None
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"读取源文件失败: {exc}",
+            ) from exc
+
+        preview_source_path = source_path
+        if source_variant == "summary_no_table":
+            preview_source_path = source_path.with_stem(f"{source_path.stem}_no_table")
+            MarkdownRemoveTableConverter().convert(source_path, preview_source_path)
+
+        try:
+            html = _build_summary_render_html(
+                artifact=artifact,
+                source_path=preview_source_path,
+                source_kind=source_kind,
+                source_variant=source_variant,
+            )
+        except RuntimeError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"预览失败: {exc}") from exc
+
+    quoted_filename = quote(_summary_preview_filename(artifact.filename, source_variant))
+    return HTMLResponse(
+        html,
+        headers={"Content-Disposition": f"inline; filename*=UTF-8''{quoted_filename}"},
     )
 
 
@@ -273,13 +433,29 @@ def convert_artifact(payload: ConvertRequest) -> ConvertResponse:
                     explicit_output_path = source_path.with_name(
                         f"{source_path.stem}_desktop.png"
                     )
-            output_path = convert_file(
-                source_path,
+            if _uses_summary_render_html(
+                source_kind,
                 target_format,
-                output_path=explicit_output_path,
-                is_table=(png_is_table or pdf_is_table),
-                **convert_options,
-            )
+                payload.source_variant,
+            ):
+                output_path = source_path.with_suffix(".html")
+                output_path.write_text(
+                    _build_summary_render_html(
+                        artifact=artifact,
+                        source_path=source_path,
+                        source_kind=source_kind,
+                        source_variant=payload.source_variant,
+                    ),
+                    encoding="utf-8",
+                )
+            else:
+                output_path = convert_file(
+                    source_path,
+                    target_format,
+                    output_path=explicit_output_path,
+                    is_table=(png_is_table or pdf_is_table),
+                    **convert_options,
+                )
         except RuntimeError as exc:
             raise HTTPException(
                 status_code=500,

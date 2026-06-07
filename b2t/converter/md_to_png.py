@@ -47,7 +47,7 @@ HTML_TEMPLATE = r"""<!doctype html>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
   <!-- GitHub markdown css (requires .markdown-body wrapper) -->
-  <link rel="stylesheet" href="{css_href}">
+  {css_tag}
 
   <style>
     /* Make it look good on phone screenshots */
@@ -521,17 +521,11 @@ class MarkdownToPngConverter:
 
         # Generate intermediate HTML
         html_path = output_path.with_suffix(".html")
-        body_html = (
-            self._run_table_cards(input_path, as_of_date=as_of_date)
-            if is_table
-            else (
-                self._run_markdown_with_stock_table_cards(
-                    input_path,
-                    as_of_date=as_of_date,
-                )
-                if enhance_stock_tables
-                else self._run_pandoc(input_path)
-            )
+        body_html = self._build_body_html(
+            input_path,
+            is_table=is_table,
+            as_of_date=as_of_date,
+            enhance_stock_tables=enhance_stock_tables,
         )
         if is_table:
             if STOCK_CARD_MARKER in body_html:
@@ -539,11 +533,11 @@ class MarkdownToPngConverter:
             else:
                 width = 1200
 
-        # Resolve CSS href (prefer local cache to avoid external requests)
-        css_href = self._resolve_css_href(css_url)
-
-        # Generate full HTML
-        full_html = HTML_TEMPLATE.format(css_href=css_href, body_html=body_html)
+        full_html = self._wrap_body_html(
+            body_html,
+            css_url=css_url,
+            inline_css=False,
+        )
         html_path.write_text(full_html, encoding="utf-8")
 
         try:
@@ -565,6 +559,82 @@ class MarkdownToPngConverter:
             # Clean up intermediate HTML file (unless keep_html is set)
             if not keep_html and html_path.exists():
                 html_path.unlink()
+
+    def write_render_html(
+        self,
+        input_path: Path,
+        output_path: Path,
+        is_table: bool = False,
+        **options,
+    ) -> Path:
+        if not input_path.exists():
+            raise FileNotFoundError(f"Markdown file does not exist: {input_path}")
+
+        input_path = input_path.expanduser().resolve()
+        output_path = output_path.expanduser().resolve()
+        output_path.write_text(
+            self.build_render_html(input_path, is_table=is_table, **options),
+            encoding="utf-8",
+        )
+        logger.info("Render HTML file generated: %s", output_path)
+        return output_path
+
+    def build_render_html(
+        self,
+        input_path: Path,
+        is_table: bool = False,
+        **options,
+    ) -> str:
+        if not input_path.exists():
+            raise FileNotFoundError(f"Markdown file does not exist: {input_path}")
+
+        input_path = input_path.expanduser().resolve()
+        body_html = self._build_body_html(
+            input_path,
+            is_table=is_table,
+            as_of_date=options.get("as_of_date"),
+            enhance_stock_tables=options.get("enhance_stock_tables", False),
+        )
+        return self._wrap_body_html(
+            body_html,
+            css_url=options.get("css_url", self.css_url),
+            inline_css=options.get("inline_css", False),
+        )
+
+    def _build_body_html(
+        self,
+        input_path: Path,
+        *,
+        is_table: bool,
+        as_of_date=None,
+        enhance_stock_tables: bool = False,
+    ) -> str:
+        if is_table:
+            return self._run_table_cards(input_path, as_of_date=as_of_date)
+        if enhance_stock_tables:
+            return self._run_markdown_with_stock_table_cards(
+                input_path,
+                as_of_date=as_of_date,
+            )
+        return self._run_pandoc(input_path)
+
+    def _wrap_body_html(
+        self,
+        body_html: str,
+        *,
+        css_url: str,
+        inline_css: bool,
+    ) -> str:
+        return HTML_TEMPLATE.format(
+            css_tag=self._build_css_tag(css_url, inline_css=inline_css),
+            body_html=body_html,
+        )
+
+    def _build_css_tag(self, css_url: str, *, inline_css: bool) -> str:
+        if inline_css:
+            css_path = self._resolve_css_path(css_url)
+            return f"<style>\n{css_path.read_text(encoding='utf-8')}\n</style>"
+        return f'<link rel="stylesheet" href="{self._resolve_css_href(css_url)}">'
 
     def _run_pandoc(self, md_path: Path) -> str:
         """Convert Markdown to an HTML fragment using pandoc."""
@@ -737,6 +807,21 @@ class MarkdownToPngConverter:
                 return self._ensure_fallback_css().resolve().as_uri()
             return requested
         return self._ensure_fallback_css().resolve().as_uri()
+
+    def _resolve_css_path(self, css_url: str) -> Path:
+        requested = (css_url or "").strip()
+        if requested:
+            candidate = Path(requested)
+            if candidate.exists():
+                return candidate.resolve()
+            if requested.startswith(("http://", "https://")):
+                cached = self._download_css_to_cache(requested)
+                if cached is not None:
+                    return cached.resolve()
+                logger.warning(
+                    "Remote CSS unavailable, falling back to built-in local styles"
+                )
+        return self._ensure_fallback_css().resolve()
 
     def _download_css_to_cache(self, css_url: str) -> Path | None:
         LOCAL_CSS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
