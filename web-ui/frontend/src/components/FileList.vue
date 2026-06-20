@@ -3,6 +3,7 @@
   import {
     AlertCircle,
     Braces,
+    ChevronDown,
     File,
     Eye,
     FileText,
@@ -86,6 +87,7 @@
   const deleteConfirmItem = ref(null)
   const generatedItems = ref([])
   const previewError = ref('')
+  const openPngMenuKey = ref('')
 
   const formatIconMap = {
     markdown: FileText,
@@ -644,13 +646,24 @@
   const isAnyPngModeConverting = (item) =>
     isPngModeConverting(item, 'desktop') || isPngModeConverting(item, 'mobile')
 
-  const convertToPng = (item, renderMode) =>
+  const pngMenuKey = (item) => `${item.key || item.downloadId}-png-menu`
+
+  const isPngMenuOpen = (item) => openPngMenuKey.value === pngMenuKey(item)
+
+  const togglePngMenu = (item) => {
+    const key = pngMenuKey(item)
+    openPngMenuKey.value = openPngMenuKey.value === key ? '' : key
+  }
+
+  const convertToPng = (item, renderMode) => {
+    openPngMenuKey.value = ''
     convertAndDownload(item.downloadId, item.filename, 'png', {
       render_mode: renderMode,
       ...(item.kind === 'summary_no_table'
         ? { source_variant: 'summary_no_table' }
         : {})
     })
+  }
 
   const canDeleteMarkdownArtifact = (item) => {
     if (!props.allowDelete) {
@@ -870,11 +883,15 @@
             <div
               v-if="item.kind === 'summary_fancy_html'"
               class="png-export-menu"
+              :class="{ 'png-export-menu-open': isPngMenuOpen(item) }"
             >
               <button
                 class="download download-sm png-export-trigger"
                 type="button"
                 :disabled="isAnyPngModeConverting(item)"
+                :aria-expanded="isPngMenuOpen(item)"
+                aria-haspopup="menu"
+                @click="togglePngMenu(item)"
               >
                 <LoaderCircle
                   v-if="isAnyPngModeConverting(item)"
@@ -884,9 +901,14 @@
                 <template v-else>
                   <component :is="getFormatIcon('png')" :size="14" />
                   <span>PNG</span>
+                  <ChevronDown
+                    :size="14"
+                    class="png-export-chevron"
+                    :class="{ 'png-export-chevron-open': isPngMenuOpen(item) }"
+                  />
                 </template>
               </button>
-              <div class="png-export-options">
+              <div class="png-export-options" role="menu">
                 <button
                   type="button"
                   :disabled="isPngModeConverting(item, 'desktop')"
@@ -964,11 +986,17 @@
                   <span>{{ getFormatLabel('pdf') }}</span>
                 </template>
               </button>
-              <div class="png-export-menu">
+              <div
+                class="png-export-menu"
+                :class="{ 'png-export-menu-open': isPngMenuOpen(item) }"
+              >
                 <button
                   class="download download-sm png-export-trigger"
                   type="button"
                   :disabled="isAnyPngModeConverting(item)"
+                  :aria-expanded="isPngMenuOpen(item)"
+                  aria-haspopup="menu"
+                  @click="togglePngMenu(item)"
                 >
                   <LoaderCircle
                     v-if="isAnyPngModeConverting(item)"
@@ -978,11 +1006,19 @@
                   <template v-else>
                     <component :is="getFormatIcon('png')" :size="14" />
                     <span>{{ getFormatLabel('png') }}</span>
+                    <ChevronDown
+                      :size="14"
+                      class="png-export-chevron"
+                      :class="{
+                        'png-export-chevron-open': isPngMenuOpen(item)
+                      }"
+                    />
                   </template>
                 </button>
-                <div class="png-export-options">
+                <div class="png-export-options" role="menu">
                   <button
                     type="button"
+                    role="menuitem"
                     :disabled="isPngModeConverting(item, 'desktop')"
                     @click="convertToPng(item, 'desktop')"
                   >
@@ -995,6 +1031,7 @@
                   </button>
                   <button
                     type="button"
+                    role="menuitem"
                     :disabled="isPngModeConverting(item, 'mobile')"
                     @click="convertToPng(item, 'mobile')"
                   >
@@ -1332,11 +1369,18 @@
       transform 0.16s ease;
   }
 
-  .png-export-menu:hover .png-export-options,
-  .png-export-menu:focus-within .png-export-options {
+  .png-export-menu-open .png-export-options {
     opacity: 1;
     pointer-events: auto;
     transform: translateY(0);
+  }
+
+  .png-export-chevron {
+    transition: transform 0.16s ease;
+  }
+
+  .png-export-chevron-open {
+    transform: rotate(180deg);
   }
 
   .png-export-options button {

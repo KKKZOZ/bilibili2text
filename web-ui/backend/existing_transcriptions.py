@@ -22,6 +22,7 @@ from backend.services import (
 )
 
 logger = logging.getLogger(__name__)
+CUSTOM_SUMMARY_PRESET_VALUE = "__user_custom__"
 
 
 def _storage_parent_key(storage_key: str) -> str:
@@ -37,11 +38,15 @@ def _resolve_requested_summary_selection(
     summary_preset: str | None,
     summary_profile: str | None,
 ) -> tuple[str, str]:
-    resolved_preset = resolve_summary_preset_name(
-        summarize=config.summarize,
-        summary_presets=config.summary_presets,
-        override=(summary_preset or "").strip() or None,
-    )
+    cleaned_preset = (summary_preset or "").strip() or None
+    if cleaned_preset == CUSTOM_SUMMARY_PRESET_VALUE:
+        resolved_preset = CUSTOM_SUMMARY_PRESET_VALUE
+    else:
+        resolved_preset = resolve_summary_preset_name(
+            summarize=config.summarize,
+            summary_presets=config.summary_presets,
+            override=cleaned_preset,
+        )
     resolved_profile = (
         summary_profile or ""
     ).strip() or config.summarize.profile.strip()

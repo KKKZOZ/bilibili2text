@@ -28,6 +28,7 @@ from backend.download_registry import download_registry
 from backend.stock_cache import get_or_fetch_stock_statuses
 
 logger = logging.getLogger(__name__)
+CUSTOM_SUMMARY_PRESET_VALUE = "__user_custom__"
 
 
 def _resolve_summary_selection(
@@ -45,11 +46,14 @@ def _resolve_summary_selection(
     if config is None:
         return cleaned_preset, cleaned_profile
 
-    resolved_preset = resolve_summary_preset_name(
-        summarize=config.summarize,
-        summary_presets=config.summary_presets,
-        override=cleaned_preset,
-    )
+    if cleaned_preset == CUSTOM_SUMMARY_PRESET_VALUE:
+        resolved_preset = CUSTOM_SUMMARY_PRESET_VALUE
+    else:
+        resolved_preset = resolve_summary_preset_name(
+            summarize=config.summarize,
+            summary_presets=config.summary_presets,
+            override=cleaned_preset,
+        )
     resolved_profile = cleaned_profile or config.summarize.profile.strip()
     resolve_summarize_model_profile(
         config.summarize,

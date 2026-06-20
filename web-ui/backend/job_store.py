@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
 import time
 from threading import Lock
 from uuid import uuid4
@@ -21,6 +22,7 @@ JobValue = (
     | dict[str, int]
     | dict[str, bool]
     | dict[str, str]
+    | dict[str, object]
 )
 
 
@@ -66,6 +68,9 @@ class JobState:
     pubdate: str | None = None
     bvid: str | None = None
     title: str | None = None
+    is_ephemeral_upload: bool = False
+    expires_at: str | None = None
+    ephemeral_artifacts: list[dict[str, str]] = field(default_factory=list)
 
     @classmethod
     def create(
@@ -142,6 +147,9 @@ class JobPatch:
     pubdate: str | None = None
     bvid: str | None = None
     title: str | None = None
+    is_ephemeral_upload: bool | None = None
+    expires_at: str | None = None
+    ephemeral_artifacts: list[dict[str, str]] | None = None
 
 
 def _format_elapsed(seconds: int) -> str:
@@ -267,6 +275,56 @@ class JobRepository:
             payload = job.to_payload()
             payload["stage_durations"] = self._build_stage_duration_labels(job)
             return payload
+
+    def mark_expired(self, job_id: str) -> None:
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None:
+                return
+            job.status = "failed"
+            job.stage = "failed"
+            job.stage_label = "临时文件已过期"
+            job.error = "临时上传转录结果已过期，请重新上传。"
+            job.all_downloads = []
+            job.download_url = ""
+            job.filename = None
+            job.txt_download_url = None
+            job.txt_filename = None
+            job.summary_download_url = None
+            job.summary_filename = None
+            job.summary_txt_download_url = None
+            job.summary_txt_filename = None
+            job.summary_table_pdf_download_url = None
+            job.summary_table_pdf_filename = None
+            job.ephemeral_artifacts = []
+            job.updated_at = utc_iso()
+
+    def list_expired_ephemeral_uploads(
+        self, *, now: datetime | None = None
+    ) -> list[dict[str, object]]:
+        cutoff = now or datetime.now(tz=timezone.utc)
+        expired: list[dict[str, object]] = []
+        with self._lock:
+            for job in self._jobs.values():
+                if not job.is_ephemeral_upload or not job.expires_at:
+                    continue
+                if job.status not in {"succeeded", "failed", "cancelled"}:
+                    continue
+                try:
+                    expires_at = datetime.fromisoformat(job.expires_at)
+                except ValueError:
+                    continue
+                if expires_at.tzinfo is None:
+                    expires_at = expires_at.replace(tzinfo=timezone.utc)
+                if expires_at > cutoff:
+                    continue
+                expired.append(
+                    {
+                        "job_id": job.job_id,
+                        "artifacts": list(job.ephemeral_artifacts),
+                    }
+                )
+        return expired
 
     def _snapshot_stage_durations(self, job: JobState) -> dict[str, int]:
         snapshot = {

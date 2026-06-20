@@ -10,6 +10,10 @@ from b2t.download.yutto_cli import extract_bvid, normalize_bilibili_target
 from b2t.pipeline import run_pipeline
 
 from backend.bvid_locks import bvid_transcription_locks
+from backend.ephemeral_uploads import (
+    ephemeral_upload_expires_at,
+    serialize_ephemeral_artifacts,
+)
 from backend.existing_transcriptions import existing_transcription_service
 from backend.jobs import _append_job_log, _update_job
 from backend.logging_config import (
@@ -51,6 +55,7 @@ def _run_job(
     summary_profile: str | None,
     summary_prompt_template: str | None,
     auto_generate_fancy_html: bool,
+    ephemeral_upload: bool = False,
     api_key: str | None = None,
     deepseek_api_key: str | None = None,
 ) -> None:
@@ -109,25 +114,29 @@ def _run_job(
         _cleanup_upload_temp_dir(upload_temp_dir)
         return
 
-    if bvid is not None:
+    if bvid is not None and not ephemeral_upload:
         _update_job(job_id, bvid=bvid)
 
-    if bvid is not None and existing_transcription_service.handle_if_existing(
-        job_id=job_id,
-        bvid=bvid,
-        storage_backend=storage_backend,
-        config=config,
-        skip_summary=skip_summary,
-        summary_preset=summary_preset,
-        summary_profile=summary_profile,
-        summary_prompt_template=summary_prompt_template,
-        auto_generate_fancy_html=auto_generate_fancy_html,
+    if (
+        not ephemeral_upload
+        and bvid is not None
+        and existing_transcription_service.handle_if_existing(
+            job_id=job_id,
+            bvid=bvid,
+            storage_backend=storage_backend,
+            config=config,
+            skip_summary=skip_summary,
+            summary_preset=summary_preset,
+            summary_profile=summary_profile,
+            summary_prompt_template=summary_prompt_template,
+            auto_generate_fancy_html=auto_generate_fancy_html,
+        )
     ):
         _cleanup_upload_temp_dir(upload_temp_dir)
         return
 
     acquired_bvid_lock = False
-    if bvid is not None:
+    if bvid is not None and not ephemeral_upload:
         claim = bvid_transcription_locks.acquire(bvid, job_id)
         if not claim.acquired:
             error_message = (
@@ -270,12 +279,12 @@ def _run_job(
             metadata_fields["pubdate"] = metadata.pubdate
             if getattr(metadata, "title", None):
                 metadata_fields["title"] = metadata.title
-        if bvid:
+        if bvid and not ephemeral_upload:
             metadata_fields["bvid"] = bvid
 
         try:
             all_artifacts = _collect_all_artifacts_for_bvid(
-                storage_backend, bvid, results
+                storage_backend, None if ephemeral_upload else bvid, results
             )
             all_downloads = _build_all_download_items(all_artifacts)
         except Exception as exc:
@@ -302,10 +311,21 @@ def _run_job(
             notice=None,
             all_downloads=all_downloads,
             error=None,
+            is_ephemeral_upload=ephemeral_upload,
+            expires_at=ephemeral_upload_expires_at() if ephemeral_upload else None,
+            ephemeral_artifacts=(
+                serialize_ephemeral_artifacts(all_artifacts) if ephemeral_upload else []
+            ),
             **success_fields,
             **metadata_fields,
         )
-        if bvid is not None:
+        if ephemeral_upload:
+            _update_job(
+                job_id,
+                notice="临时上传转录结果将在完成后 2 小时自动删除。",
+                fancy_html_status="idle",
+            )
+        elif bvid is not None:
             _run_id = _record_history(
                 bvid=bvid,
                 results=results,

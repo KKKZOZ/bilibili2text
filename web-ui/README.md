@@ -71,7 +71,7 @@ bun run dev --backend-port 8001
 just web-open-public on
 ```
 
-This mode disables audio upload, history deletion, and local project API Keys, and requires users to enter their own DashScope API Key on the page. Since this mode uses Qwen ASR, the local `config.toml` still requires a working MinIO or Alibaba Cloud OSS configuration.
+This mode disables history deletion and local project API Keys, and requires users to enter their own DashScope API Key on the page. User audio/video uploads are handled as ephemeral transcriptions: they are not added to shared history and are deleted 2 hours after completion. Since this mode uses Qwen ASR, the local `config.toml` still requires a working MinIO or Alibaba Cloud OSS configuration.
 
 ### Host Backend + Nginx Container
 

@@ -61,7 +61,9 @@ def build_stock_table_cards_html(
     markdown: str,
     *,
     as_of_date: date | datetime | str | None = None,
-    stock_statuses: Mapping[str, StockDailyStatus] | list[StockDailyStatus] | None = None,
+    stock_statuses: Mapping[str, StockDailyStatus]
+    | list[StockDailyStatus]
+    | None = None,
 ) -> str:
     """Render a Markdown stock table as compact HTML cards with stock status data."""
     rows = _parse_markdown_table(markdown)

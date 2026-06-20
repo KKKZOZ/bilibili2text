@@ -23,6 +23,7 @@ from backend.schemas import (
 from backend.settings import get_runtime_app_config, is_delete_enabled
 
 router = APIRouter()
+CUSTOM_SUMMARY_PRESET_VALUE = "__user_custom__"
 logger = logging.getLogger(__name__)
 
 
@@ -113,6 +114,23 @@ def _to_history_detail_response(
         record_type=getattr(detail, "record_type", "transcription") or "transcription",
         fancy_html_status=getattr(detail, "fancy_html_status", "idle") or "idle",
         fancy_html_error=(getattr(detail, "fancy_html_error", "") or ""),
+    )
+
+
+def _resolve_regenerate_summary_preset(
+    *,
+    config,
+    summary_preset: str | None,
+    summary_prompt_template: str | None,
+) -> str:
+    if summary_preset == CUSTOM_SUMMARY_PRESET_VALUE:
+        if not summary_prompt_template:
+            raise ValueError("用户自定义总结模板不能为空")
+        return CUSTOM_SUMMARY_PRESET_VALUE
+    return resolve_summary_preset_name(
+        summarize=config.summarize,
+        summary_presets=config.summary_presets,
+        override=summary_preset,
     )
 
 
@@ -221,10 +239,10 @@ def regenerate_history_summary(
             summary_prompt_template = validate_summary_prompt_template(
                 summary_prompt_template
             )
-        resolved_preset = resolve_summary_preset_name(
-            summarize=config.summarize,
-            summary_presets=config.summary_presets,
-            override=summary_preset,
+        resolved_preset = _resolve_regenerate_summary_preset(
+            config=config,
+            summary_preset=summary_preset,
+            summary_prompt_template=summary_prompt_template,
         )
         resolved_profile = summary_profile or config.summarize.profile.strip()
         model_profile = resolve_summarize_model_profile(

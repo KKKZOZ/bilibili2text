@@ -184,10 +184,7 @@
   )
 
   const selectedRegeneratePresetName = computed(() => {
-    if (
-      !selectedHistorySummaryPreset.value ||
-      selectedHistorySummaryPreset.value === CUSTOM_SUMMARY_PRESET_VALUE
-    ) {
+    if (!selectedHistorySummaryPreset.value) {
       return props.summaryDefaultPreset || ''
     }
     return selectedHistorySummaryPreset.value
@@ -748,15 +745,6 @@
                   {{ preset.label }}
                 </option>
               </select>
-              <p
-                v-if="
-                  requiresApiKey &&
-                  selectedHistorySummaryPreset === CUSTOM_SUMMARY_PRESET_VALUE
-                "
-                class="preset-hint"
-              >
-                当前将使用你在 API Key 页面保存的自定义模板。
-              </p>
             </div>
           </div>
 

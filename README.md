@@ -298,7 +298,7 @@ B2T_WEB_UI_MODE=open-public uv run uvicorn backend.main:app --app-dir web-ui --h
 
 ## open-public 模式
 
-用于对外公开演示。该模式禁用音频上传、历史删除和本地 API Key，要求用户在页面中自行填写 DashScope API Key：
+用于对外公开演示。该模式禁用历史删除和本地 API Key，要求用户在页面中自行填写 DashScope API Key；用户上传的音频/视频会作为临时转录处理，不进入共享历史记录，并在完成后 2 小时自动删除：
 
 ```bash
 # 终端 1：后端

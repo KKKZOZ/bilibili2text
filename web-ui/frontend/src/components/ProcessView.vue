@@ -14,6 +14,7 @@
     CheckCircle2,
     ChevronDown,
     FileAudio2,
+    FileVideo2,
     Link2,
     LoaderCircle
   } from 'lucide-vue-next'
@@ -133,7 +134,9 @@
     updated_at: '',
     author: '',
     pubdate: '',
-    bvid: ''
+    bvid: '',
+    is_ephemeral_upload: false,
+    expires_at: ''
   })
 
   let pollTimer = null
@@ -144,9 +147,12 @@
   const LOCAL_OPEN_PUBLIC_SUMMARY_TEMPLATE_KEY =
     'b2t.open-public-summary-template'
   const CUSTOM_SUMMARY_PRESET_VALUE = '__user_custom__'
-  const uploadAccept = '.aac,.flac,.m4a,.mp3,.ogg,.opus,.wav,.webm'
+  const uploadAccept =
+    '.aac,.flac,.m4a,.mp3,.ogg,.opus,.wav,.webm,.avi,.m4v,.mkv,.mov,.mp4'
   const uploadFilenamePattern =
     /^(BV[0-9A-Za-z]{10})_.+\.(aac|flac|m4a|mp3|ogg|opus|wav|webm)$/i
+  const openPublicUploadPattern =
+    /\.(aac|flac|m4a|mp3|ogg|opus|wav|webm|avi|m4v|mkv|mov|mp4)$/i
   const userSummaryPromptTemplate = ref('')
   const summaryPresetDropdownRef = ref(null)
   const isSummaryPresetMenuOpen = ref(false)
@@ -438,7 +444,9 @@
       updated_at: '',
       author: '',
       pubdate: '',
-      bvid: ''
+      bvid: '',
+      is_ephemeral_upload: false,
+      expires_at: ''
     }
   }
 
@@ -461,9 +469,15 @@
 
   const validateUploadedAudio = (file) => {
     if (!file) {
-      return '请先选择音频文件'
+      return '请先选择音频或视频文件'
     }
     const normalizedName = String(file.name || '').trim()
+    if (isOpenPublic.value) {
+      if (!openPublicUploadPattern.test(normalizedName)) {
+        return '仅支持常见音频或视频格式：aac、flac、m4a、mp3、ogg、opus、wav、webm、avi、m4v、mkv、mov、mp4'
+      }
+      return ''
+    }
     if (!uploadFilenamePattern.test(normalizedName)) {
       return '上传文件名必须符合 `BV号_视频标题.xxx`，例如 `BV1R9i4BoE7H_视频标题.m4a`'
     }
@@ -622,16 +636,10 @@
         if (
           !skipSummary &&
           props.selectedSummaryPreset &&
-          props.selectedSummaryPreset !== CUSTOM_SUMMARY_PRESET_VALUE
+          (props.selectedSummaryPreset !== CUSTOM_SUMMARY_PRESET_VALUE ||
+            effectiveSummaryPromptTemplate.value)
         ) {
           formData.append('summary_preset', props.selectedSummaryPreset)
-        }
-        if (
-          !skipSummary &&
-          props.selectedSummaryPreset === CUSTOM_SUMMARY_PRESET_VALUE &&
-          props.summaryDefaultPreset
-        ) {
-          formData.append('summary_preset', props.summaryDefaultPreset)
         }
         if (!skipSummary && props.selectedSummaryProfile) {
           formData.append('summary_profile', props.selectedSummaryProfile)
@@ -670,16 +678,9 @@
             url: url.value.trim(),
             skip_summary: skipSummary,
             summary_preset:
-              skipSummary ||
-              !props.selectedSummaryPreset ||
-              props.selectedSummaryPreset === CUSTOM_SUMMARY_PRESET_VALUE
+              skipSummary || !props.selectedSummaryPreset
                 ? null
                 : props.selectedSummaryPreset,
-            ...(skipSummary ||
-            props.selectedSummaryPreset !== CUSTOM_SUMMARY_PRESET_VALUE ||
-            !props.summaryDefaultPreset
-              ? {}
-              : { summary_preset: props.summaryDefaultPreset }),
             summary_profile:
               skipSummary || !props.selectedSummaryProfile
                 ? null
@@ -791,7 +792,9 @@
           <p>
             {{
               allowUpload
-                ? '输入 B 站视频链接，或上传符合命名规范的音频文件，自动生成转录内容和大模型总结。'
+                ? isOpenPublic
+                  ? '输入 B 站视频链接，或上传音频/视频生成临时转录和大模型总结。'
+                  : '输入 B 站视频链接，或上传符合命名规范的音频文件，自动生成转录内容和大模型总结。'
                 : '输入 B 站视频链接，自动生成转录内容和大模型总结。'
             }}
           </p>
@@ -804,6 +807,12 @@
             </span>
             <span v-if="enableSummary" class="hero-pill hero-pill-soft">
               Fancy HTML{{ autoGenerateFancyHtml ? '自动生成' : '手动生成' }}
+            </span>
+            <span
+              v-if="job.is_ephemeral_upload"
+              class="hero-pill hero-pill-soft"
+            >
+              临时结果 2 小时后删除
             </span>
           </div>
         </header>
@@ -828,8 +837,9 @@
               :disabled="isStarting || isRunning"
               @click="setInputMode('upload')"
             >
-              <FileAudio2 :size="15" />
-              <span>上传音频</span>
+              <FileVideo2 v-if="isOpenPublic" :size="15" />
+              <FileAudio2 v-else :size="15" />
+              <span>{{ isOpenPublic ? '上传音频 / 视频' : '上传音频' }}</span>
             </button>
           </div>
 
@@ -868,7 +878,11 @@
           </template>
 
           <template v-else>
-            <label for="audio-file">音频文件（必需包含 BV 号）</label>
+            <label for="audio-file">
+              {{
+                isOpenPublic ? '音频或视频文件' : '音频文件（必需包含 BV 号）'
+              }}
+            </label>
             <div class="upload-row">
               <input
                 id="audio-file"
@@ -878,7 +892,11 @@
                 @change="onUploadFileChange"
               />
             </div>
-            <p class="input-example">
+            <p v-if="isOpenPublic" class="input-example">
+              上传结果不会进入历史记录，仅能通过当前任务链接访问，并会在完成后 2
+              小时自动删除。支持常见音频和视频格式。
+            </p>
+            <p v-else class="input-example">
               文件名必须符合
               <code>BV号_视频标题.xxx</code>
               ，例如
@@ -1084,15 +1102,6 @@
                 </p>
                 <p v-else-if="presetOptions.length === 0" class="preset-hint">
                   暂未连接到后端模板接口，提交时会使用服务端默认模板。
-                </p>
-                <p
-                  v-else-if="
-                    isOpenPublic &&
-                    selectedSummaryPreset === CUSTOM_SUMMARY_PRESET_VALUE
-                  "
-                  class="preset-hint"
-                >
-                  当前将使用你在 API Key 页面保存的自定义模板。
                 </p>
               </div>
             </div>

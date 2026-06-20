@@ -7,6 +7,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from b2t.converter.md_to_png import shutdown_png_renderer, warmup_png_renderer
 
+from backend.ephemeral_uploads import (
+    start_ephemeral_upload_cleanup,
+    stop_ephemeral_upload_cleanup,
+)
 from backend.logging_config import _configure_logging
 from backend.routes.config_routes import router as config_router
 from backend.routes.download import router as download_router
@@ -36,6 +40,7 @@ app.add_middleware(
 @app.on_event("startup")
 def on_startup() -> None:
     _configure_logging()
+    start_ephemeral_upload_cleanup()
     try:
         warmup_png_renderer()
     except Exception as exc:  # noqa: BLE001
@@ -44,6 +49,7 @@ def on_startup() -> None:
 
 @app.on_event("shutdown")
 def on_shutdown() -> None:
+    stop_ephemeral_upload_cleanup()
     shutdown_task_queues()
     shutdown_png_renderer()
 

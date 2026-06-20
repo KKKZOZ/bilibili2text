@@ -18,7 +18,10 @@ from b2t.config import (  # noqa: E402
 )
 from b2t.history import HistoryArtifact, HistoryDetail  # noqa: E402
 from b2t.storage.base import StoredArtifact  # noqa: E402
-from backend.existing_transcriptions import ExistingTranscriptionService  # noqa: E402
+from backend.existing_transcriptions import (  # noqa: E402
+    ExistingTranscriptionService,
+    _resolve_requested_summary_selection,
+)
 
 
 def _config() -> AppConfig:
@@ -209,3 +212,14 @@ def test_existing_transcription_reuses_same_summary_config_without_regenerating(
         in captured_update["notice"]
     )
     assert triggered_run_ids == ["BV1bLdgBEEKu-11111111"]
+
+
+def test_custom_summary_preset_does_not_resolve_to_default_preset() -> None:
+    resolved_preset, resolved_profile = _resolve_requested_summary_selection(
+        config=_config(),
+        summary_preset="__user_custom__",
+        summary_profile="qwen3-5-plus",
+    )
+
+    assert resolved_preset == "__user_custom__"
+    assert resolved_profile == "qwen3-5-plus"

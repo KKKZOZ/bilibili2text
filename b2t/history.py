@@ -514,7 +514,9 @@ class HistoryDB:
     ) -> dict[str, StockDailyStatus]:
         normalized_bvid = bvid.strip()
         normalized_date = as_of_date.strip() or "latest"
-        normalized_symbols = [symbol.strip().upper() for symbol in symbols if symbol.strip()]
+        normalized_symbols = [
+            symbol.strip().upper() for symbol in symbols if symbol.strip()
+        ]
         if not normalized_bvid or not normalized_symbols:
             return {}
 

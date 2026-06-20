@@ -293,7 +293,9 @@ def preview_rendered_html(
         quoted_filename = quote(artifact.filename)
         return HTMLResponse(
             html,
-            headers={"Content-Disposition": f"inline; filename*=UTF-8''{quoted_filename}"},
+            headers={
+                "Content-Disposition": f"inline; filename*=UTF-8''{quoted_filename}"
+            },
         )
 
     if source_suffix not in ("md", "markdown"):
@@ -351,7 +353,9 @@ def preview_rendered_html(
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"预览失败: {exc}") from exc
 
-    quoted_filename = quote(_summary_preview_filename(artifact.filename, source_variant))
+    quoted_filename = quote(
+        _summary_preview_filename(artifact.filename, source_variant)
+    )
     return HTMLResponse(
         html,
         headers={"Content-Disposition": f"inline; filename*=UTF-8''{quoted_filename}"},
@@ -435,8 +439,13 @@ def convert_artifact(payload: ConvertRequest) -> ConvertResponse:
             source_kind = classify_artifact_filename(artifact.filename) or ""
             render_source_path = source_path
             explicit_output_path = None
-            if source_kind == "summary" and payload.source_variant == "summary_no_table":
-                render_source_path = source_path.with_stem(f"{source_path.stem}_no_table")
+            if (
+                source_kind == "summary"
+                and payload.source_variant == "summary_no_table"
+            ):
+                render_source_path = source_path.with_stem(
+                    f"{source_path.stem}_no_table"
+                )
                 MarkdownRemoveTableConverter().convert(source_path, render_source_path)
 
             png_is_table = (

@@ -1,5 +1,6 @@
 """Process endpoints: submit a video URL / upload audio and poll job status."""
 
+import subprocess
 import shutil
 import tempfile
 from pathlib import Path
@@ -18,7 +19,11 @@ from backend.schemas import (
     ProcessStartResponse,
     ProcessStatusResponse,
 )
-from backend.settings import get_runtime_app_config, is_upload_enabled
+from backend.settings import (
+    get_runtime_app_config,
+    is_open_public_mode,
+    is_upload_enabled,
+)
 from backend.task_queue import submit_job
 from b2t.summarize.llm import validate_summary_prompt_template
 
@@ -32,6 +37,14 @@ _ALLOWED_AUDIO_SUFFIXES = {
     ".ogg",
     ".opus",
     ".wav",
+    ".webm",
+}
+_ALLOWED_VIDEO_SUFFIXES = {
+    ".avi",
+    ".m4v",
+    ".mkv",
+    ".mov",
+    ".mp4",
     ".webm",
 }
 
@@ -83,6 +96,68 @@ def _validate_upload_filename(filename: str) -> tuple[str, str]:
             ),
         )
     return safe_name, bvid
+
+
+def _validate_open_public_upload_filename(
+    filename: str, content_type: str | None = None
+) -> tuple[str, str]:
+    safe_name = Path(filename or "").name.strip()
+    if not safe_name:
+        raise HTTPException(status_code=400, detail="上传文件名不能为空")
+
+    suffix = Path(safe_name).suffix.lower()
+    if suffix in _ALLOWED_VIDEO_SUFFIXES:
+        if (content_type or "").strip().lower().startswith("audio/"):
+            return safe_name, "audio"
+        return safe_name, "video"
+    if suffix in _ALLOWED_AUDIO_SUFFIXES:
+        return safe_name, "audio"
+
+    allowed = ", ".join(sorted(_ALLOWED_AUDIO_SUFFIXES | _ALLOWED_VIDEO_SUFFIXES))
+    raise HTTPException(
+        status_code=400,
+        detail=f"不支持的上传格式: {suffix or '(无扩展名)'}，仅支持 {allowed}",
+    )
+
+
+def _convert_video_upload_to_audio(video_path: Path) -> Path:
+    audio_path = video_path.with_suffix(".wav")
+    try:
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-hide_banner",
+                "-y",
+                "-i",
+                str(video_path),
+                "-vn",
+                "-ac",
+                "1",
+                "-ar",
+                "16000",
+                "-c:a",
+                "pcm_s16le",
+                str(audio_path),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="服务器未安装 ffmpeg，无法处理视频上传",
+        ) from exc
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or exc.stdout or str(exc)).strip()
+        raise HTTPException(
+            status_code=400,
+            detail=f"视频音频提取失败: {detail}",
+        ) from exc
+
+    if not audio_path.exists() or audio_path.stat().st_size <= 0:
+        raise HTTPException(status_code=400, detail="视频中未提取到有效音频")
+    return audio_path
 
 
 def _ensure_runtime_ready(
@@ -181,7 +256,7 @@ def process_uploaded_audio(
     if not is_upload_enabled():
         raise HTTPException(
             status_code=403,
-            detail="open-public 模式不允许直接上传音频文件，请改为输入视频 URL 或 BV 号",
+            detail="当前模式不允许直接上传文件，请改为输入视频 URL 或 BV 号",
         )
     _ensure_runtime_ready(
         api_key=_clean_optional_text(api_key),
@@ -189,7 +264,15 @@ def process_uploaded_audio(
         summary_profile=_clean_optional_text(summary_profile),
     )
 
-    safe_filename, bvid = _validate_upload_filename(file.filename or "")
+    open_public = is_open_public_mode()
+    if open_public:
+        safe_filename, upload_kind = _validate_open_public_upload_filename(
+            file.filename or "", getattr(file, "content_type", None)
+        )
+        bvid = None
+    else:
+        safe_filename, bvid = _validate_upload_filename(file.filename or "")
+        upload_kind = "audio"
     cleaned_summary_preset = _clean_optional_text(summary_preset)
     cleaned_summary_profile = _clean_optional_text(summary_profile)
     cleaned_summary_prompt_template = _clean_optional_prompt_template(
@@ -215,6 +298,15 @@ def process_uploaded_audio(
         shutil.rmtree(temp_dir, ignore_errors=True)
         raise HTTPException(status_code=400, detail="上传文件为空")
 
+    input_path = upload_path
+    if open_public:
+        if upload_kind == "video":
+            try:
+                input_path = _convert_video_upload_to_audio(upload_path)
+            except HTTPException:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                raise
+
     job = _create_job(
         skip_summary=skip_summary,
         summary_preset=cleaned_summary_preset,
@@ -222,12 +314,15 @@ def process_uploaded_audio(
         summary_prompt_template=cleaned_summary_prompt_template,
         auto_generate_fancy_html=auto_generate_fancy_html,
     )
+    job_id = str(job["job_id"])
+    input_bvid = f"upload-{job_id}" if open_public else bvid
     submit_job(
         _run_job,
-        job_id=str(job["job_id"]),
+        job_id=job_id,
         url=None,
-        input_audio_path=str(upload_path),
-        input_bvid=bvid,
+        input_audio_path=str(input_path),
+        input_bvid=input_bvid,
+        ephemeral_upload=open_public,
         skip_summary=skip_summary,
         summary_preset=cleaned_summary_preset,
         summary_profile=cleaned_summary_profile,
@@ -237,7 +332,7 @@ def process_uploaded_audio(
         deepseek_api_key=_clean_optional_text(deepseek_api_key),
     )
 
-    return ProcessStartResponse(job_id=str(job["job_id"]))
+    return ProcessStartResponse(job_id=job_id)
 
 
 @router.get("/api/jobs/active", response_model=ActiveJobsResponse)
