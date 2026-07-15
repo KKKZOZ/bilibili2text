@@ -141,6 +141,7 @@
     author: '',
     pubdate: '',
     bvid: '',
+    history_run_id: '',
     is_ephemeral_upload: false,
     expires_at: ''
   })
@@ -523,6 +524,7 @@
       payload.pubdate || '',
       payload.bvid || '',
       payload.title || '',
+      payload.history_run_id || '',
       payload.is_ephemeral_upload ? '1' : '0',
       payload.expires_at || ''
     ].join('\u001f')
@@ -569,6 +571,7 @@
       author: '',
       pubdate: '',
       bvid: '',
+      history_run_id: '',
       is_ephemeral_upload: false,
       expires_at: ''
     }
@@ -1344,7 +1347,7 @@
               :selected-summary-preset="selectedSummaryPreset"
               :summary-profiles="summaryProfiles"
               :selected-summary-profile="selectedSummaryProfile"
-              :history-run-id="jobId"
+              :history-run-id="job.history_run_id || ''"
               :requires-api-key="requiresApiKey"
             />
           </template>

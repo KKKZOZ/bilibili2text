@@ -462,4 +462,7 @@ def process_status(job_id: str) -> ProcessStatusResponse:
         pubdate=job["pubdate"] if isinstance(job.get("pubdate"), str) else None,
         bvid=job["bvid"] if isinstance(job.get("bvid"), str) else None,
         title=job["title"] if isinstance(job.get("title"), str) else None,
+        history_run_id=job["history_run_id"]
+        if isinstance(job.get("history_run_id"), str)
+        else None,
     )

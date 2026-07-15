@@ -277,6 +277,8 @@ class ExistingTranscriptionService:
             results=existing_results,
             config=config,
         )
+        if run_id:
+            _update_job(job_id, history_run_id=run_id)
         postprocess_scheduler.trigger_rag_index(run_id, config)
         return True
 
@@ -330,6 +332,7 @@ class ExistingTranscriptionService:
                 already_transcribed=True,
                 notice=notice,
                 all_downloads=_build_all_download_items(all_artifacts),
+                history_run_id=run_id,
                 error=None,
                 **success_fields,
             )
@@ -394,6 +397,8 @@ class ExistingTranscriptionService:
             summary_preset=summary_preset,
             summary_profile=summary_profile,
         )
+        if run_id:
+            _update_job(job_id, history_run_id=run_id)
         if auto_generate_fancy_html:
             postprocess_scheduler.trigger_fancy_html_generation(
                 job_id=job_id,

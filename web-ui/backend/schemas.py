@@ -122,6 +122,7 @@ class ProcessStatusResponse(BaseModel):
     pubdate: str | None = None
     bvid: str | None = None
     title: str | None = None
+    history_run_id: str | None = None
     is_ephemeral_upload: bool = False
     expires_at: str | None = None
 
