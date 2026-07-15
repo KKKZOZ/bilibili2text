@@ -197,6 +197,10 @@ def test_fetch_stock_daily_status_uses_as_of_date(monkeypatch) -> None:
     monkeypatch.setattr(
         "b2t.stock_status._fetch_yfinance_status_for_symbol", fake_fetch
     )
+    monkeypatch.setattr(
+        "b2t.stock_status._fetch_baostock_status_for_symbol",
+        lambda symbol, as_of_date: None,
+    )
 
     assert fetch_stock_daily_status(
         ["600000.SH"], as_of_date="2026-02-05 21:00:00"

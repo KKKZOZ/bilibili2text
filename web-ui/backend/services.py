@@ -27,7 +27,7 @@ from b2t.summarize.timeline import (
 )
 from backend.dependencies import get_history_db
 from backend.download_registry import download_registry
-from backend.stock_cache import get_or_fetch_stock_statuses
+from backend.stock_cache import get_cached_stock_statuses, get_or_fetch_stock_statuses
 
 logger = logging.getLogger(__name__)
 CUSTOM_SUMMARY_PRESET_VALUE = "__user_custom__"
@@ -243,6 +243,8 @@ def _generate_summary_png_exports(
     results: dict[str, StoredArtifact],
     storage_backend: StorageBackend,
     config: AppConfig,
+    refresh_stock_statuses: bool = False,
+    include_no_table: bool = True,
 ) -> dict[str, StoredArtifact]:
     summary_artifact = results.get("summary")
     if summary_artifact is None:
@@ -283,17 +285,31 @@ def _generate_summary_png_exports(
         stock_statuses = {}
         if bvid:
             try:
-                cache_paths = [summary_path]
-                if table_md_path is not None:
-                    cache_paths.append(table_md_path)
-                stock_statuses = get_or_fetch_stock_statuses(
+                stock_loader = (
+                    get_or_fetch_stock_statuses
+                    if refresh_stock_statuses
+                    else get_cached_stock_statuses
+                )
+                stock_statuses = stock_loader(
                     db=get_history_db(),
                     bvid=bvid,
                     as_of_date=as_of_date,
-                    markdown_paths=cache_paths,
+                    markdown_paths=[
+                        path
+                        for path in (summary_path, table_md_path)
+                        if path is not None
+                    ],
                 )
             except Exception as exc:
-                logger.warning("股票状态缓存预热失败，回退实时查询: %s", exc)
+                logger.warning(
+                    "股票状态缓存读取失败，导出将不展示实时行情: %s",
+                    exc,
+                )
+
+        if refresh_stock_statuses and not stock_statuses:
+            logger.info("后台行情刷新未获得可用数据，保留现有导出文件")
+            return {}
+
         png_converter = MarkdownToPngConverter()
 
         summary_png_path = summary_path.with_suffix(".png")
@@ -303,7 +319,7 @@ def _generate_summary_png_exports(
             is_table=False,
             as_of_date=as_of_date,
             enhance_stock_tables=True,
-            stock_statuses=stock_statuses or None,
+            stock_statuses=stock_statuses,
             dpr=4,
         )
         generated["summary_png"] = _store_sibling_artifact(
@@ -313,16 +329,17 @@ def _generate_summary_png_exports(
             path=summary_png_path,
         )
 
-        no_table_md_path = summary_path.with_stem(f"{summary_path.stem}_no_table")
-        MarkdownRemoveTableConverter().convert(summary_path, no_table_md_path)
-        no_table_png_path = no_table_md_path.with_suffix(".png")
-        png_converter.convert(no_table_md_path, no_table_png_path, is_table=False)
-        generated["summary_no_table_png"] = _store_sibling_artifact(
-            storage_backend=storage_backend,
-            config=config,
-            source_artifact=summary_artifact,
-            path=no_table_png_path,
-        )
+        if include_no_table:
+            no_table_md_path = summary_path.with_stem(f"{summary_path.stem}_no_table")
+            MarkdownRemoveTableConverter().convert(summary_path, no_table_md_path)
+            no_table_png_path = no_table_md_path.with_suffix(".png")
+            png_converter.convert(no_table_md_path, no_table_png_path, is_table=False)
+            generated["summary_no_table_png"] = _store_sibling_artifact(
+                storage_backend=storage_backend,
+                config=config,
+                source_artifact=summary_artifact,
+                path=no_table_png_path,
+            )
 
         if summary_table_artifact is not None and table_md_path is not None:
             table_png_path = table_md_path.with_suffix(".png")
@@ -331,7 +348,7 @@ def _generate_summary_png_exports(
                 table_png_path,
                 is_table=True,
                 as_of_date=as_of_date,
-                stock_statuses=stock_statuses or None,
+                stock_statuses=stock_statuses,
             )
             generated["summary_table_png"] = _store_sibling_artifact(
                 storage_backend=storage_backend,

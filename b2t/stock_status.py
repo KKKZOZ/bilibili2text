@@ -144,7 +144,24 @@ def _fetch_status_for_symbol(
     symbol: str,
     as_of_date: date,
 ) -> StockDailyStatus | None:
-    return _fetch_yfinance_status_for_symbol(symbol, as_of_date)
+    """Fetch stock data with fallback: yfinance -> baostock (A-shares)."""
+    # Try yfinance first
+    try:
+        result = _fetch_yfinance_status_for_symbol(symbol, as_of_date)
+        if result is not None:
+            return result
+    except Exception:
+        pass
+
+    # Fallback: baostock for A-shares
+    suffix = symbol.upper().split(".")[-1] if "." in symbol else ""
+    if suffix in ("SH", "SZ"):
+        try:
+            return _fetch_baostock_status_for_symbol(symbol, as_of_date)
+        except Exception:
+            pass
+
+    return None
 
 
 def _fetch_yfinance_status_for_symbol(

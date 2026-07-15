@@ -65,9 +65,9 @@ def get_cached_stock_statuses(
     db: HistoryDB,
     bvid: str,
     as_of_date: str | None,
-    markdown_path: Path,
+    markdown_paths: list[Path],
 ) -> dict[str, StockDailyStatus]:
-    symbols = _extract_symbols_from_paths([markdown_path])
+    symbols = _extract_symbols_from_paths(markdown_paths)
     if not symbols:
         return {}
     return db.get_stock_statuses(

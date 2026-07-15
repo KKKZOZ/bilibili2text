@@ -387,6 +387,12 @@ def _run_job(
             )
             if _run_id:
                 _update_job(job_id, history_run_id=_run_id)
+            postprocess_scheduler.trigger_stock_status_refresh(
+                bvid=bvid,
+                results=results,
+                config=config,
+                storage_backend=storage_backend,
+            )
             if auto_generate_fancy_html:
                 postprocess_scheduler.trigger_fancy_html_generation(
                     job_id=job_id,

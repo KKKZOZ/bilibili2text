@@ -402,3 +402,62 @@ def test_convert_artifact_uses_stock_status_options_for_summary_pdf(
         assert captured[1]["name"] == "BV123_summary_table.md"
         assert captured[1]["options"]["is_table"] is True
         assert captured[1]["options"]["as_of_date"] == "2026-02-05 21:00:00"
+
+
+def test_convert_artifact_uses_only_cached_stock_statuses(monkeypatch) -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        summary_path = Path(temp_dir) / "BV123_summary.md"
+        summary_path.write_text(
+            "| code |\n| --- |\n| 600000.SH |\n",
+            encoding="utf-8",
+        )
+        artifact = StoredArtifact(
+            filename=summary_path.name,
+            storage_key=str(summary_path),
+            backend="local",
+        )
+        captured: dict[str, object] = {}
+
+        class FakeStorage:
+            @contextmanager
+            def open_stream(self, storage_key: str) -> Iterator[object]:
+                with open(storage_key, "rb") as handle:
+                    yield handle
+
+            def store_file(
+                self, local_path: Path, *, object_key: str
+            ) -> StoredArtifact:
+                return StoredArtifact(
+                    filename=Path(local_path).name,
+                    storage_key=object_key,
+                    backend="local",
+                )
+
+        def fake_convert_file(input_path, target_format, output_path=None, **options):
+            output = Path(output_path or Path(input_path).with_suffix(".png"))
+            output.write_bytes(b"png")
+            captured.update(options)
+            return output
+
+        monkeypatch.setattr(
+            "backend.routes.download.download_registry.get_artifact",
+            lambda download_id: artifact,
+        )
+        monkeypatch.setattr("backend.routes.download.get_storage_backend", FakeStorage)
+        monkeypatch.setattr(
+            "backend.routes.download._find_precomputed_conversion",
+            lambda **kwargs: None,
+        )
+        monkeypatch.setattr("backend.routes.download.convert_file", fake_convert_file)
+        monkeypatch.setattr(
+            "backend.routes.download._lookup_artifact_run_context",
+            lambda storage_key: ("BV123", "2026-02-05 21:00:00"),
+        )
+        monkeypatch.setattr(
+            "backend.routes.download.get_cached_stock_statuses",
+            lambda **kwargs: {},
+        )
+
+        convert_artifact(ConvertRequest(download_id="summary", target_format="png"))
+
+        assert captured["stock_statuses"] == {}
