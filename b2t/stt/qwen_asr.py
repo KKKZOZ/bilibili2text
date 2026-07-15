@@ -91,11 +91,21 @@ class QwenSTTProvider(STTProvider):
 
         logger.info("Calling Dashscope API: %s", self._stt_config.qwen_base_url)
         model = self._stt_config.qwen_model.strip()
+
         if _is_fun_asr_model(model):
+            diarization_kwargs: dict[str, bool | int] = {}
+            if self._stt_config.diarization_enabled:
+                diarization_kwargs["diarization_enabled"] = True
+                diarization_kwargs["speaker_count"] = self._stt_config.speaker_count
+                logger.info(
+                    "Diarization enabled, speaker_count=%d",
+                    self._stt_config.speaker_count,
+                )
             task_response = Transcription.async_call(
                 model=model,
                 file_urls=[audio_url],
                 language_hints=[self._stt_config.language],
+                **diarization_kwargs,
             )
             wait_fn = Transcription.wait
         else:

@@ -180,6 +180,8 @@ def _pick_qwen_stt_profile(stt: STTConfig) -> STTProfile:
         groq_chunk_length=stt.groq_chunk_length,
         groq_overlap=stt.groq_overlap,
         groq_bitrate=stt.groq_bitrate,
+        diarization_enabled=stt.diarization_enabled,
+        speaker_count=stt.speaker_count,
     )
 
 
@@ -249,6 +251,8 @@ def build_open_public_config(
         groq_chunk_length=public_stt_profile.groq_chunk_length,
         groq_overlap=public_stt_profile.groq_overlap,
         groq_bitrate=public_stt_profile.groq_bitrate,
+        diarization_enabled=public_stt_profile.diarization_enabled,
+        speaker_count=public_stt_profile.speaker_count,
     )
 
     # Build summarize profiles by injecting user API keys into the

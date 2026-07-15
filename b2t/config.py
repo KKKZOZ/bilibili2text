@@ -96,6 +96,10 @@ class STTProfile:
     volc_poll_interval_seconds: int = 5
     volc_timeout_seconds: int = 1800
 
+    # Speaker diarization (supported by fun-asr model via Transcription.async_call)
+    diarization_enabled: bool = False
+    speaker_count: int = 2
+
 
 def _default_stt_profiles() -> dict[str, "STTProfile"]:
     return {
@@ -165,6 +169,10 @@ class STTConfig:
     volc_show_utterances: bool = True
     volc_poll_interval_seconds: int = 5
     volc_timeout_seconds: int = 1800
+
+    # Speaker diarization (supported by fun-asr model via Transcription.async_call)
+    diarization_enabled: bool = False
+    speaker_count: int = 2
 
 
 @dataclass(frozen=True)
@@ -796,6 +804,14 @@ def _load_stt_profile(
         raise ValueError(f"{section_name}.volc_poll_interval_seconds 必须是整数")
     if not isinstance(merged["volc_timeout_seconds"], int):
         raise ValueError(f"{section_name}.volc_timeout_seconds 必须是整数")
+    if not isinstance(merged["diarization_enabled"], bool):
+        raise ValueError(f"{section_name}.diarization_enabled 必须是布尔值")
+    if (
+        isinstance(merged["speaker_count"], bool)
+        or not isinstance(merged["speaker_count"], int)
+        or merged["speaker_count"] < 1
+    ):
+        raise ValueError(f"{section_name}.speaker_count 必须是正整数")
 
     provider = str(merged["provider"]).strip().lower()
     if provider not in {"qwen", "groq", "volc"}:
@@ -877,6 +893,8 @@ def _load_stt_config(raw_stt: dict) -> STTConfig:
         volc_show_utterances=selected_profile.volc_show_utterances,
         volc_poll_interval_seconds=selected_profile.volc_poll_interval_seconds,
         volc_timeout_seconds=selected_profile.volc_timeout_seconds,
+        diarization_enabled=selected_profile.diarization_enabled,
+        speaker_count=selected_profile.speaker_count,
     )
 
 
@@ -1639,6 +1657,8 @@ def create_app_config(
             volc_show_utterances=stt_profile.volc_show_utterances,
             volc_poll_interval_seconds=stt_profile.volc_poll_interval_seconds,
             volc_timeout_seconds=stt_profile.volc_timeout_seconds,
+            diarization_enabled=stt_profile.diarization_enabled,
+            speaker_count=stt_profile.speaker_count,
         )
 
     stt_profiles[profile_key] = stt_profile
@@ -1667,6 +1687,8 @@ def create_app_config(
         volc_show_utterances=stt_profile.volc_show_utterances,
         volc_poll_interval_seconds=stt_profile.volc_poll_interval_seconds,
         volc_timeout_seconds=stt_profile.volc_timeout_seconds,
+        diarization_enabled=stt_profile.diarization_enabled,
+        speaker_count=stt_profile.speaker_count,
     )
 
     # Build summarization config

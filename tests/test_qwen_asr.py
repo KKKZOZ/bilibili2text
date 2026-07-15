@@ -14,13 +14,20 @@ class _DummyStorageBackend:
         return True
 
 
-def _provider(model: str) -> QwenSTTProvider:
+def _provider(
+    model: str,
+    *,
+    diarization_enabled: bool = False,
+    speaker_count: int = 2,
+) -> QwenSTTProvider:
     return QwenSTTProvider(
         STTConfig(
             qwen_api_key="test-key",
             qwen_model=model,
             qwen_base_url="https://dashscope.aliyuncs.com/api/v1",
             language="zh",
+            diarization_enabled=diarization_enabled,
+            speaker_count=speaker_count,
         ),
         _DummyStorageBackend(),
     )
@@ -64,6 +71,35 @@ def test_submit_task_uses_fun_asr_api(monkeypatch) -> None:
     )
 
 
+def test_submit_task_enables_diarization_only_for_fun_asr(monkeypatch) -> None:
+    provider = _provider(
+        "fun-asr",
+        diarization_enabled=True,
+        speaker_count=3,
+    )
+    captured = {}
+
+    def fake_async_call(**kwargs):
+        captured["kwargs"] = kwargs
+        return SimpleNamespace(output=SimpleNamespace(task_id="task-fun"))
+
+    monkeypatch.setattr("b2t.stt.qwen_asr.Transcription.async_call", fake_async_call)
+    monkeypatch.setattr(
+        "b2t.stt.qwen_asr.Transcription.wait",
+        lambda *, task: SimpleNamespace(output={"task_status": "SUCCEEDED"}),
+    )
+
+    provider._submit_task("https://example.com/audio.wav")
+
+    assert captured["kwargs"] == {
+        "model": "fun-asr",
+        "file_urls": ["https://example.com/audio.wav"],
+        "language_hints": ["zh"],
+        "diarization_enabled": True,
+        "speaker_count": 3,
+    }
+
+
 def test_extract_transcription_url_supports_dashscope_dict_mixin_shape() -> None:
     provider = _provider("fun-asr")
     response = SimpleNamespace(
@@ -85,7 +121,11 @@ def test_extract_transcription_url_supports_dashscope_dict_mixin_shape() -> None
 
 
 def test_submit_task_uses_qwen_filetrans_api(monkeypatch) -> None:
-    provider = _provider("qwen3-asr-flash-filetrans")
+    provider = _provider(
+        "qwen3-asr-flash-filetrans",
+        diarization_enabled=True,
+        speaker_count=3,
+    )
     captured = {}
 
     def fake_async_call(**kwargs):
