@@ -57,6 +57,7 @@ class AlicloudStorageConfig:
     access_key_secret: str = ""
     base_prefix: str = "b2t"
     temporary_prefix: str = "temp-audio"
+    temporary_url_expire_seconds: int = 7200
     public_base_url: str = ""
     auto_create_bucket: bool = False
 
@@ -981,6 +982,12 @@ def _load_storage_config(raw_storage: dict) -> StorageConfig:
     alicloud = AlicloudStorageConfig(**alicloud_source)
     if not isinstance(alicloud.auto_create_bucket, bool):
         raise ValueError("storage.alicloud.auto_create_bucket 必须是布尔值")
+    if isinstance(alicloud.temporary_url_expire_seconds, bool) or not isinstance(
+        alicloud.temporary_url_expire_seconds, int
+    ):
+        raise ValueError("storage.alicloud.temporary_url_expire_seconds 必须是整数秒")
+    if alicloud.temporary_url_expire_seconds <= 0:
+        raise ValueError("storage.alicloud.temporary_url_expire_seconds 必须大于 0")
 
     alicloud_string_fields = {
         "storage.alicloud.region": alicloud.region,

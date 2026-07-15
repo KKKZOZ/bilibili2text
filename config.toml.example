@@ -27,6 +27,7 @@ access_key_id = "your-access-key-id"
 access_key_secret = "your-access-key-secret"
 base_prefix = "b2t"
 temporary_prefix = "temp-audio"
+temporary_url_expire_seconds = 7200
 public_base_url = ""
 auto_create_bucket = false
 
