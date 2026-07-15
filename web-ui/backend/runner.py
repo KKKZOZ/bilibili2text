@@ -6,11 +6,10 @@ from datetime import datetime
 from pathlib import Path
 from threading import get_ident
 
-from b2t.download.yutto_cli import (
-    extract_bilibili_target_id,
-    extract_bvid,
-    normalize_bilibili_target,
-)
+from b2t.download.platform import Platform
+from b2t.download.url_detect import detect_platform, extract_platform_id
+from b2t.download.ximalaya import resolve_ximalaya_sound_url
+from b2t.download.yutto_cli import extract_bvid, normalize_bilibili_target
 from b2t.pipeline import run_pipeline
 from backend.bvid_locks import bvid_transcription_locks
 from backend.dependencies import (
@@ -39,6 +38,31 @@ from backend.services import (
 from backend.settings import get_runtime_app_config
 
 logger = logging.getLogger(__name__)
+
+
+def _infer_resource_id_from_url(url: str) -> tuple[str, str | None]:
+    """Normalize supported URLs and return an ID suitable for cache/lock lookup."""
+    normalized_url = url.strip()
+    platform = detect_platform(normalized_url)
+    if platform is None or platform == Platform.BILIBILI:
+        try:
+            normalized_url = normalize_bilibili_target(normalized_url)
+        except Exception:
+            pass
+        return normalized_url, extract_bvid(normalized_url)
+
+    if platform == Platform.XIMALAYA:
+        try:
+            normalized_url, platform_id = resolve_ximalaya_sound_url(normalized_url)
+        except Exception as exc:
+            logger.warning("Unable to resolve Ximalaya resource ID early: %s", exc)
+            return normalized_url, None
+    else:
+        platform_id = extract_platform_id(normalized_url, platform)
+        if platform_id is None:
+            return normalized_url, None
+
+    return normalized_url, f"{platform.value}_{platform_id}"
 
 
 def _cleanup_upload_temp_dir(temp_dir: Path | None) -> None:
@@ -71,12 +95,8 @@ def _run_job(
     bvid = (input_bvid or "").strip() or None
     transcription_id = bvid
     if bvid is None and normalized_url:
-        try:
-            normalized_url = normalize_bilibili_target(normalized_url)
-        except Exception:
-            pass
-        bvid = extract_bvid(normalized_url)
-        transcription_id = extract_bilibili_target_id(normalized_url) or bvid
+        normalized_url, bvid = _infer_resource_id_from_url(normalized_url)
+        transcription_id = bvid
 
     upload_temp_dir: Path | None = None
     if normalized_audio_path:
@@ -294,8 +314,15 @@ def _run_job(
             )
             return
 
-        # Extract metadata
+        # Extract metadata. Non-Bilibili platforms only get a resource ID after
+        # download (e.g. xiaoyuzhou_<eid>), so backfill bvid from pipeline
+        # metadata before history / locks / UI fields are written.
         metadata = results.get("_metadata")
+        if bvid is None and metadata is not None:
+            metadata_bvid = getattr(metadata, "bvid", None)
+            if isinstance(metadata_bvid, str) and metadata_bvid.strip():
+                bvid = metadata_bvid.strip()
+
         metadata_fields = {}
         if metadata:
             metadata_fields["author"] = metadata.author

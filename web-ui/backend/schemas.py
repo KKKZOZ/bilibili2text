@@ -6,7 +6,11 @@ from pydantic import BaseModel, Field
 
 
 class ProcessRequest(BaseModel):
-    url: str = Field(..., min_length=1, description="Bilibili 视频 URL")
+    url: str = Field(
+        ...,
+        min_length=1,
+        description="视频或播客 URL（支持 Bilibili、小宇宙、喜马拉雅）",
+    )
     skip_summary: bool = Field(
         default=False,
         description="是否跳过总结步骤",

@@ -753,7 +753,7 @@
       let resp
       if (isUploadMode.value) {
         if (!props.allowUpload) {
-          throw new Error('当前模式不允许上传音频，请改为输入视频 URL 或 BV 号')
+          throw new Error('当前模式不允许上传音频，请改为输入播客/视频链接')
         }
         const validationMessage = validateUploadedAudio(uploadedAudioFile.value)
         if (validationMessage) {
@@ -797,7 +797,7 @@
         })
       } else {
         if (!url.value.trim()) {
-          throw new Error('请输入 bilibili 视频 URL 或 BV 号')
+          throw new Error('请输入播客链接或视频 URL')
         }
         resp = await fetch('/api/process', {
           method: 'POST',
@@ -976,14 +976,14 @@
           </div>
 
           <template v-if="!isUploadMode">
-            <label for="video-url">视频 URL 或 BV 号</label>
+            <label for="video-url">视频/播客 URL</label>
             <div class="input-row">
               <Link2 :size="18" />
               <input
                 id="video-url"
                 v-model="url"
                 type="text"
-                placeholder="https://www.bilibili.com/video/BV... 或 b23.tv/..."
+                placeholder="支持 Bilibili、小宇宙 FM、喜马拉雅播客链接..."
               />
             </div>
             <div class="input-example">
@@ -996,15 +996,14 @@
                 https://www.bilibili.com/video/BV1R9i4BoE7H
               </a>
               <a
-                href="https://b23.tv/2cvz6sn"
+                href="https://www.xiaoyuzhoufm.com/episode/6a0a7365e1eb34a93997ffa2"
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                https://b23.tv/2cvz6sn
+                https://www.xiaoyuzhoufm.com/episode/6a0a7365e1eb34a93997ffa2
               </a>
               <span
-                >【第1173日投资记录：稍微回血，伊利业绩大放异彩，基本确定把蒙牛卖飞了……-哔哩哔哩】
-                https://b23.tv/2cvz6sn</span
+                >支持 Bilibili / 小宇宙 / 喜马拉雅链接，自动下载音频并转录</span
               >
             </div>
             <label class="switch" for="prefer-bilibili-subtitle">
@@ -1023,7 +1022,9 @@
           <template v-else>
             <label for="audio-file">
               {{
-                isOpenPublic ? '音频或视频文件' : '音频文件（必需包含 BV 号）'
+                isOpenPublic
+                  ? '音频或视频文件'
+                  : '音频文件（文件名必须包含 BV 号）'
               }}
             </label>
             <div class="upload-row">
@@ -1306,10 +1307,10 @@
             <h3>视频信息</h3>
             <div class="metadata-items">
               <span v-if="job.bvid" class="metadata-item">
-                <strong>BV 号:</strong> {{ job.bvid }}
+                <strong>资源 ID:</strong> {{ job.bvid }}
               </span>
               <span v-if="job.author" class="metadata-item">
-                <strong>UP主:</strong> {{ job.author }}
+                <strong>UP主 / 主播:</strong> {{ job.author }}
               </span>
               <span v-if="job.pubdate" class="metadata-item">
                 <strong>发布时间:</strong> {{ job.pubdate }}

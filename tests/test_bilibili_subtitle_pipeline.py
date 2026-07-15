@@ -2,6 +2,8 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from b2t.config import create_app_config
 from b2t.download.subtitle import (
     BilibiliSubtitle,
@@ -190,3 +192,25 @@ def test_pipeline_falls_back_to_asr_when_bilibili_subtitle_missing(
     assert payload["timeline_schema_version"] == 1
     markdown = Path(results["markdown"].storage_key).read_text(encoding="utf-8")
     assert "ASR fallback text" in markdown
+
+
+def test_pipeline_rejects_unknown_url_before_downloader(
+    monkeypatch, tmp_path: Path
+) -> None:
+    config = create_app_config(output_dir=tmp_path)
+    storage = LocalStorageBackend(tmp_path)
+    monkeypatch.setattr(
+        "b2t.pipeline.download_audio",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("unknown URLs must not reach the downloader")
+        ),
+    )
+
+    with pytest.raises(ValueError, match="不支持的 URL"):
+        run_pipeline(
+            "http://127.0.0.1/xima.tv/example",
+            config,
+            skip_summary=True,
+            storage_backend=storage,
+            stt_storage_backend=storage,
+        )

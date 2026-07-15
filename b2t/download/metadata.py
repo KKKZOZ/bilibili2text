@@ -9,6 +9,8 @@ from datetime import datetime
 
 import httpx
 
+from b2t.download.platform import PlatformMetadata
+
 logger = logging.getLogger(__name__)
 
 
@@ -23,6 +25,29 @@ class VideoMetadata:
     pubdate: str  # ISO date string (YYYY-MM-DD HH:MM:SS)
     pubdate_timestamp: int  # Unix timestamp
     description: str
+
+    @classmethod
+    def from_platform_metadata(cls, pm: PlatformMetadata) -> "VideoMetadata":
+        """Create a VideoMetadata-compatible object from PlatformMetadata.
+
+        Uses the platform-prefixed ID as bvid for backward compatibility
+        with existing code that expects a BV-style identifier.
+        """
+        bvid = f"{pm.platform.value}_{pm.platform_id}"
+        author_uid = 0
+        try:
+            author_uid = int(pm.author_uid)
+        except (ValueError, TypeError):
+            pass
+        return cls(
+            bvid=bvid,
+            title=pm.title,
+            author=pm.author,
+            author_uid=author_uid,
+            pubdate=pm.pubdate,
+            pubdate_timestamp=pm.pubdate_timestamp,
+            description=pm.description,
+        )
 
 
 async def get_video_metadata_async(bvid: str) -> VideoMetadata:

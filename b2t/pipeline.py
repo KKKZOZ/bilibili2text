@@ -10,8 +10,10 @@ from uuid import uuid4
 
 from b2t.config import AppConfig
 from b2t.converter.json_to_md import TIMELINE_SCHEMA_VERSION, convert_json_to_md
-from b2t.download.metadata import get_video_metadata
+from b2t.download.metadata import VideoMetadata, get_video_metadata
+from b2t.download.platform import Platform, build_filename_component
 from b2t.download.subtitle import fetch_bilibili_subtitle
+from b2t.download.url_detect import detect_platform
 from b2t.download.yutto import download_audio
 from b2t.download.yutto_cli import (
     extract_bilibili_target_id,
@@ -33,13 +35,31 @@ from b2t.summarize.timeline import (
 
 logger = logging.getLogger(__name__)
 
+_LONGEST_DERIVED_ARTIFACT_SUFFIX = "_summary_no_table.png"
 
-def _ensure_bvid_prefixed_name(name: str, bvid: str) -> str:
-    lowered = name.lower()
+
+def _ensure_bvid_prefixed_name(
+    name: str,
+    bvid: str,
+    *,
+    preserve_extension: bool = False,
+) -> str:
+    suffix = Path(name).suffix if preserve_extension else ""
+    stem = name[: -len(suffix)] if suffix else name
+    lowered = stem.lower()
     bvid_lower = bvid.lower()
     if lowered.startswith(bvid_lower):
-        return name
-    return f"{bvid}_{name}"
+        prefix = stem[: len(bvid)]
+        remainder = stem[len(bvid) :]
+    else:
+        prefix = f"{bvid}_"
+        remainder = stem
+    return build_filename_component(
+        remainder,
+        prefix=prefix,
+        suffix=suffix,
+        reserved_suffix=_LONGEST_DERIVED_ARTIFACT_SUFFIX,
+    )
 
 
 def _safe_path_name(name: str) -> str:
@@ -129,41 +149,77 @@ def run_pipeline(
         else:
             if not url.strip():
                 raise ValueError("URL 不能为空")
-            normalized_url = normalize_bilibili_target(url)
-            bvid = input_bvid or extract_bvid(normalized_url)
-            transcription_id = extract_bilibili_target_id(normalized_url) or bvid
+
+            platform = detect_platform(url)
+            if platform is None and extract_bvid(url) is not None:
+                platform = Platform.BILIBILI
+            if platform is None:
+                raise ValueError("不支持的 URL，请使用 Bilibili、小宇宙或喜马拉雅链接")
             metadata = None
-            if bvid:
-                try:
-                    metadata = get_video_metadata(bvid)
-                except Exception as e:
-                    logger.warning("Failed to fetch video metadata: %s", e)
+            audio_file = None
+            subtitle = None
 
-            if prefer_bilibili_subtitle:
-                emit_progress("downloading", "获取 B 站字幕", 10)
-                logger.info("=== 获取 B 站字幕 ===")
-                subtitle = fetch_bilibili_subtitle(normalized_url)
-            else:
-                subtitle = None
+            if platform == Platform.BILIBILI:
+                normalized_url = normalize_bilibili_target(url)
+                bvid = input_bvid or extract_bvid(normalized_url)
+                transcription_id = extract_bilibili_target_id(normalized_url) or bvid
+                if bvid:
+                    try:
+                        metadata = get_video_metadata(bvid)
+                    except Exception as e:
+                        logger.warning("Failed to fetch video metadata: %s", e)
 
-            if subtitle is None:
-                emit_progress("downloading", "下载视频音频", 10)
-                logger.info("=== 下载音频 ===")
-                audio_file, downloaded_metadata = download_audio(
-                    normalized_url,
-                    temp_download_dir,
-                    config.download.audio_quality,
-                    fetch_metadata=metadata is None,
+                if prefer_bilibili_subtitle:
+                    emit_progress("downloading", "获取 B 站字幕", 10)
+                    logger.info("=== 获取 B 站字幕 ===")
+                    subtitle = fetch_bilibili_subtitle(normalized_url)
+                else:
+                    subtitle = None
+
+                if subtitle is None:
+                    emit_progress("downloading", "下载视频音频", 10)
+                    logger.info("=== 下载音频 ===")
+                    audio_file, downloaded_metadata = download_audio(
+                        normalized_url,
+                        temp_download_dir,
+                        config.download.audio_quality,
+                        fetch_metadata=metadata is None,
+                    )
+                    if metadata is None:
+                        metadata = downloaded_metadata
+                    bvid = bvid or extract_bvid(audio_file.name)
+                else:
+                    audio_file = None
+            elif platform == Platform.XIAOYUZHOU:
+                emit_progress("downloading", "下载音频", 10)
+                logger.info("=== 下载小宇宙音频 ===")
+                from b2t.download.xiaoyuzhou import XiaoyuzhouDownloader
+
+                downloader = XiaoyuzhouDownloader()
+                audio_file, platform_metadata = downloader.download_audio(
+                    url, temp_download_dir
                 )
-                if metadata is None:
-                    metadata = downloaded_metadata
-                bvid = bvid or extract_bvid(audio_file.name)
+                metadata = VideoMetadata.from_platform_metadata(platform_metadata)
+                bvid = input_bvid or metadata.bvid
+                transcription_id = bvid
+            elif platform == Platform.XIMALAYA:
+                emit_progress("downloading", "下载音频", 10)
+                logger.info("=== 下载喜马拉雅音频 ===")
+                from b2t.download.ximalaya import XimalayaDownloader
+
+                downloader = XimalayaDownloader()
+                audio_file, platform_metadata = downloader.download_audio(
+                    url, temp_download_dir
+                )
+                metadata = VideoMetadata.from_platform_metadata(platform_metadata)
+                bvid = input_bvid or metadata.bvid
+                transcription_id = bvid
             else:
-                audio_file = None
+                raise ValueError(f"不支持的平台: {platform}")
 
         if bvid is None:
             raise ValueError(
-                "无法提取 BV 号。请使用包含 BV 号的 URL，"
+                "无法提取资源 ID。请使用包含有效 ID 的 URL，"
                 "或上传形如 `BV号_视频标题.xxx` 的音频文件。"
             )
         if transcription_id is None:
@@ -172,7 +228,10 @@ def run_pipeline(
         # Record metadata
         if metadata:
             logger.info(
-                "Video author: %s, publish date: %s", metadata.author, metadata.pubdate
+                "Author: %s, publish date: %s, title: %s",
+                metadata.author,
+                metadata.pubdate,
+                metadata.title,
             )
             results["_metadata"] = metadata  # Temporarily store metadata for later use
 
@@ -219,7 +278,9 @@ def run_pipeline(
         else:
             # Move audio to work directory
             audio_filename = _ensure_bvid_prefixed_name(
-                audio_file.name, transcription_id
+                audio_file.name,
+                transcription_id,
+                preserve_extension=True,
             )
             new_audio_path = work_dir / audio_filename
             if use_local_audio:
