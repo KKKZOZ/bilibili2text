@@ -9,6 +9,10 @@
     Brain,
     CalendarDays,
     ChevronDown,
+    ChevronLeft,
+    ChevronRight,
+    ChevronsLeft,
+    ChevronsRight,
     Clock,
     FileText,
     LoaderCircle,
@@ -18,7 +22,11 @@
     XCircle
   } from 'lucide-vue-next'
   import FileList from './FileList.vue'
-  import { bilibiliVideoUrl, formatTime } from '../utils/fileUtils'
+  import {
+    bilibiliVideoLabel,
+    bilibiliVideoUrl,
+    formatTime
+  } from '../utils/fileUtils'
   import { extractRagReferenceItems, renderMarkdown } from '../utils/markdown'
 
   const route = useRoute()
@@ -60,6 +68,7 @@
   const historyPage = ref(1)
   const historyPageSize = ref(20)
   const historyHasMore = ref(false)
+  const historyJumpPage = ref('')
   const historySearch = ref('')
   const historyRecordType = ref('') // '' | 'transcription' | 'rag_query'
   const historyLoading = ref(false)
@@ -560,17 +569,31 @@
   }
 
   const historyPrevPage = () => {
-    if (historyPage.value > 1) {
-      historyPage.value--
-      loadHistory()
-    }
+    goToHistoryPage(historyPage.value - 1)
   }
 
   const historyNextPage = () => {
-    if (historyHasMore.value) {
-      historyPage.value++
-      loadHistory()
+    goToHistoryPage(historyPage.value + 1)
+  }
+
+  const goToHistoryPage = (page) => {
+    const parsedPage = Number.parseInt(String(page), 10)
+    if (!Number.isFinite(parsedPage)) {
+      historyJumpPage.value = ''
+      return
     }
+    const targetPage = Math.min(
+      historyTotalPages.value,
+      Math.max(1, parsedPage)
+    )
+    historyJumpPage.value = ''
+    if (targetPage === historyPage.value || historyLoading.value) return
+    historyPage.value = targetPage
+    loadHistory()
+  }
+
+  const submitHistoryPageJump = () => {
+    goToHistoryPage(historyJumpPage.value)
   }
 
   const confirmDelete = (runId) => {
@@ -699,11 +722,15 @@
               <div class="detail-meta">
                 <a
                   class="detail-bvid"
-                  :href="bilibiliVideoUrl(historyDetail.bvid)"
+                  :href="
+                    bilibiliVideoUrl(historyDetail.bvid, historyDetail.page)
+                  "
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  {{ historyDetail.bvid }}
+                  {{
+                    bilibiliVideoLabel(historyDetail.bvid, historyDetail.page)
+                  }}
                 </a>
                 <span v-if="historyDetail.author" class="detail-author-tag">
                   <User :size="12" />
@@ -1098,12 +1125,12 @@
               <a
                 v-if="item.record_type !== 'rag_query' && item.bvid"
                 class="history-bvid"
-                :href="bilibiliVideoUrl(item.bvid)"
+                :href="bilibiliVideoUrl(item.bvid, item.page)"
                 target="_blank"
                 rel="noopener noreferrer"
                 @click.stop
               >
-                {{ item.bvid }}
+                {{ bilibiliVideoLabel(item.bvid, item.page) }}
               </a>
               <span v-if="item.author" class="history-author-tag">
                 <User :size="12" />
@@ -1142,12 +1169,59 @@
 
       <!-- Pagination -->
       <div v-if="historyTotal > historyPageSize" class="history-pagination">
-        <button :disabled="historyPage <= 1" @click="historyPrevPage">
-          上一页
+        <button
+          class="pagination-icon-button"
+          :disabled="historyPage <= 1 || historyLoading"
+          title="第一页"
+          aria-label="跳转到第一页"
+          @click="goToHistoryPage(1)"
+        >
+          <ChevronsLeft :size="16" />
         </button>
-        <span>第 {{ historyPage }} 页 / 共 {{ historyTotalPages }} 页</span>
-        <button :disabled="!historyHasMore" @click="historyNextPage">
-          下一页
+        <button
+          class="pagination-icon-button"
+          :disabled="historyPage <= 1 || historyLoading"
+          title="上一页"
+          aria-label="跳转到上一页"
+          @click="historyPrevPage"
+        >
+          <ChevronLeft :size="16" />
+        </button>
+        <span class="pagination-status">
+          第 {{ historyPage }} 页 / 共 {{ historyTotalPages }} 页
+        </span>
+        <form class="pagination-jump" @submit.prevent="submitHistoryPageJump">
+          <input
+            v-model="historyJumpPage"
+            type="number"
+            inputmode="numeric"
+            min="1"
+            :max="historyTotalPages"
+            placeholder="页码"
+            aria-label="输入要跳转的页码"
+            :disabled="historyLoading"
+          />
+          <button type="submit" :disabled="historyLoading || !historyJumpPage">
+            跳转
+          </button>
+        </form>
+        <button
+          class="pagination-icon-button"
+          :disabled="!historyHasMore || historyLoading"
+          title="下一页"
+          aria-label="跳转到下一页"
+          @click="historyNextPage"
+        >
+          <ChevronRight :size="16" />
+        </button>
+        <button
+          class="pagination-icon-button"
+          :disabled="!historyHasMore || historyLoading"
+          title="最后一页"
+          aria-label="跳转到最后一页"
+          @click="goToHistoryPage(historyTotalPages)"
+        >
+          <ChevronsRight :size="16" />
         </button>
       </div>
     </article>
@@ -1554,7 +1628,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 14px;
+    gap: 8px;
+    flex-wrap: wrap;
   }
 
   .history-pagination button {
@@ -1564,7 +1639,7 @@
     min-height: 34px;
     padding: 0 14px;
     border: 1px solid var(--line);
-    border-radius: 10px;
+    border-radius: 6px;
     background: rgba(255, 255, 255, 0.9);
     color: var(--text-soft);
     font-size: 0.84rem;
@@ -1589,6 +1664,42 @@
     font-size: 0.82rem;
     color: var(--text-muted);
     font-variant-numeric: tabular-nums;
+  }
+
+  .history-pagination .pagination-icon-button {
+    width: 34px;
+    min-width: 34px;
+    padding: 0;
+  }
+
+  .pagination-status {
+    min-width: 132px;
+    text-align: center;
+  }
+
+  .pagination-jump {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .pagination-jump input {
+    width: 70px;
+    height: 34px;
+    padding: 0 8px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.9);
+    color: var(--text);
+    font: inherit;
+    font-size: 0.84rem;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .pagination-jump input:focus {
+    outline: 2px solid rgba(20, 184, 166, 0.2);
+    border-color: #14b8a6;
   }
 
   /* ─── Detail header ──────────────────────────────────────────── */

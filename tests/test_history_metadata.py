@@ -2,6 +2,7 @@ from b2t.history import (
     HistoryArtifact,
     HistoryDB,
     build_history_artifacts,
+    infer_title,
     record_pipeline_run,
 )
 from b2t.storage.base import StoredArtifact, classify_artifact_filename
@@ -31,6 +32,15 @@ def _mock_results(
             backend="minio",
         ),
     }
+
+
+def test_infer_title_moves_multipart_page_to_uppercase_suffix() -> None:
+    title = infer_title(
+        "BV1ua4y1Y7yX_p5_[速成零基础高中数学合集]20个视频整理版_transcription.md",
+        bvid="BV1ua4y1Y7yX",
+    )
+
+    assert title == "[速成零基础高中数学合集]20个视频整理版_P5"
 
 
 def test_record_pipeline_run_persists_summary_metadata(tmp_path) -> None:

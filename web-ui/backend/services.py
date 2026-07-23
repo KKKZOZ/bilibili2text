@@ -350,6 +350,7 @@ def _generate_summary_png_exports(
 def _run_summary_only_from_existing(
     *,
     bvid: str,
+    transcription_id: str | None = None,
     storage_backend: StorageBackend,
     config: AppConfig,
     existing_results: dict[str, StoredArtifact],
@@ -392,7 +393,7 @@ def _run_summary_only_from_existing(
             description="",
         )
 
-    run_prefix = f"{bvid}-{uuid4().hex[:8]}"
+    run_prefix = f"{transcription_id or bvid}-{uuid4().hex[:8]}"
     cleanup_temp_dir: tempfile.TemporaryDirectory | None = None
     if storage_backend.persist_local_outputs:
         work_root = Path(config.download.output_dir).expanduser().resolve()

@@ -18,7 +18,11 @@ from b2t.config import (
 from b2t.converter.json_to_md import convert_json_to_md
 from b2t.download.metadata import get_video_metadata
 from b2t.download.subtitle import fetch_bilibili_subtitle
-from b2t.download.yutto_cli import extract_bvid, normalize_bilibili_target
+from b2t.download.yutto_cli import (
+    extract_bilibili_target_id,
+    extract_bvid,
+    normalize_bilibili_target,
+)
 from b2t.download.yutto import download_audio
 from b2t.storage import (
     StorageBackend,
@@ -146,11 +150,13 @@ def run_pipeline(
             audio_file = normalized_audio_path
             metadata = None
             bvid = input_bvid or extract_bvid(audio_file.name)
+            transcription_id = bvid
         else:
             if not url.strip():
                 raise ValueError("URL 不能为空")
             normalized_url = normalize_bilibili_target(url)
             bvid = input_bvid or extract_bvid(normalized_url)
+            transcription_id = extract_bilibili_target_id(normalized_url) or bvid
             metadata = None
             if bvid:
                 try:
@@ -185,6 +191,8 @@ def run_pipeline(
                 "无法提取 BV 号。请使用包含 BV 号的 URL，"
                 "或上传形如 `BV号_视频标题.xxx` 的音频文件。"
             )
+        if transcription_id is None:
+            transcription_id = bvid
 
         # Record metadata
         if metadata:
@@ -196,13 +204,15 @@ def run_pipeline(
         # Create workflow directory
         if audio_file is None:
             work_dir_name = (
-                f"{bvid}_{_safe_path_name(metadata.title)}"
+                f"{transcription_id}_{_safe_path_name(metadata.title)}"
                 if metadata and metadata.title
-                else bvid
+                else transcription_id
             )
         else:
             work_dir_name = audio_file.stem
-        work_dir = transcribe_root / _ensure_bvid_prefixed_name(work_dir_name, bvid)
+        work_dir = transcribe_root / _ensure_bvid_prefixed_name(
+            work_dir_name, transcription_id
+        )
         work_dir.mkdir(exist_ok=True)
 
         if audio_file is None:
@@ -226,7 +236,9 @@ def run_pipeline(
             )
         else:
             # Move audio to work directory
-            audio_filename = _ensure_bvid_prefixed_name(audio_file.name, bvid)
+            audio_filename = _ensure_bvid_prefixed_name(
+                audio_file.name, transcription_id
+            )
             new_audio_path = work_dir / audio_filename
             if use_local_audio:
                 shutil.copy2(str(audio_file), new_audio_path)
@@ -277,7 +289,7 @@ def run_pipeline(
             if summary_table_md_path is not None:
                 local_results["summary_table_md"] = summary_table_md_path
 
-        storage_prefix = f"{bvid}-{uuid4().hex[:8]}"
+        storage_prefix = f"{transcription_id}-{uuid4().hex[:8]}"
         for artifact_key, artifact_path in local_results.items():
             object_key = f"{storage_prefix}/{artifact_path.name}"
             results[artifact_key] = storage_backend.store_file(

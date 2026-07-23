@@ -140,9 +140,20 @@ export function formatTime(isoString) {
   })
 }
 
-export function bilibiliVideoUrl(bvid) {
+export function bilibiliVideoUrl(bvid, page = null) {
   if (typeof bvid !== 'string' || bvid.trim() === '') {
     return 'https://www.bilibili.com/'
   }
-  return `https://www.bilibili.com/video/${encodeURIComponent(bvid.trim())}`
+  const baseUrl = `https://www.bilibili.com/video/${encodeURIComponent(bvid.trim())}`
+  const pageNumber = Number(page)
+  return Number.isInteger(pageNumber) && pageNumber > 1
+    ? `${baseUrl}?p=${pageNumber}`
+    : baseUrl
+}
+
+export function bilibiliVideoLabel(bvid, page = null) {
+  const pageNumber = Number(page)
+  return Number.isInteger(pageNumber) && pageNumber > 1
+    ? `${bvid} · P${pageNumber}`
+    : bvid
 }

@@ -59,7 +59,7 @@ def _resolve_requested_summary_selection(
 
 def _find_existing_summary_results_for_selection(
     *,
-    bvid: str,
+    transcription_id: str,
     existing_results: dict[str, StoredArtifact],
     resolved_preset: str,
     resolved_profile: str,
@@ -68,7 +68,7 @@ def _find_existing_summary_results_for_selection(
     if markdown_artifact is None:
         return None
 
-    run_id = infer_run_id(markdown_artifact.storage_key, bvid=bvid)
+    run_id = infer_run_id(markdown_artifact.storage_key, bvid=transcription_id)
     detail = get_history_db().get_run_detail(run_id)
     if detail is None:
         return None
@@ -133,6 +133,7 @@ class ExistingTranscriptionService:
         *,
         job_id: str,
         bvid: str,
+        transcription_id: str | None = None,
         storage_backend: StorageBackend,
         config,
         skip_summary: bool,
@@ -141,8 +142,9 @@ class ExistingTranscriptionService:
         summary_prompt_template: str | None,
         auto_generate_fancy_html: bool,
     ) -> bool:
+        storage_id = (transcription_id or bvid).strip()
         try:
-            existing_results = storage_backend.find_existing_transcription(bvid)
+            existing_results = storage_backend.find_existing_transcription(storage_id)
         except Exception as exc:
             logger.warning("查询历史转录结果失败，将继续正常转录: %s", exc)
             return False
@@ -154,6 +156,7 @@ class ExistingTranscriptionService:
             return self._return_existing_without_summary(
                 job_id=job_id,
                 bvid=bvid,
+                transcription_id=storage_id,
                 storage_backend=storage_backend,
                 config=config,
                 existing_results=existing_results,
@@ -162,6 +165,7 @@ class ExistingTranscriptionService:
         return self._summarize_existing(
             job_id=job_id,
             bvid=bvid,
+            transcription_id=storage_id,
             storage_backend=storage_backend,
             config=config,
             existing_results=existing_results,
@@ -176,6 +180,7 @@ class ExistingTranscriptionService:
         *,
         job_id: str,
         bvid: str,
+        transcription_id: str,
         storage_backend: StorageBackend,
         config,
         existing_results,
@@ -187,10 +192,10 @@ class ExistingTranscriptionService:
 
         all_artifacts = _collect_all_artifacts_for_bvid(
             storage_backend,
-            bvid,
+            transcription_id,
             existing_results,
         )
-        notice = f"检测到 {bvid} 已经转录过，已直接返回历史文件。"
+        notice = f"检测到 {transcription_id} 已经转录过，已直接返回历史文件。"
         _update_job(
             job_id,
             status="succeeded",
@@ -217,6 +222,7 @@ class ExistingTranscriptionService:
         *,
         job_id: str,
         bvid: str,
+        transcription_id: str,
         storage_backend: StorageBackend,
         config,
         existing_results,
@@ -231,7 +237,7 @@ class ExistingTranscriptionService:
             summary_profile=summary_profile,
         )
         existing_summary_match = _find_existing_summary_results_for_selection(
-            bvid=bvid,
+            transcription_id=transcription_id,
             existing_results=existing_results,
             resolved_preset=resolved_preset,
             resolved_profile=resolved_profile,
@@ -245,11 +251,11 @@ class ExistingTranscriptionService:
 
             all_artifacts = _collect_all_artifacts_for_bvid(
                 storage_backend,
-                bvid,
+                transcription_id,
                 matched_results,
             )
             notice = (
-                f"检测到 {bvid} 已存在使用模型配置 {resolved_profile} "
+                f"检测到 {transcription_id} 已存在使用模型配置 {resolved_profile} "
                 f"与总结模板 {resolved_preset} 生成的总结，已直接返回历史文件。"
             )
             _update_job(
@@ -278,6 +284,7 @@ class ExistingTranscriptionService:
         try:
             summary_results = _run_summary_only_from_existing(
                 bvid=bvid,
+                transcription_id=transcription_id,
                 storage_backend=storage_backend,
                 config=config,
                 existing_results=existing_results,
@@ -299,10 +306,10 @@ class ExistingTranscriptionService:
 
         all_artifacts = _collect_all_artifacts_for_bvid(
             storage_backend,
-            bvid,
+            transcription_id,
             combined_results,
         )
-        notice = f"检测到 {bvid} 已经转录过，已复用历史转录并完成新的总结。"
+        notice = f"检测到 {transcription_id} 已经转录过，已复用历史转录并完成新的总结。"
         _update_job(
             job_id,
             status="succeeded",

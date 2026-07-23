@@ -6,7 +6,11 @@ import shutil
 from datetime import datetime
 from threading import get_ident
 
-from b2t.download.yutto_cli import extract_bvid, normalize_bilibili_target
+from b2t.download.yutto_cli import (
+    extract_bilibili_target_id,
+    extract_bvid,
+    normalize_bilibili_target,
+)
 from b2t.pipeline import run_pipeline
 
 from backend.bvid_locks import bvid_transcription_locks
@@ -67,12 +71,14 @@ def _run_job(
     normalized_url = (url or "").strip()
     normalized_audio_path = (input_audio_path or "").strip()
     bvid = (input_bvid or "").strip() or None
+    transcription_id = bvid
     if bvid is None and normalized_url:
         try:
             normalized_url = normalize_bilibili_target(normalized_url)
         except Exception:
             pass
         bvid = extract_bvid(normalized_url)
+        transcription_id = extract_bilibili_target_id(normalized_url) or bvid
 
     upload_temp_dir: Path | None = None
     if normalized_audio_path:
@@ -131,6 +137,7 @@ def _run_job(
         and existing_transcription_service.handle_if_existing(
             job_id=job_id,
             bvid=bvid,
+            transcription_id=transcription_id,
             storage_backend=storage_backend,
             config=config,
             skip_summary=skip_summary,
@@ -145,7 +152,7 @@ def _run_job(
 
     acquired_bvid_lock = False
     if bvid is not None and not ephemeral_upload:
-        claim = bvid_transcription_locks.acquire(bvid, job_id)
+        claim = bvid_transcription_locks.acquire(transcription_id or bvid, job_id)
         if not claim.acquired:
             error_message = (
                 f"{bvid} 的转录任务正在进行中，请稍后再试。"
@@ -304,7 +311,9 @@ def _run_job(
 
         try:
             all_artifacts = _collect_all_artifacts_for_bvid(
-                storage_backend, None if ephemeral_upload else bvid, results
+                storage_backend,
+                None if ephemeral_upload else transcription_id,
+                results,
             )
             all_downloads = _build_all_download_items(all_artifacts)
         except Exception as exc:
@@ -370,8 +379,8 @@ def _run_job(
         else:
             _update_job(job_id, fancy_html_status="idle")
     finally:
-        if acquired_bvid_lock and bvid is not None:
-            bvid_transcription_locks.release(bvid, job_id)
+        if acquired_bvid_lock and transcription_id is not None:
+            bvid_transcription_locks.release(transcription_id, job_id)
         root_logger.removeHandler(log_handler)
         log_handler.close()
         _cleanup_upload_temp_dir(upload_temp_dir)

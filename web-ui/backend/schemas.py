@@ -217,6 +217,7 @@ class OpenPublicCustomLlmTestResponse(BaseModel):
 class HistoryItemResponse(BaseModel):
     run_id: str
     bvid: str
+    page: int | None = None
     title: str
     author: str
     pubdate: str
@@ -245,6 +246,7 @@ class HistoryDetailArtifactResponse(BaseModel):
 class HistoryDetailResponse(BaseModel):
     run_id: str
     bvid: str
+    page: int | None = None
     title: str
     author: str
     pubdate: str

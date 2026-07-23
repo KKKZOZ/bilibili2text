@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from b2t.config import resolve_summarize_model_profile, resolve_summary_preset_name
 from b2t.history import build_history_artifacts
+from b2t.download.yutto_cli import extract_bilibili_page_from_target_id
 from b2t.storage import StoredArtifact
 from b2t.summarize.llm import validate_summary_prompt_template
 
@@ -105,6 +106,7 @@ def _to_history_detail_response(
     return HistoryDetailResponse(
         run_id=detail.run_id,
         bvid=detail.bvid,
+        page=extract_bilibili_page_from_target_id(detail.run_id),
         title=detail.title,
         author=detail.author,
         pubdate=detail.pubdate,
@@ -157,6 +159,7 @@ def list_history(
             HistoryItemResponse(
                 run_id=item.run_id,
                 bvid=item.bvid,
+                page=extract_bilibili_page_from_target_id(item.run_id),
                 title=item.title,
                 author=item.author,
                 pubdate=item.pubdate,
