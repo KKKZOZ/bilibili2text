@@ -15,9 +15,14 @@ from b2t.storage.local import LocalStorageBackend
 
 
 def test_fetch_bilibili_subtitle_parses_cli_json(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "b2t.download.subtitle._resolve_bili_command",
+        lambda: "/venv/bin/bili",
+    )
+
     def fake_run(cmd, **kwargs):
         assert cmd == [
-            "bili",
+            "/venv/bin/bili",
             "video",
             "BV1ABcsztEcY",
             "--subtitle-timeline",

@@ -35,7 +35,7 @@ from backend.services import (
     _generate_summary_png_exports,
     _record_history,
 )
-from backend.settings import get_runtime_app_config
+from backend.settings import STOCK_STATUS_SYNC_TIMEOUT_SECONDS, get_runtime_app_config
 
 logger = logging.getLogger(__name__)
 
@@ -269,6 +269,7 @@ def _run_job(
             )
             return
 
+        png_export_warning: str | None = None
         if not skip_summary and "summary" in results:
             _update_job(
                 job_id,
@@ -282,21 +283,18 @@ def _run_job(
                     results=results,
                     storage_backend=storage_backend,
                     config=config,
+                    stock_status_timeout_seconds=STOCK_STATUS_SYNC_TIMEOUT_SECONDS,
                 )
                 results.update(png_results)
             except Exception as exc:
-                _update_job(
-                    job_id,
-                    status="failed",
-                    stage="failed",
-                    stage_label="处理失败",
-                    error=f"后处理及文件导出失败: {exc}",
+                png_export_warning = (
+                    "PNG 图片导出失败，转录和总结已完成；可先下载 Markdown/文本结果。"
                 )
+                logger.warning("后处理及文件导出失败（不影响转录结果）: %s", exc)
                 _append_job_log(
                     job_id,
-                    f"{datetime.now().strftime(JOB_LOG_DATE_FORMAT)} [ERROR] b2t.pipeline: 后处理及文件导出失败: {_redact_text(str(exc))}",
+                    f"{datetime.now().strftime(JOB_LOG_DATE_FORMAT)} [WARNING] b2t.pipeline: 后处理及文件导出失败（不影响转录结果）: {_redact_text(str(exc))}",
                 )
-                return
 
         try:
             success_fields = _build_success_download_fields(results)
@@ -360,7 +358,7 @@ def _run_job(
             stage_label="处理完成",
             progress=100,
             already_transcribed=False,
-            notice=None,
+            notice=png_export_warning,
             all_downloads=all_downloads,
             error=None,
             is_ephemeral_upload=ephemeral_upload,

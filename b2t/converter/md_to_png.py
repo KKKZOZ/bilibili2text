@@ -2,6 +2,7 @@
 
 import hashlib
 import logging
+import os
 import queue
 import re
 import shutil
@@ -26,7 +27,7 @@ except ImportError:  # pragma: no cover
 
 GITHUB_CSS_URL = "https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.5.1/github-markdown.min.css"
 CHROMIUM_SAFE_MAX_PX = 15000
-PLAYWRIGHT_RENDER_TIMEOUT_MS = 30_000
+DEFAULT_PLAYWRIGHT_RENDER_TIMEOUT_MS = 120_000
 LOCAL_CSS_CACHE_DIR = Path(tempfile.gettempdir()) / "b2t-assets"
 LOCAL_CSS_FALLBACK_NAME = "github-markdown-fallback.css"
 TABLE_DELIMITER_CELL_RE = re.compile(r"^:?-{3,}:?$")
@@ -43,6 +44,31 @@ TABLE_DASH_TRANSLATION = str.maketrans(
     }
 )
 PANDOC_MARKDOWN_FORMAT = "markdown+pipe_tables+lists_without_preceding_blankline"
+
+
+def _load_playwright_render_timeout_ms() -> int:
+    raw_value = os.getenv("B2T_PLAYWRIGHT_RENDER_TIMEOUT_MS", "").strip()
+    if not raw_value:
+        return DEFAULT_PLAYWRIGHT_RENDER_TIMEOUT_MS
+    try:
+        timeout_ms = int(raw_value)
+    except ValueError:
+        logger.warning(
+            "Invalid B2T_PLAYWRIGHT_RENDER_TIMEOUT_MS=%r, using default %dms",
+            raw_value,
+            DEFAULT_PLAYWRIGHT_RENDER_TIMEOUT_MS,
+        )
+        return DEFAULT_PLAYWRIGHT_RENDER_TIMEOUT_MS
+    if timeout_ms <= 0:
+        logger.warning(
+            "B2T_PLAYWRIGHT_RENDER_TIMEOUT_MS must be positive, using default %dms",
+            DEFAULT_PLAYWRIGHT_RENDER_TIMEOUT_MS,
+        )
+        return DEFAULT_PLAYWRIGHT_RENDER_TIMEOUT_MS
+    return timeout_ms
+
+
+PLAYWRIGHT_RENDER_TIMEOUT_MS = _load_playwright_render_timeout_ms()
 
 HTML_TEMPLATE = r"""<!doctype html>
 <html>

@@ -144,22 +144,26 @@ def _fetch_status_for_symbol(
     symbol: str,
     as_of_date: date,
 ) -> StockDailyStatus | None:
-    """Fetch stock data with fallback: yfinance -> baostock (A-shares)."""
-    # Try yfinance first
+    """Fetch stock data with a market-specific fallback order."""
+    suffix = symbol.upper().split(".")[-1] if "." in symbol else ""
+
+    # Domestic cloud servers often reach Yahoo Finance slowly or not at all.
+    # Prefer baostock for A-shares so normal summary PNG generation can include
+    # market data without first blocking on an overseas data source.
+    if suffix in ("SH", "SZ"):
+        try:
+            result = _fetch_baostock_status_for_symbol(symbol, as_of_date)
+            if result is not None:
+                return result
+        except Exception:
+            pass
+
     try:
         result = _fetch_yfinance_status_for_symbol(symbol, as_of_date)
         if result is not None:
             return result
     except Exception:
         pass
-
-    # Fallback: baostock for A-shares
-    suffix = symbol.upper().split(".")[-1] if "." in symbol else ""
-    if suffix in ("SH", "SZ"):
-        try:
-            return _fetch_baostock_status_for_symbol(symbol, as_of_date)
-        except Exception:
-            pass
 
     return None
 

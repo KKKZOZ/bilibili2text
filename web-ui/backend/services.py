@@ -31,6 +31,134 @@ from backend.stock_cache import get_cached_stock_statuses, get_or_fetch_stock_st
 
 logger = logging.getLogger(__name__)
 CUSTOM_SUMMARY_PRESET_VALUE = "__user_custom__"
+_XIAOYUZHOU_BVID_PREFIX = "xiaoyuzhou_"
+_MISSING_METADATA_TEXT = {"", "unknown"}
+
+
+def _clean_metadata_text(value: object) -> str:
+    text = str(value or "").strip()
+    if text.lower() in _MISSING_METADATA_TEXT:
+        return ""
+    return text
+
+
+def _history_detail_for_existing_results(
+    *,
+    bvid: str,
+    existing_results: Mapping[str, object],
+) -> object | None:
+    markdown_artifact = existing_results.get("markdown")
+    if not isinstance(markdown_artifact, StoredArtifact):
+        return None
+    try:
+        return get_history_db().get_run_detail(
+            infer_run_id(markdown_artifact.storage_key, bvid=bvid)
+        )
+    except Exception as exc:
+        logger.debug("读取历史元信息失败: %s", exc)
+        return None
+
+
+def _fetch_platform_metadata_for_bvid(bvid: str) -> VideoMetadata | None:
+    if not bvid.startswith(_XIAOYUZHOU_BVID_PREFIX):
+        return None
+
+    episode_id = bvid.removeprefix(_XIAOYUZHOU_BVID_PREFIX).strip()
+    if not episode_id:
+        return None
+
+    try:
+        from b2t.download.metadata import VideoMetadata as PlatformVideoMetadata
+        from b2t.download.xiaoyuzhou import fetch_xiaoyuzhou_metadata
+
+        return PlatformVideoMetadata.from_platform_metadata(
+            fetch_xiaoyuzhou_metadata(episode_id)
+        )
+    except Exception as exc:
+        logger.warning("补取小宇宙元信息失败（将继续使用历史字段）: %s", exc)
+        return None
+
+
+def _resolve_existing_video_metadata(
+    *,
+    bvid: str,
+    existing_results: Mapping[str, object],
+    title: str = "",
+    author: str = "",
+    pubdate: str = "",
+) -> VideoMetadata | None:
+    """Resolve metadata for reused transcriptions without redownloading audio."""
+    resolved_title = _clean_metadata_text(title)
+    resolved_author = _clean_metadata_text(author)
+    resolved_pubdate = _clean_metadata_text(pubdate)
+    pubdate_timestamp = 0
+
+    if not (resolved_title and resolved_author and resolved_pubdate):
+        detail = _history_detail_for_existing_results(
+            bvid=bvid,
+            existing_results=existing_results,
+        )
+        if detail is not None:
+            resolved_title = resolved_title or _clean_metadata_text(
+                getattr(detail, "title", "")
+            )
+            resolved_author = resolved_author or _clean_metadata_text(
+                getattr(detail, "author", "")
+            )
+            resolved_pubdate = resolved_pubdate or _clean_metadata_text(
+                getattr(detail, "pubdate", "")
+            )
+
+    platform_metadata = None
+    if not (resolved_title and resolved_author and resolved_pubdate):
+        platform_metadata = _fetch_platform_metadata_for_bvid(bvid)
+        if platform_metadata is not None:
+            resolved_title = resolved_title or _clean_metadata_text(
+                platform_metadata.title
+            )
+            resolved_author = resolved_author or _clean_metadata_text(
+                platform_metadata.author
+            )
+            resolved_pubdate = resolved_pubdate or _clean_metadata_text(
+                platform_metadata.pubdate
+            )
+            if resolved_pubdate == _clean_metadata_text(platform_metadata.pubdate):
+                pubdate_timestamp = platform_metadata.pubdate_timestamp
+
+    if not (resolved_title or resolved_author or resolved_pubdate):
+        return None
+
+    return VideoMetadata(
+        bvid=bvid,
+        title=resolved_title,
+        author=resolved_author,
+        author_uid=0,
+        pubdate=resolved_pubdate,
+        pubdate_timestamp=pubdate_timestamp,
+        description="",
+    )
+
+
+def _should_refresh_existing_summary_metadata(
+    *,
+    bvid: str,
+    existing_results: Mapping[str, object],
+) -> bool:
+    """Return True when an old cached summary likely has Unknown metadata header."""
+    if not bvid.startswith(_XIAOYUZHOU_BVID_PREFIX):
+        return False
+
+    detail = _history_detail_for_existing_results(
+        bvid=bvid,
+        existing_results=existing_results,
+    )
+    if detail is None:
+        return True
+
+    return not (
+        _clean_metadata_text(getattr(detail, "author", ""))
+        and _clean_metadata_text(getattr(detail, "pubdate", ""))
+    )
 
 
 def _resolve_summary_selection(
@@ -244,6 +372,7 @@ def _generate_summary_png_exports(
     storage_backend: StorageBackend,
     config: AppConfig,
     refresh_stock_statuses: bool = False,
+    stock_status_timeout_seconds: float | None = None,
     include_no_table: bool = True,
 ) -> dict[str, StoredArtifact]:
     summary_artifact = results.get("summary")
@@ -285,21 +414,24 @@ def _generate_summary_png_exports(
         stock_statuses = {}
         if bvid:
             try:
-                stock_loader = (
-                    get_or_fetch_stock_statuses
-                    if refresh_stock_statuses
-                    else get_cached_stock_statuses
-                )
-                stock_statuses = stock_loader(
-                    db=get_history_db(),
-                    bvid=bvid,
-                    as_of_date=as_of_date,
-                    markdown_paths=[
-                        path
-                        for path in (summary_path, table_md_path)
-                        if path is not None
-                    ],
-                )
+                markdown_paths = [
+                    path for path in (summary_path, table_md_path) if path is not None
+                ]
+                if refresh_stock_statuses or stock_status_timeout_seconds is not None:
+                    stock_statuses = get_or_fetch_stock_statuses(
+                        db=get_history_db(),
+                        bvid=bvid,
+                        as_of_date=as_of_date,
+                        markdown_paths=markdown_paths,
+                        timeout_seconds=stock_status_timeout_seconds,
+                    )
+                else:
+                    stock_statuses = get_cached_stock_statuses(
+                        db=get_history_db(),
+                        bvid=bvid,
+                        as_of_date=as_of_date,
+                        markdown_paths=markdown_paths,
+                    )
             except Exception as exc:
                 logger.warning(
                     "股票状态缓存读取失败，导出将不展示实时行情: %s",
@@ -374,45 +506,25 @@ def _run_summary_only_from_existing(
     transcription_id: str | None = None,
     storage_backend: StorageBackend,
     config: AppConfig,
-    existing_results: dict[str, StoredArtifact],
+    existing_results: Mapping[str, object],
     summary_preset: str | None,
     summary_profile: str | None,
     summary_prompt_template: str | None = None,
     title: str = "",
     author: str = "",
     pubdate: str = "",
-) -> dict[str, StoredArtifact]:
+) -> dict[str, object]:
     markdown_artifact = existing_results.get("markdown")
     if markdown_artifact is None:
         raise ValueError("历史转录结果中缺少 Markdown 文件，无法仅执行总结步骤")
 
-    resolved_title = title.strip()
-    resolved_author = author.strip()
-    resolved_pubdate = pubdate.strip()
-    if not (resolved_title and resolved_author and resolved_pubdate):
-        try:
-            detail = get_history_db().get_run_detail(
-                infer_run_id(markdown_artifact.storage_key, bvid=bvid)
-            )
-        except Exception as exc:
-            logger.debug("读取历史元信息失败，重新总结将回退到文件名推断标题: %s", exc)
-        else:
-            if detail is not None:
-                resolved_title = resolved_title or detail.title.strip()
-                resolved_author = resolved_author or detail.author.strip()
-                resolved_pubdate = resolved_pubdate or detail.pubdate.strip()
-
-    metadata = None
-    if resolved_title or resolved_author or resolved_pubdate:
-        metadata = VideoMetadata(
-            bvid=bvid,
-            title=resolved_title,
-            author=resolved_author,
-            author_uid=0,
-            pubdate=resolved_pubdate,
-            pubdate_timestamp=0,
-            description="",
-        )
+    metadata = _resolve_existing_video_metadata(
+        bvid=bvid,
+        existing_results=existing_results,
+        title=title,
+        author=author,
+        pubdate=pubdate,
+    )
 
     run_prefix = f"{transcription_id or bvid}-{uuid4().hex[:8]}"
     cleanup_temp_dir: tempfile.TemporaryDirectory | None = None
@@ -449,7 +561,7 @@ def _run_summary_only_from_existing(
         except Exception as exc:
             logger.warning("总结表格 Markdown 导出失败，已跳过: %s", exc)
 
-        results: dict[str, StoredArtifact] = {}
+        results: dict[str, object] = {}
         results["summary"] = storage_backend.store_file(
             summary_path,
             object_key=f"{run_prefix}/{summary_path.name}",
@@ -465,6 +577,8 @@ def _run_summary_only_from_existing(
                 summary_timeline,
                 object_key=f"{run_prefix}/{summary_timeline.name}",
             )
+        if metadata is not None:
+            results["_metadata"] = metadata
 
         # Local backend temporarily copies markdown for summary only, to avoid polluting the history file list.
         if storage_backend.persist_local_outputs:
@@ -637,7 +751,7 @@ def _artifact_download_item(artifact: StoredArtifact) -> dict[str, str]:
 def _record_history(
     *,
     bvid: str,
-    results: dict[str, StoredArtifact],
+    results: dict[str, object],
     created_at: str | None = None,
     config: AppConfig | None = None,
     summary_preset: str | None = None,
@@ -656,11 +770,19 @@ def _record_history(
     try:
         # Extract metadata from results
         metadata = results.get("_metadata")
+        if not isinstance(metadata, VideoMetadata):
+            metadata = _resolve_existing_video_metadata(
+                bvid=bvid,
+                existing_results=results,
+            )
         author = metadata.author if metadata else ""
         pubdate = metadata.pubdate if metadata else ""
-        has_summary = "summary" in {
-            key: value for key, value in results.items() if not key.startswith("_")
+        file_results = {
+            key: value
+            for key, value in results.items()
+            if not key.startswith("_") and isinstance(value, StoredArtifact)
         }
+        has_summary = "summary" in file_results
         resolved_preset, resolved_profile = _resolve_summary_selection(
             config=config,
             has_summary=has_summary,
@@ -671,7 +793,7 @@ def _record_history(
         return record_pipeline_run(
             db=db,
             bvid=bvid,
-            results=results,
+            results=file_results,
             author=author,
             pubdate=pubdate,
             created_at=created_at,

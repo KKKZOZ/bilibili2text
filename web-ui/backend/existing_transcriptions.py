@@ -20,6 +20,7 @@ from backend.services import (
     _collect_all_artifacts_for_bvid,
     _record_history,
     _run_summary_only_from_existing,
+    _should_refresh_existing_summary_metadata,
 )
 
 logger = logging.getLogger(__name__)
@@ -307,7 +308,13 @@ class ExistingTranscriptionService:
             resolved_preset=resolved_preset,
             resolved_profile=resolved_profile,
         )
-        if existing_summary_match is not None:
+        if (
+            existing_summary_match is not None
+            and not _should_refresh_existing_summary_metadata(
+                bvid=bvid,
+                existing_results=existing_results,
+            )
+        ):
             run_id, matched_results = existing_summary_match
             try:
                 success_fields = _build_success_download_fields(matched_results)

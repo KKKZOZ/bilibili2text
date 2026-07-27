@@ -1,3 +1,4 @@
+from dataclasses import replace
 import sys
 from io import BytesIO
 from pathlib import Path
@@ -25,7 +26,11 @@ from b2t.config import (
     SummaryPresetsConfig,
 )
 from b2t.history import HistoryArtifact, HistoryDetail
+from b2t.download.metadata import VideoMetadata  # noqa: E402
+from b2t.download.platform import Platform, PlatformMetadata  # noqa: E402
 from b2t.storage.base import StoredArtifact
+from b2t.storage.local import LocalStorageBackend  # noqa: E402
+from backend import services as services_module  # noqa: E402
 
 
 def _config() -> AppConfig:
@@ -229,7 +234,6 @@ def test_custom_summary_preset_does_not_resolve_to_default_preset() -> None:
     assert resolved_preset == "__user_custom__"
     assert resolved_profile == "qwen3-5-plus"
 
-
 def test_timeline_summary_detects_timestamp_requirement() -> None:
     config = _config()
     config.summary_presets.presets["financial_timeline_merge"] = SummaryPreset(
@@ -325,3 +329,86 @@ def test_timeline_summary_skips_old_cached_transcription() -> None:
     )
 
     assert handled is False
+
+
+def test_summary_only_fetches_xiaoyuzhou_metadata_without_redownloading_audio(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    source_dir = tmp_path / "xiaoyuzhou_episode-1-11111111"
+    source_dir.mkdir()
+    markdown_path = source_dir / "xiaoyuzhou_episode-1_投资实战派_E191_transcription.md"
+    markdown_path.write_text("转录内容", encoding="utf-8")
+    existing_results = {
+        "markdown": StoredArtifact(
+            filename=markdown_path.name,
+            storage_key=str(markdown_path),
+            backend="local",
+        )
+    }
+    detail = HistoryDetail(
+        run_id="xiaoyuzhou_episode-1-11111111",
+        bvid="xiaoyuzhou_episode-1",
+        title="",
+        author="Unknown",
+        pubdate="",
+        created_at="2026-07-20T00:00:00+00:00",
+        has_summary=False,
+        artifacts=[],
+    )
+
+    class FakeHistoryDB:
+        def get_run_detail(self, run_id: str):
+            assert run_id == "xiaoyuzhou_episode-1-11111111"
+            return detail
+
+    monkeypatch.setattr(services_module, "get_history_db", lambda: FakeHistoryDB())
+    monkeypatch.setattr(
+        "b2t.download.xiaoyuzhou.fetch_xiaoyuzhou_metadata",
+        lambda episode_id: PlatformMetadata(
+            platform=Platform.XIAOYUZHOU,
+            platform_id=episode_id,
+            title="投资实战派 — E191 AI四大半导体新方向",
+            author="wong永庆",
+            pubdate="2026-07-19 23:54:05",
+            pubdate_timestamp=1784505245,
+        ),
+    )
+
+    captured: dict[str, object] = {}
+
+    def fake_summarize(*args, **kwargs):
+        captured["metadata"] = kwargs["metadata"]
+        summary_path = Path(args[0]).with_name("xiaoyuzhou_episode-1_summary.md")
+        summary_path.write_text("# 总结\n", encoding="utf-8")
+        return summary_path
+
+    monkeypatch.setattr(services_module, "summarize", fake_summarize)
+    monkeypatch.setattr(
+        services_module,
+        "export_summary_table_markdown",
+        lambda *args, **kwargs: None,
+    )
+
+    config = replace(
+        _config(),
+        download=DownloadConfig(output_dir=str(tmp_path / "outputs")),
+    )
+    results = services_module._run_summary_only_from_existing(
+        bvid="xiaoyuzhou_episode-1",
+        storage_backend=LocalStorageBackend(),
+        config=config,
+        existing_results=existing_results,
+        summary_preset="financial_timeline_merge",
+        summary_profile="qwen3-5-plus",
+    )
+
+    metadata = captured["metadata"]
+    assert isinstance(metadata, VideoMetadata)
+    assert metadata.author == "wong永庆"
+    assert metadata.pubdate == "2026-07-19 23:54:05"
+    assert isinstance(results["_metadata"], VideoMetadata)
+    assert services_module._should_refresh_existing_summary_metadata(
+        bvid="xiaoyuzhou_episode-1",
+        existing_results=existing_results,
+    )

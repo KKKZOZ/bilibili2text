@@ -195,10 +195,10 @@ def test_fetch_stock_daily_status_uses_as_of_date(monkeypatch) -> None:
         return status
 
     monkeypatch.setattr(
-        "b2t.stock_status._fetch_yfinance_status_for_symbol", fake_fetch
+        "b2t.stock_status._fetch_baostock_status_for_symbol", fake_fetch
     )
     monkeypatch.setattr(
-        "b2t.stock_status._fetch_baostock_status_for_symbol",
+        "b2t.stock_status._fetch_yfinance_status_for_symbol",
         lambda symbol, as_of_date: None,
     )
 
@@ -226,7 +226,7 @@ def test_fetch_stock_daily_status_hides_stale_a_share_after_market_close(
     )
 
     monkeypatch.setattr(
-        "b2t.stock_status._fetch_yfinance_status_for_symbol",
+        "b2t.stock_status._fetch_baostock_status_for_symbol",
         lambda symbol, as_of_date: status,
     )
 
@@ -252,7 +252,7 @@ def test_fetch_stock_daily_status_keeps_previous_trade_day_before_market_close(
     )
 
     monkeypatch.setattr(
-        "b2t.stock_status._fetch_yfinance_status_for_symbol",
+        "b2t.stock_status._fetch_baostock_status_for_symbol",
         lambda symbol, as_of_date: status,
     )
 
@@ -279,7 +279,7 @@ def test_fetch_stock_daily_status_keeps_previous_trade_day_on_weekend(
     )
 
     monkeypatch.setattr(
-        "b2t.stock_status._fetch_yfinance_status_for_symbol",
+        "b2t.stock_status._fetch_baostock_status_for_symbol",
         lambda symbol, as_of_date: status,
     )
 
@@ -289,9 +289,12 @@ def test_fetch_stock_daily_status_keeps_previous_trade_day_on_weekend(
     ) == [status]
 
 
-def test_fetch_status_uses_yfinance_for_all_markets(monkeypatch) -> None:
-    calls = []
-    status = _tickflow_row_to_status(
+def test_fetch_status_prefers_baostock_for_a_shares_and_yfinance_for_hk(
+    monkeypatch,
+) -> None:
+    yfinance_calls = []
+    baostock_calls = []
+    hk_status = _tickflow_row_to_status(
         "00700.HK",
         {
             "date": "2026-05-06",
@@ -302,26 +305,46 @@ def test_fetch_status_uses_yfinance_for_all_markets(monkeypatch) -> None:
         },
         {"name": "腾讯控股", "ext": {"total_shares": 9500000000}},
     )
+    a_share_status = _baostock_row_to_status(
+        "600000.SH",
+        {
+            "date": "2026-05-06",
+            "close": "9.1800",
+            "preclose": "9.2700",
+            "pctChg": "-0.970900",
+            "peTTM": "6.080899",
+        },
+        {"code_name": "浦发银行"},
+        {"totalShare": "33305838300.00"},
+    )
 
     def fake_yfinance(symbol, as_of_date):
-        calls.append((symbol, str(as_of_date)))
-        return status
+        yfinance_calls.append((symbol, str(as_of_date)))
+        return hk_status
+
+    def fake_baostock(symbol, as_of_date):
+        baostock_calls.append((symbol, str(as_of_date)))
+        return a_share_status
 
     monkeypatch.setattr(
         "b2t.stock_status._fetch_yfinance_status_for_symbol",
         fake_yfinance,
     )
+    monkeypatch.setattr(
+        "b2t.stock_status._fetch_baostock_status_for_symbol",
+        fake_baostock,
+    )
 
     assert (
-        _fetch_status_for_symbol("00700.HK", _parse_as_of_date("2026-05-06")) == status
+        _fetch_status_for_symbol("00700.HK", _parse_as_of_date("2026-05-06"))
+        == hk_status
     )
     assert (
-        _fetch_status_for_symbol("600000.SH", _parse_as_of_date("2026-05-06")) == status
+        _fetch_status_for_symbol("600000.SH", _parse_as_of_date("2026-05-06"))
+        == a_share_status
     )
-    assert calls == [
-        ("00700.HK", "2026-05-06"),
-        ("600000.SH", "2026-05-06"),
-    ]
+    assert yfinance_calls == [("00700.HK", "2026-05-06")]
+    assert baostock_calls == [("600000.SH", "2026-05-06")]
 
 
 def test_tickflow_daily_row_uses_latest_row_before_as_of_date() -> None:
