@@ -34,7 +34,8 @@ Bilibili 视频转文字工具：自动下载音频、语音转录、生成 Mark
 
 > [!NOTE]
 > - 注意只有 Web UI + RAG + Open Public + Monitor + 飞书通知 几种功能在 Linux/MacOS 上经过测试
-> - Docker/Cli 未经测试
+> - Docker Compose 部署需要 Docker Compose、可联网拉取基础镜像，以及可用的阿里云 OSS。
+> - 本方案不提供 HTTPS、MinIO 或外部数据库服务。
 
 
 ## 效果预览
@@ -205,6 +206,53 @@ api_key = "your-dashscope-api-key"
 ### 3. 启动 Web UI
 
 参见下方[启动 Web UI](#启动-web-ui) 章节。
+
+## Docker Compose 快速开始
+
+Docker Compose 会同时启动 Web UI 后端和前端。部署前先准备三个配置文件：
+
+```bash
+cp config.toml.example config.toml
+```
+
+按需创建或复制 `summary_presets.toml` 和 `context.toml`，并在 `config.toml` 中配置阿里云 OSS、转录服务和 LLM 所需的凭据。该部署继续使用阿里云 OSS，不需要启动或配置 MinIO。
+
+首次启动或更新镜像：
+
+```bash
+docker compose up -d --build
+```
+
+浏览器访问 `http://127.0.0.1:${B2T_FRONTEND_PORT:-6010}`；可在 `.env` 中设置 `B2T_FRONTEND_PORT` 改用其他宿主机端口，`.env.example` 提供所有可配置路径和变量的示例。
+
+### Docker Compose 日常运维
+
+查看服务状态：
+
+```bash
+docker compose ps
+```
+
+跟踪后端或前端日志：
+
+```bash
+docker compose logs -f backend
+docker compose logs -f frontend
+```
+
+更新代码或镜像后重建并后台启动：
+
+```bash
+docker compose up -d --build
+```
+
+停止服务：
+
+```bash
+docker compose down
+```
+
+`docker compose down` 不会删除宿主机绑定的目录。升级、迁移或清理前，建议备份 `transcriptions`、`db_data`、`chroma_data`，以及 `config.toml`、`summary_presets.toml`、`context.toml` 三个配置文件。
 
 ## CLI 使用
 
