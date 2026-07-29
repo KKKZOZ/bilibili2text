@@ -1,0 +1,47 @@
+services:
+  backend:
+    image: ${B2T_BACKEND_IMAGE:-bilibili-to-text:latest}
+    build:
+      context: .
+      target: backend
+    environment:
+      B2T_WEB_UI_MODE: ${B2T_WEB_UI_MODE:-default}
+    user: "10001:10001"
+    expose:
+      - "8000"
+    volumes:
+      - ${B2T_CONFIG_PATH:-./config.toml}:/app/config.toml:ro
+      - ${B2T_SUMMARY_PRESETS_PATH:-./summary_presets.toml}:/app/summary_presets.toml:ro
+      - ${B2T_CONTEXT_PATH:-./context.toml}:/app/context.toml:ro
+      - ${B2T_TRANSCRIPTIONS_DIR:-./transcriptions}:/app/transcriptions
+      - ${B2T_DB_DIR:-./db_data}:/app/db_data
+      - ${B2T_CHROMA_DIR:-./chroma_data}:/app/chroma_data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  frontend:
+    image: ${B2T_FRONTEND_IMAGE:-bilibili-to-text-web:latest}
+    build:
+      context: .
+      target: frontend
+    environment:
+      FRONTEND_PORT: "80"
+      BACKEND_HOST: backend
+      BACKEND_PORT: "8000"
+    ports:
+      - "${B2T_FRONTEND_PORT:-6010}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:80/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
