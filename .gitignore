@@ -21,6 +21,7 @@ wheels/
 
 # Virtual environments
 .venv/
+.worktrees/
 
 # Runtime data and generated outputs
 /test-audio/
