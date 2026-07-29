@@ -12,8 +12,8 @@ __pycache__/
 *.log
 *.log.*
 
-web-ui/frontend/node_modules
-web-ui/frontend/dist
+**/node_modules
+**/dist
 web-ui/logs
 web-ui/transcriptions
 
