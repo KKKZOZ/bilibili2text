@@ -2,11 +2,15 @@
 .gitignore
 .DS_Store
 .claude
+.codex
+.idea
 .venv
 .uv-cache
 .pytest_cache
 __pycache__/
 *.pyc
+*.log
+*.log.*
 
 web-ui/frontend/node_modules
 web-ui/frontend/dist
@@ -22,6 +26,10 @@ config.toml
 *.local.toml
 .env
 .env.*
+*.pem
+*.key
+*.crt
+secrets/
 scripts.md
 bilibili_to_text.egg-info
 AIFeedTracker
