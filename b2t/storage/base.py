@@ -25,6 +25,8 @@ def classify_artifact_filename(filename: str) -> str | None:
         return "summary_table_md"
     if lowered.endswith("_summary_no_table.png"):
         return "summary_no_table_png"
+    if lowered.endswith("_summary_timeline.txt"):
+        return "summary_timeline"
     if lowered.endswith("_summary.png"):
         return "summary_png"
     if lowered.endswith("_summary.txt"):

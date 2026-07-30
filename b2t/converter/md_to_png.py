@@ -2,18 +2,19 @@
 
 import hashlib
 import logging
-from pathlib import Path
 import queue
 import re
 import shutil
 import subprocess
 import tempfile
 import threading
+from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
 
-from b2t.stock_status import build_stock_table_cards_html, extract_stock_symbols
 from playwright.sync_api import sync_playwright
+
+from b2t.stock_status import build_stock_table_cards_html, extract_stock_symbols
 
 logger = logging.getLogger(__name__)
 
@@ -171,6 +172,29 @@ HTML_TEMPLATE = r"""<!doctype html>
       line-height: 1.45;
       word-break: break-word;
       overflow-wrap: anywhere;
+    }}
+    .markdown-body .stock-table-time-links {{
+      display: inline-flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      vertical-align: middle;
+    }}
+    .markdown-body .stock-table-time-link {{
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 2px 7px;
+      border: 1px solid #0969da;
+      border-radius: 5px;
+      color: #0969da;
+      background: #ffffff;
+      font: 700 12px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+      text-decoration: none;
+    }}
+    .markdown-body a.stock-table-time-link:hover {{
+      color: #ffffff;
+      background: #0969da;
+      text-decoration: none;
     }}
     .markdown-body .stock-status-change {{
       flex-shrink: 0;
@@ -597,6 +621,7 @@ class MarkdownToPngConverter:
             as_of_date=options.get("as_of_date"),
             enhance_stock_tables=options.get("enhance_stock_tables", False),
             stock_statuses=options.get("stock_statuses"),
+            bvid=options.get("bvid", ""),
         )
         return self._wrap_body_html(
             body_html,
@@ -612,18 +637,21 @@ class MarkdownToPngConverter:
         as_of_date=None,
         enhance_stock_tables: bool = False,
         stock_statuses=None,
+        bvid: str = "",
     ) -> str:
         if is_table:
             return self._run_table_cards(
                 input_path,
                 as_of_date=as_of_date,
                 stock_statuses=stock_statuses,
+                bvid=bvid,
             )
         if enhance_stock_tables:
             return self._run_markdown_with_stock_table_cards(
                 input_path,
                 as_of_date=as_of_date,
                 stock_statuses=stock_statuses,
+                bvid=bvid,
             )
         return self._run_pandoc(input_path)
 
@@ -675,10 +703,13 @@ class MarkdownToPngConverter:
         *,
         as_of_date=None,
         stock_statuses=None,
+        bvid: str = "",
     ) -> str:
         markdown_content = md_path.read_text(encoding="utf-8")
         normalized_content = self._normalize_markdown_for_tables(markdown_content)
         status_options = {"as_of_date": as_of_date}
+        if bvid:
+            status_options["bvid"] = bvid
         if stock_statuses is not None:
             status_options["stock_statuses"] = stock_statuses
         cards_html = build_stock_table_cards_html(
@@ -695,6 +726,7 @@ class MarkdownToPngConverter:
         *,
         as_of_date=None,
         stock_statuses=None,
+        bvid: str = "",
     ) -> str:
         markdown_content = md_path.read_text(encoding="utf-8")
         normalized_content = self._normalize_markdown_for_tables(markdown_content)
@@ -716,6 +748,8 @@ class MarkdownToPngConverter:
                 table_markdown = "\n".join(lines[index:end]).strip()
                 if table_markdown and extract_stock_symbols(table_markdown):
                     status_options = {"as_of_date": as_of_date}
+                    if bvid:
+                        status_options["bvid"] = bvid
                     if stock_statuses is not None:
                         status_options["stock_statuses"] = stock_statuses
                     cards_html = build_stock_table_cards_html(

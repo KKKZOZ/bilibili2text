@@ -83,6 +83,10 @@ def test_classify_summary_png_artifacts() -> None:
         classify_artifact_filename("BV1AB411c7mD_demo_summary_table.png")
         == "summary_table_png"
     )
+    assert (
+        classify_artifact_filename("BV1AB411c7mD_demo_summary_timeline.txt")
+        == "summary_timeline"
+    )
 
 
 def test_record_pipeline_run_merge_keeps_old_and_new_summary(tmp_path) -> None:

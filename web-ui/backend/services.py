@@ -19,10 +19,12 @@ from b2t.storage import StorageBackend, StoredArtifact
 from b2t.storage.base import classify_artifact_filename
 from b2t.summarize.fancy_html import generate_fancy_summary_html
 from b2t.summarize.llm import (
-    export_summary_table_markdown,
     summarize,
 )
-
+from b2t.summarize.timeline import (
+    export_summary_table_without_video_time,
+    export_summary_timeline_text,
+)
 from backend.dependencies import get_history_db
 from backend.download_registry import download_registry
 from backend.stock_cache import get_or_fetch_stock_statuses
@@ -424,7 +426,7 @@ def _run_summary_only_from_existing(
 
         summary_table_md: Path | None = None
         try:
-            summary_table_md = export_summary_table_markdown(summary_path, which="last")
+            summary_table_md = export_summary_table_without_video_time(summary_path)
         except Exception as exc:
             logger.warning("总结表格 Markdown 导出失败，已跳过: %s", exc)
 
@@ -437,6 +439,12 @@ def _run_summary_only_from_existing(
             results["summary_table_md"] = storage_backend.store_file(
                 summary_table_md,
                 object_key=f"{run_prefix}/{summary_table_md.name}",
+            )
+        summary_timeline = export_summary_timeline_text(summary_path)
+        if summary_timeline is not None:
+            results["summary_timeline"] = storage_backend.store_file(
+                summary_timeline,
+                object_key=f"{run_prefix}/{summary_timeline.name}",
             )
 
         # Local backend temporarily copies markdown for summary only, to avoid polluting the history file list.
@@ -579,6 +587,7 @@ def _merge_history_artifact(
             "summary_table_md",
             "summary_table_png",
             "summary_table_pdf",
+            "summary_timeline",
         }
         for item in merged_artifacts
     )

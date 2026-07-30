@@ -1,55 +1,37 @@
 """Main pipeline orchestration"""
 
-import logging
 import json
+import logging
 import shutil
-from pathlib import Path
 import tempfile
-from typing import Callable
+from collections.abc import Callable
+from pathlib import Path
 from uuid import uuid4
 
 from b2t.config import AppConfig
-from b2t.converter.json_to_md import convert_json_to_md
+from b2t.converter.json_to_md import TIMELINE_SCHEMA_VERSION, convert_json_to_md
 from b2t.download.metadata import get_video_metadata
 from b2t.download.subtitle import fetch_bilibili_subtitle
+from b2t.download.yutto import download_audio
 from b2t.download.yutto_cli import (
     extract_bilibili_target_id,
     extract_bvid,
     normalize_bilibili_target,
 )
-from b2t.download.yutto import download_audio
 from b2t.storage import (
     StorageBackend,
     StoredArtifact,
     create_storage_backend,
     create_stt_storage_backend,
 )
-from b2t.summarize.llm import extract_markdown_table_block, summarize
 from b2t.stt import create_stt_provider
+from b2t.summarize.llm import summarize
+from b2t.summarize.timeline import (
+    export_summary_table_without_video_time,
+    export_summary_timeline_text,
+)
 
 logger = logging.getLogger(__name__)
-
-
-def _extract_summary_table(summary_path: Path) -> Path | None:
-    """Extract the last table from summary Markdown and save it as a separate file.
-
-    Args:
-        summary_path: Summary Markdown file path
-
-    Returns:
-        Table file path, or None if no table was found
-    """
-    content = summary_path.read_text(encoding="utf-8")
-    table_content = extract_markdown_table_block(content, which="last")
-    if table_content is None:
-        logger.info("总结中没有找到表格")
-        return None
-
-    # Save table file
-    table_path = summary_path.with_stem(f"{summary_path.stem}_table")
-    table_path.write_text(table_content, encoding="utf-8")
-    logger.info("Saved table to: %s", table_path)
-    return table_path
 
 
 def _ensure_bvid_prefixed_name(name: str, bvid: str) -> str:
@@ -215,16 +197,23 @@ def run_pipeline(
             logger.info("Work directory: %s", work_dir)
             logger.info("Using Bilibili native subtitle")
             json_path = work_dir / f"{work_dir.name}_transcription.json"
-            json_path.write_text(
-                json.dumps(
+            subtitle_payload: dict[str, object] = {
+                "text": subtitle.text,
+                "source": "bilibili_subtitle",
+                "bvid": bvid,
+                "timeline_schema_version": TIMELINE_SCHEMA_VERSION,
+            }
+            if subtitle.items:
+                subtitle_payload["segments"] = [
                     {
-                        "text": subtitle.text,
-                        "source": "bilibili_subtitle",
-                        "bvid": bvid,
-                    },
-                    ensure_ascii=False,
-                    indent=2,
-                ),
+                        "start": item.start_ms / 1000,
+                        "end": item.end_ms / 1000,
+                        "text": item.text,
+                    }
+                    for item in subtitle.items
+                ]
+            json_path.write_text(
+                json.dumps(subtitle_payload, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
         else:
@@ -246,6 +235,14 @@ def run_pipeline(
                 new_audio_path,
                 work_dir,
                 progress_callback=emit_progress,
+            )
+            transcription_payload = json.loads(json_path.read_text(encoding="utf-8"))
+            if not isinstance(transcription_payload, dict):
+                raise ValueError("转录结果 JSON 顶层必须是对象")
+            transcription_payload["timeline_schema_version"] = TIMELINE_SCHEMA_VERSION
+            json_path.write_text(
+                json.dumps(transcription_payload, ensure_ascii=False, indent=2),
+                encoding="utf-8",
             )
         local_results["json"] = json_path
 
@@ -272,9 +269,14 @@ def run_pipeline(
             local_results["summary"] = summary_path
 
             # Extract summary table as a separate Markdown file
-            summary_table_md_path = _extract_summary_table(summary_path)
+            summary_table_md_path = export_summary_table_without_video_time(
+                summary_path
+            )
             if summary_table_md_path is not None:
                 local_results["summary_table_md"] = summary_table_md_path
+            summary_timeline_path = export_summary_timeline_text(summary_path)
+            if summary_timeline_path is not None:
+                local_results["summary_timeline"] = summary_timeline_path
 
         storage_prefix = f"{transcription_id}-{uuid4().hex[:8]}"
         for artifact_key, artifact_path in local_results.items():

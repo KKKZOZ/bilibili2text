@@ -6,21 +6,20 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Query
 
 from b2t.config import resolve_summarize_model_profile, resolve_summary_preset_name
-from b2t.history import build_history_artifacts
 from b2t.download.yutto_cli import extract_bilibili_page_from_target_id
+from b2t.history import build_history_artifacts
 from b2t.storage import StoredArtifact
 from b2t.summarize.llm import validate_summary_prompt_template
-
-from backend.download_registry import download_registry
 from backend.dependencies import get_history_db, get_storage_backend
-from backend.services import _run_summary_only_from_existing
+from backend.download_registry import download_registry
 from backend.schemas import (
-    HistoryRegenerateSummaryRequest,
     HistoryDetailArtifactResponse,
     HistoryDetailResponse,
     HistoryItemResponse,
     HistoryListResponse,
+    HistoryRegenerateSummaryRequest,
 )
+from backend.services import _run_summary_only_from_existing
 from backend.settings import get_runtime_app_config, is_delete_enabled
 
 router = APIRouter()
@@ -43,6 +42,7 @@ def _summary_family_storage_keys(detail, summary_artifact) -> set[str]:
         f"{summary_stem}_fancy.html",
         f"{summary_stem}_table.md",
         f"{summary_stem}_table.pdf",
+        f"{summary_stem}_timeline.txt",
     }
     parent_key = _storage_parent_key(summary_artifact.storage_key)
     summary_kinds = {
@@ -54,6 +54,7 @@ def _summary_family_storage_keys(detail, summary_artifact) -> set[str]:
         "summary_table_md",
         "summary_table_png",
         "summary_table_pdf",
+        "summary_timeline",
     }
 
     related: set[str] = set()
@@ -425,6 +426,7 @@ def delete_history_artifact(run_id: str, download_id: str) -> HistoryDetailRespo
             "summary_table_md",
             "summary_table_png",
             "summary_table_pdf",
+            "summary_timeline",
         }
         for item in remained_artifacts
     )

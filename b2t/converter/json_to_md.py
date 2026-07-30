@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+TIMELINE_SCHEMA_VERSION = 1
 
 
 def ms_to_mmss(milliseconds: int) -> str:
@@ -75,6 +76,30 @@ def _extract_timed_sentences(data: dict) -> list[tuple[int, str]]:
     return timed_sentences
 
 
+def _has_explicit_timeline(data: dict) -> bool:
+    """Return whether the provider payload contains real sentence/segment timing."""
+    transcripts = data.get("transcripts")
+    if isinstance(transcripts, list):
+        for transcript in transcripts:
+            if (
+                isinstance(transcript, dict)
+                and isinstance(transcript.get("sentences"), list)
+                and transcript["sentences"]
+            ):
+                return True
+
+    segments = data.get("segments")
+    if isinstance(segments, list) and segments:
+        return True
+
+    result = data.get("result")
+    return (
+        isinstance(result, dict)
+        and isinstance(result.get("utterances"), list)
+        and bool(result["utterances"])
+    )
+
+
 def _join_paragraph_texts(parts: list[str]) -> str:
     """Join paragraph text, avoiding different provider outputs being concatenated without spaces."""
     if not parts:
@@ -110,8 +135,8 @@ def convert_json_to_md(
     """Convert JSON transcription result to Markdown format
 
     Segmentation strategy:
-    - By default, split by sentence
-    - If sentence length is <= min_length, merge it with the next sentence
+    - Preserve every sentence/cue when the provider supplies an explicit timeline
+    - For untimed fallback text, merge short sentences using ``min_length``
 
     Args:
         json_path: JSON file path
@@ -146,6 +171,19 @@ def convert_json_to_md(
 
     # Process transcription content (compatible with Qwen and Groq)
     timed_sentences = _extract_timed_sentences(data)
+
+    # Keep provider sentence boundaries whenever real timing exists. This covers
+    # Bilibili timeline subtitles, DashScope/FunASR, Groq, and Volc payloads, and lets
+    # downstream summaries cite the actual mention time instead of a merged paragraph.
+    if _has_explicit_timeline(data):
+        for start_time, text in timed_sentences:
+            lines.append(f"Speaker {ms_to_mmss(start_time)}")
+            lines.append(text)
+            lines.append("")
+
+        output_path.write_text("\n".join(lines), encoding="utf-8")
+        logger.info("Markdown file generated: %s", output_path)
+        return output_path
 
     i = 0
     while i < len(timed_sentences):

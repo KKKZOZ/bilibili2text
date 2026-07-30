@@ -23,6 +23,7 @@ export function resolveFileType(filename, kind) {
     summary_png: 'PNG',
     summary_no_table_png: 'PNG',
     summary_text: 'TXT',
+    summary_timeline: 'TXT',
     summary_fancy_html: 'HTML',
     summary_table_md: 'Markdown',
     summary_table_png: 'PNG',
@@ -81,6 +82,9 @@ export function buildArtifactDisplayName(artifact, options = {}) {
     artifact.kind === 'summary_png'
   ) {
     return `${bvid}_总结`
+  }
+  if (artifact.kind === 'summary_timeline') {
+    return `${bvid}_时间线`
   }
   if (
     artifact.kind === 'summary_no_table' ||

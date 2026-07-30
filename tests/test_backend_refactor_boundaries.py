@@ -1,17 +1,23 @@
-from pathlib import Path
 import sys
-from contextlib import contextmanager
-from typing import Iterator
 import tempfile
+from contextlib import contextmanager
+from io import BytesIO
+from pathlib import Path
+from typing import Iterator
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "web-ui"))
 
-from b2t.storage import StoredArtifact
-from b2t.converter.converter import ConversionFormat
-from backend.routes.download import _find_precomputed_conversion, convert_artifact
 from backend.download_registry import DownloadRegistry, media_type_for_filename
 from backend.job_store import JobPatch, JobRepository
+from backend.routes.download import (
+    _find_precomputed_conversion,
+    convert_artifact,
+    preview_timeline_text,
+)
 from backend.schemas import ConvertRequest
+
+from b2t.converter.converter import ConversionFormat
+from b2t.storage import StoredArtifact
 
 
 def test_job_repository_create_patch_cancel() -> None:
@@ -65,6 +71,34 @@ def test_download_registry_artifacts_content_and_media_types() -> None:
 
     registry.remove_artifacts_by_storage_keys({"runs/summary.md"})
     assert registry.get_artifact(artifact_id) is None
+
+
+def test_preview_timeline_text_returns_inline_plain_text(monkeypatch) -> None:
+    timeline = "01:08 新易盛（300502.SZ）\n01:45 威高股份（01066.HK）\n"
+    artifact = StoredArtifact(
+        filename="BV123_summary_timeline.txt",
+        storage_key="runs/BV123_summary_timeline.txt",
+        backend="local",
+    )
+
+    class FakeStorage:
+        @contextmanager
+        def open_stream(self, storage_key: str) -> Iterator[object]:
+            assert storage_key == artifact.storage_key
+            with BytesIO(timeline.encode("utf-8")) as stream:
+                yield stream
+
+    monkeypatch.setattr(
+        "backend.routes.download.download_registry.get_artifact",
+        lambda download_id: artifact,
+    )
+    monkeypatch.setattr("backend.routes.download.get_storage_backend", FakeStorage)
+
+    response = preview_timeline_text("timeline-id")
+
+    assert response.body.decode("utf-8") == timeline
+    assert response.media_type == "text/plain"
+    assert response.headers["content-disposition"].startswith("inline;")
 
 
 def test_find_precomputed_conversion_uses_summary_sibling_png(monkeypatch) -> None:

@@ -1,14 +1,15 @@
 """Reuse previously stored transcriptions when a BV has already been processed."""
 
-from datetime import datetime
+import json
 import logging
+from datetime import datetime
 from pathlib import Path
 
 from b2t.config import resolve_summarize_model_profile, resolve_summary_preset_name
+from b2t.converter.json_to_md import TIMELINE_SCHEMA_VERSION
 from b2t.history import infer_run_id
-from b2t.storage.base import StoredArtifact
 from b2t.storage import StorageBackend
-
+from b2t.storage.base import StoredArtifact
 from backend.dependencies import get_history_db
 from backend.jobs import _append_job_log, _update_job
 from backend.logging_config import JOB_LOG_DATE_FORMAT, _redact_text
@@ -57,6 +58,51 @@ def _resolve_requested_summary_selection(
     return resolved_preset, resolved_profile
 
 
+def _summary_requires_video_timestamps(
+    *,
+    config,
+    summary_preset: str | None,
+    summary_prompt_template: str | None,
+) -> bool:
+    template = (summary_prompt_template or "").strip()
+    if not template:
+        cleaned_preset = (summary_preset or "").strip() or None
+        if cleaned_preset == CUSTOM_SUMMARY_PRESET_VALUE:
+            return False
+        preset_name = resolve_summary_preset_name(
+            summarize=config.summarize,
+            summary_presets=config.summary_presets,
+            override=cleaned_preset,
+        )
+        template = config.summary_presets.presets[preset_name].prompt_template
+    return "视频时间" in template and "Speaker MM:SS" in template
+
+
+def _has_current_timeline_schema(
+    storage_backend: StorageBackend,
+    existing_results: dict[str, StoredArtifact],
+) -> bool:
+    json_artifact = existing_results.get("json")
+    if json_artifact is None:
+        return False
+
+    try:
+        with storage_backend.open_stream(json_artifact.storage_key) as stream:
+            payload = json.load(stream)
+        version = int(payload.get("timeline_schema_version", 0))
+    except (
+        AttributeError,
+        OSError,
+        RuntimeError,
+        TypeError,
+        UnicodeError,
+        ValueError,
+    ) as exc:
+        logger.info("无法确认历史转录时间轴版本，将重新转录: %s", exc)
+        return False
+    return version >= TIMELINE_SCHEMA_VERSION
+
+
 def _find_existing_summary_results_for_selection(
     *,
     transcription_id: str,
@@ -93,6 +139,7 @@ def _find_existing_summary_results_for_selection(
         f"{summary_stem}_fancy.html",
         f"{summary_stem}_table.md",
         f"{summary_stem}_table.pdf",
+        f"{summary_stem}_timeline.txt",
         f"{summary_stem}.png",
         f"{summary_stem}_no_table.png",
         f"{summary_stem}_table.png",
@@ -107,6 +154,7 @@ def _find_existing_summary_results_for_selection(
         "summary_table_md",
         "summary_table_png",
         "summary_table_pdf",
+        "summary_timeline",
     }
 
     selected_results = dict(existing_results)
@@ -150,6 +198,21 @@ class ExistingTranscriptionService:
             return False
 
         if existing_results is None:
+            return False
+
+        if (
+            not skip_summary
+            and _summary_requires_video_timestamps(
+                config=config,
+                summary_preset=summary_preset,
+                summary_prompt_template=summary_prompt_template,
+            )
+            and not _has_current_timeline_schema(storage_backend, existing_results)
+        ):
+            logger.info(
+                "历史转录不含当前版本的逐句时间轴，跳过缓存并重新转录: %s",
+                storage_id,
+            )
             return False
 
         if skip_summary:

@@ -12,8 +12,18 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class BilibiliSubtitle:
-    """Plain subtitle text returned by Bilibili."""
+    """Subtitle text and optional timeline items returned by Bilibili."""
 
+    text: str
+    items: tuple[BilibiliSubtitleItem, ...] = ()
+
+
+@dataclass(frozen=True)
+class BilibiliSubtitleItem:
+    """One timestamped Bilibili subtitle item."""
+
+    start_ms: int
+    end_ms: int
     text: str
 
 
@@ -29,7 +39,7 @@ def fetch_bilibili_subtitle(
     if not cleaned_target:
         return None
 
-    cmd = ["bili", "video", cleaned_target, "--subtitle", "--json"]
+    cmd = ["bili", "video", cleaned_target, "--subtitle-timeline", "--json"]
     try:
         result = subprocess.run(
             cmd,
@@ -74,4 +84,29 @@ def fetch_bilibili_subtitle(
         logger.info("Bilibili subtitle is empty")
         return None
 
-    return BilibiliSubtitle(text=text.strip())
+    items: list[BilibiliSubtitleItem] = []
+    raw_items = subtitle.get("items")
+    if isinstance(raw_items, list):
+        for raw_item in raw_items:
+            if not isinstance(raw_item, dict):
+                continue
+
+            item_text = raw_item.get("content")
+            if not isinstance(item_text, str) or not item_text.strip():
+                continue
+
+            try:
+                start_ms = max(0, round(float(raw_item.get("from", 0)) * 1000))
+                end_ms = max(start_ms, round(float(raw_item.get("to", 0)) * 1000))
+            except (TypeError, ValueError):
+                continue
+
+            items.append(
+                BilibiliSubtitleItem(
+                    start_ms=start_ms,
+                    end_ms=end_ms,
+                    text=item_text.strip(),
+                )
+            )
+
+    return BilibiliSubtitle(text=text.strip(), items=tuple(items))
