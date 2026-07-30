@@ -16,7 +16,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates ffmpeg pandoc \
+    && apt-get install -y --no-install-recommends ca-certificates ffmpeg pandoc tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=ghcr.io/astral-sh/uv:0.7.19 /uv /uvx /usr/local/bin/
@@ -42,9 +42,12 @@ CMD ["uv", "run", "--no-sync", "uvicorn", "backend.main:app", "--app-dir", "web-
 
 FROM nginx:alpine AS frontend
 
+RUN apk add --no-cache tzdata
+
 ENV FRONTEND_PORT=80 \
     BACKEND_HOST=backend \
-    BACKEND_PORT=8000
+    BACKEND_PORT=8000 \
+    TZ=Asia/Shanghai
 
 COPY --from=frontend-build /src/web-ui/frontend/dist/ /usr/share/nginx/html/
 COPY docker/nginx.compose.conf.template /etc/nginx/templates/default.conf.template
