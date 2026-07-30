@@ -14,6 +14,7 @@
     Clock,
     FileText,
     LoaderCircle,
+    RefreshCw,
     Search,
     Trash2,
     User,
@@ -79,6 +80,7 @@
   const regenerateLoading = ref(false)
   const regenerateError = ref('')
   const regenerateSuccess = ref('')
+  const regenerateOverwriteConfirm = ref(false)
   const selectedHistorySummaryPreset = ref('')
   const selectedHistorySummaryProfile = ref('')
   const ragAnswerMarkdown = ref('')
@@ -226,9 +228,7 @@
     )
   })
 
-  const regenerateDisabled = computed(
-    () => regenerateLoading.value || isSelectedSummaryAlreadyGenerated.value
-  )
+  const regenerateDisabled = computed(() => regenerateLoading.value)
 
   const getLocalApiKey = () => {
     try {
@@ -343,6 +343,7 @@
     ragFancyHtmlError.value = ''
     regenerateError.value = ''
     regenerateSuccess.value = ''
+    regenerateOverwriteConfirm.value = false
     selectedHistorySummaryPreset.value =
       props.selectedSummaryPreset || props.summaryDefaultPreset || ''
     selectedHistorySummaryProfile.value = props.selectedSummaryProfile || ''
@@ -483,14 +484,9 @@
     }
   }
 
-  const regenerateSummary = async () => {
+  const regenerateSummary = async (overwriteExisting = false) => {
     const runId = historyDetail.value?.run_id
     if (!runId) {
-      return
-    }
-    if (isSelectedSummaryAlreadyGenerated.value) {
-      regenerateError.value =
-        '该模型配置与总结模板已经生成过，请选择不同配置后再重新生成。'
       return
     }
     let customTemplate = null
@@ -512,7 +508,14 @@
         return
       }
     }
+    if (isSelectedSummaryAlreadyGenerated.value && !overwriteExisting) {
+      regenerateError.value = ''
+      regenerateSuccess.value = ''
+      regenerateOverwriteConfirm.value = true
+      return
+    }
 
+    regenerateOverwriteConfirm.value = false
     regenerateLoading.value = true
     regenerateError.value = ''
     regenerateSuccess.value = ''
@@ -528,6 +531,7 @@
             summary_preset: selectedRegeneratePresetName.value || null,
             summary_profile: selectedRegenerateProfileName.value || null,
             summary_prompt_template: customTemplate || null,
+            overwrite_existing: overwriteExisting,
             api_key: props.requiresApiKey ? getLocalApiKey() : null,
             deepseek_api_key: props.requiresApiKey
               ? getLocalDeepseekApiKey() || null
@@ -542,13 +546,21 @@
       }
 
       historyDetail.value = data
-      regenerateSuccess.value = '总结重新生成完成，文件已持久化到存储后端。'
+      regenerateSuccess.value = overwriteExisting
+        ? '总结重新生成完成，原有同配置结果已覆盖。'
+        : '总结重新生成完成，文件已持久化到存储后端。'
       await loadHistory()
     } catch (err) {
       regenerateError.value =
         err instanceof Error ? err.message : '重新生成总结失败'
     } finally {
       regenerateLoading.value = false
+    }
+  }
+
+  const cancelRegenerateOverwrite = () => {
+    if (!regenerateLoading.value) {
+      regenerateOverwriteConfirm.value = false
     }
   }
 
@@ -681,6 +693,7 @@
     ragFancyHtmlError.value = ''
     regenerateError.value = ''
     regenerateSuccess.value = ''
+    regenerateOverwriteConfirm.value = false
     stopRagFancyHtmlPolling()
   })
 
@@ -825,7 +838,7 @@
             class="submit history-regenerate-button"
             type="button"
             :disabled="regenerateDisabled"
-            @click="regenerateSummary"
+            @click="regenerateSummary(false)"
           >
             <LoaderCircle v-if="regenerateLoading" :size="16" class="spin" />
             <span>{{
@@ -836,7 +849,7 @@
             v-if="isSelectedSummaryAlreadyGenerated"
             class="preset-hint duplicate-summary-hint"
           >
-            该模型配置与总结模板已经生成过，请选择不同配置后再重新生成。
+            该模型配置与总结模板已经生成过；重新生成前将要求确认并覆盖原结果。
           </p>
           <p v-if="regenerateError" class="inline-error">
             <AlertCircle :size="16" />
@@ -1214,6 +1227,39 @@
         </button>
       </div>
     </article>
+
+    <div
+      v-if="regenerateOverwriteConfirm"
+      class="modal-overlay"
+      @click="cancelRegenerateOverwrite"
+    >
+      <div
+        class="modal-content"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="regenerate-overwrite-title"
+        @click.stop
+      >
+        <h3 id="regenerate-overwrite-title">确认覆盖总结</h3>
+        <p>
+          当前模型配置“{{ selectedRegenerateProfileName }}”与总结模板“{{
+            selectedRegeneratePresetName
+          }}”已经生成过。继续后将重新生成总结，并替换原总结及其表格、时间线和导出文件。
+        </p>
+        <div class="modal-actions">
+          <button class="cancel-button" @click="cancelRegenerateOverwrite">
+            取消
+          </button>
+          <button
+            class="confirm-delete-button"
+            @click="regenerateSummary(true)"
+          >
+            <RefreshCw :size="16" />
+            <span>确认覆盖并生成</span>
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- Delete Confirmation Modal -->
     <div
