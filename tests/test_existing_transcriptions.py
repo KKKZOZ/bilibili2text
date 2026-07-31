@@ -1,7 +1,15 @@
-from pathlib import Path
 import sys
+from io import BytesIO
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "web-ui"))
+
+from backend.existing_transcriptions import (  # noqa: E402
+    ExistingTranscriptionService,
+    _has_current_timeline_schema,
+    _resolve_requested_summary_selection,
+    _summary_requires_video_timestamps,
+)
 
 from b2t.config import (  # noqa: E402
     AppConfig,
@@ -9,19 +17,15 @@ from b2t.config import (  # noqa: E402
     DownloadConfig,
     FancyHtmlConfig,
     RagConfig,
-    STTConfig,
     StorageConfig,
+    STTConfig,
     SummarizeConfig,
     SummarizeModelProfile,
-    SummaryPresetsConfig,
     SummaryPreset,
+    SummaryPresetsConfig,
 )
 from b2t.history import HistoryArtifact, HistoryDetail  # noqa: E402
 from b2t.storage.base import StoredArtifact  # noqa: E402
-from backend.existing_transcriptions import (  # noqa: E402
-    ExistingTranscriptionService,
-    _resolve_requested_summary_selection,
-)
 
 
 def _config() -> AppConfig:
@@ -223,3 +227,100 @@ def test_custom_summary_preset_does_not_resolve_to_default_preset() -> None:
 
     assert resolved_preset == "__user_custom__"
     assert resolved_profile == "qwen3-5-plus"
+
+
+def test_timeline_summary_detects_timestamp_requirement() -> None:
+    config = _config()
+    config.summary_presets.presets["financial_timeline_merge"] = SummaryPreset(
+        label="金融时间线主题归并",
+        prompt_template="视频时间必须引用 Speaker MM:SS。\n\n{content}",
+    )
+
+    assert _summary_requires_video_timestamps(
+        config=config,
+        summary_preset="financial_timeline_merge",
+        summary_prompt_template=None,
+    )
+
+
+def test_old_cached_transcription_does_not_satisfy_timeline_schema() -> None:
+    artifact = StoredArtifact(
+        filename="demo_transcription.json",
+        storage_key="demo_transcription.json",
+        backend="memory",
+    )
+
+    class FakeStorage:
+        def __init__(self, payload: bytes) -> None:
+            self.payload = payload
+
+        def open_stream(self, storage_key: str):
+            stream = BytesIO(self.payload)
+
+            class StreamContext:
+                def __enter__(self):
+                    return stream
+
+                def __exit__(self, exc_type, exc, traceback):
+                    stream.close()
+
+            return StreamContext()
+
+    results = {"json": artifact}
+
+    assert not _has_current_timeline_schema(
+        FakeStorage(b'{"source":"bilibili_subtitle"}'), results
+    )
+    assert _has_current_timeline_schema(
+        FakeStorage(b'{"timeline_schema_version":1}'), results
+    )
+
+
+def test_timeline_summary_skips_old_cached_transcription() -> None:
+    config = _config()
+    config.summary_presets.presets["financial_timeline_merge"] = SummaryPreset(
+        label="金融时间线主题归并",
+        prompt_template="视频时间必须引用 Speaker MM:SS。\n\n{content}",
+    )
+    artifacts = {
+        "json": StoredArtifact(
+            filename="demo_transcription.json",
+            storage_key="demo_transcription.json",
+            backend="memory",
+        ),
+        "markdown": StoredArtifact(
+            filename="demo.md",
+            storage_key="demo.md",
+            backend="memory",
+        ),
+    }
+
+    class FakeStorage:
+        def find_existing_transcription(self, bvid: str):
+            return artifacts
+
+        def open_stream(self, storage_key: str):
+            stream = BytesIO(b'{"source":"bilibili_subtitle"}')
+
+            class StreamContext:
+                def __enter__(self):
+                    return stream
+
+                def __exit__(self, exc_type, exc, traceback):
+                    stream.close()
+
+            return StreamContext()
+
+    handled = ExistingTranscriptionService().handle_if_existing(
+        job_id="job-1",
+        bvid="BV1bLdgBEEKu",
+        storage_backend=FakeStorage(),
+        config=config,
+        skip_summary=False,
+        summary_preset="financial_timeline_merge",
+        summary_profile="qwen3-5-plus",
+        summary_prompt_template=None,
+        auto_generate_fancy_html=False,
+    )
+
+    assert handled is False

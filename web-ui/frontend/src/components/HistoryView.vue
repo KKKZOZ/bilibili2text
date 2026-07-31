@@ -985,6 +985,7 @@
                   'summary_fancy_html',
                   'summary_table_md',
                   'summary_table_pdf',
+                  'summary_timeline',
                   'text',
                   'json',
                   'audio'

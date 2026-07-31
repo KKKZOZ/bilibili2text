@@ -61,7 +61,8 @@
         'summary_no_table',
         'summary_fancy_html',
         'summary_table_md',
-        'summary_table_pdf'
+        'summary_table_pdf',
+        'summary_timeline'
       ]
     },
     allowDelete: {
@@ -166,6 +167,7 @@
   const isSummaryKind = (kind) =>
     kind === 'summary' ||
     kind === 'summary_text' ||
+    kind === 'summary_timeline' ||
     kind === 'summary_no_table' ||
     kind === 'summary_png' ||
     kind === 'summary_no_table_png' ||
@@ -186,7 +188,8 @@
     kind === 'summary_fancy_html' ||
     kind === 'summary_table_md' ||
     kind === 'summary_table_png' ||
-    kind === 'summary_table_pdf'
+    kind === 'summary_table_pdf' ||
+    kind === 'summary_timeline'
 
   const isHiddenDerivedPngKind = (kind) =>
     kind === 'summary_png' ||
@@ -236,9 +239,13 @@
       kind === 'summary_fancy_html' ||
       kind === 'summary_table_md' ||
       kind === 'summary_table_png' ||
-      kind === 'summary_table_pdf'
+      kind === 'summary_table_pdf' ||
+      kind === 'summary_timeline'
     ) {
-      return stem.replace(/_fancy$/i, '').replace(/_table$/i, '')
+      return stem
+        .replace(/_fancy$/i, '')
+        .replace(/_table$/i, '')
+        .replace(/_timeline$/i, '')
     }
     return ''
   }
@@ -263,6 +270,7 @@
       summary_table_md: 230,
       summary_table_png: 231,
       summary_table_pdf: 231,
+      summary_timeline: 240,
       text: 300,
       summary_text: 310,
       json: 400,
@@ -300,7 +308,8 @@
           kind === 'summary_no_table_png' ||
           kind === 'summary_fancy_html' ||
           kind === 'summary_table_md' ||
-          kind === 'summary_table_png'
+          kind === 'summary_table_png' ||
+          kind === 'summary_timeline'
             ? resolveSummaryPresetLabel(item.presetName || '')
             : '',
         modelProfileLabel: isSummaryKind(kind)
@@ -395,7 +404,8 @@
         item.kind === 'summary_fancy_html' ||
         item.kind === 'summary_table_md' ||
         item.kind === 'summary_table_png' ||
-        item.kind === 'summary_table_pdf'
+        item.kind === 'summary_table_pdf' ||
+        item.kind === 'summary_timeline'
       ) {
         const signature = `${(item.presetName || '').trim()}::${(item.summaryProfile || '').trim()}`
         const familyKey = resolveSummaryFamilyKey(item, item.kind)
@@ -419,7 +429,9 @@
                 ? 0.21
                 : item.kind === 'summary_table_pdf'
                   ? 0.25
-                  : 0.18
+                  : item.kind === 'summary_timeline'
+                    ? 0.3
+                    : 0.18
         rows.push(
           toDisplayItem(item, index, {
             parentSummaryRowId: parentSummary?.summaryRowId || '',
@@ -477,6 +489,10 @@
   const handlePrimaryAction = (item) => {
     if (item.kind === 'summary_fancy_html') {
       previewRenderedHtml(item)
+      return
+    }
+    if (item.kind === 'summary_timeline') {
+      previewTimelineText(item)
       return
     }
     if (item.primaryTargetFormat) {
@@ -603,6 +619,19 @@
     }
     previewError.value = '浏览器阻止了新标签页，请允许弹窗后重试'
   }
+
+  const previewTimelineText = (item) => {
+    previewError.value = ''
+    const previewUrl = `/api/preview/txt/${encodeURIComponent(item.downloadId)}`
+    const opened = window.open(previewUrl, '_blank')
+    if (opened) {
+      opened.opener = null
+      return
+    }
+    previewError.value = '浏览器阻止了新标签页，请允许弹窗后重试'
+  }
+
+  const isTimelineArtifact = (item) => item.kind === 'summary_timeline'
 
   const generateFancyHtml = async (item) => {
     const key = fancyGenerateKey(item.downloadId)
@@ -748,6 +777,12 @@
         candidate.parentSummaryRowId === item.summaryRowId &&
         candidate.kind === 'summary_fancy_html'
     )
+    const timeline = displayItems.value.find(
+      (candidate) =>
+        candidate.parentSummaryRowId &&
+        candidate.parentSummaryRowId === item.summaryRowId &&
+        candidate.kind === 'summary_timeline'
+    )
     return [
       item.displayName,
       noTable ? noTable.displayName : `${item.displayName}_无表格`,
@@ -769,6 +804,15 @@
             {
               filename: item.filename,
               kind: 'summary_table_md'
+            },
+            { bvid: props.bvid }
+          ),
+      timeline
+        ? timeline.displayName
+        : buildArtifactDisplayName(
+            {
+              filename: item.filename,
+              kind: 'summary_timeline'
             },
             { bvid: props.bvid }
           )
@@ -903,6 +947,10 @@
               <template v-else-if="item.kind === 'summary_fancy_html'">
                 <Eye :size="14" />
                 <span>HTML Preview</span>
+              </template>
+              <template v-else-if="isTimelineArtifact(item)">
+                <Eye :size="14" />
+                <span>TXT Preview</span>
               </template>
               <template v-else>
                 <component :is="getFormatIcon(item.fileType)" :size="14" />

@@ -6,17 +6,16 @@ from urllib.parse import quote
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, StreamingResponse
 
 from b2t.converter.converter import ConversionFormat, convert_file
 from b2t.converter.md_remove_table import MarkdownRemoveTableConverter
 from b2t.converter.md_to_png import MarkdownToPngConverter
 from b2t.storage import StoredArtifact
 from b2t.storage.base import classify_artifact_filename
-
+from backend.dependencies import get_history_db, get_storage_backend
 from backend.download_registry import download_registry, media_type_for_filename
 from backend.schemas import ConvertRequest, ConvertResponse
-from backend.dependencies import get_history_db, get_storage_backend
 from backend.stock_cache import get_or_fetch_stock_statuses
 
 router = APIRouter()
@@ -124,6 +123,9 @@ def _summary_render_html_options(
         options["is_table"] = True
     if source_kind == "summary" and source_variant != "summary_no_table":
         options["enhance_stock_tables"] = True
+        bvid, _ = _lookup_artifact_run_context(artifact.storage_key)
+        if bvid:
+            options["bvid"] = bvid
     if source_kind in {"summary", "summary_table_md"}:
         pubdate = _lookup_artifact_pubdate(artifact.storage_key)
         if pubdate:
@@ -254,6 +256,32 @@ def download_markdown(download_id: str) -> StreamingResponse:
         headers={
             "Content-Disposition": f"attachment; filename*=UTF-8''{quoted_filename}"
         },
+    )
+
+
+@router.get("/api/preview/txt/{download_id}")
+def preview_timeline_text(download_id: str) -> PlainTextResponse:
+    artifact = download_registry.get_artifact(download_id)
+    if artifact is None:
+        raise HTTPException(status_code=404, detail="下载链接不存在或已过期")
+    if classify_artifact_filename(artifact.filename) != "summary_timeline":
+        raise HTTPException(status_code=400, detail="此文件不支持 TXT 预览")
+
+    try:
+        with get_storage_backend().open_stream(artifact.storage_key) as stream:
+            timeline_text = stream.read().decode("utf-8")
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=410,
+            detail="源文件不存在，请重新生成",
+        ) from None
+    except UnicodeDecodeError as exc:
+        raise HTTPException(status_code=500, detail="时间线文件编码无效") from exc
+
+    quoted_filename = quote(artifact.filename)
+    return PlainTextResponse(
+        timeline_text,
+        headers={"Content-Disposition": f"inline; filename*=UTF-8''{quoted_filename}"},
     )
 
 

@@ -1,3 +1,6 @@
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 from b2t.stock_status import (
     _baostock_row_to_status,
     _fetch_status_for_symbol,
@@ -11,8 +14,6 @@ from b2t.stock_status import (
     extract_stock_symbols,
     fetch_stock_daily_status,
 )
-from datetime import datetime
-from zoneinfo import ZoneInfo
 
 
 def test_extract_stock_symbols_from_markdown_tables_only() -> None:
@@ -400,6 +401,24 @@ def test_build_stock_table_cards_html_merges_table_content_and_status(
     assert "银行估值修复" in html
     assert "3057.48亿" in html
     assert "-0.97%" in html
+
+
+def test_build_stock_table_cards_html_renders_clickable_video_times() -> None:
+    markdown = """| 股票代码 | 股票名称 | 视频时间 | 投资逻辑 |
+| --- | --- | --- | --- |
+| 300502.SZ | 新易盛 | 01:08<br>02:03 | <核心逻辑> |
+"""
+
+    rendered = build_stock_table_cards_html(
+        markdown,
+        stock_statuses={},
+        bvid="BV1gm3v67EEf",
+    )
+
+    assert rendered.count('class="stock-table-time-link"') == 2
+    assert "https://www.bilibili.com/video/BV1gm3v67EEf?t=68" in rendered
+    assert "https://www.bilibili.com/video/BV1gm3v67EEf?t=123" in rendered
+    assert "&lt;核心逻辑&gt;" in rendered
 
 
 def test_build_stock_table_cards_html_cleans_inline_markdown_for_name_match(

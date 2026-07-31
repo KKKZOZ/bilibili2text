@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import html
 import logging
 import math
 import re
+from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from functools import lru_cache
 from typing import Any, Mapping
+from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
@@ -64,6 +65,7 @@ def build_stock_table_cards_html(
     stock_statuses: Mapping[str, StockDailyStatus]
     | list[StockDailyStatus]
     | None = None,
+    bvid: str = "",
 ) -> str:
     """Render a Markdown stock table as compact HTML cards with stock status data."""
     rows = _parse_markdown_table(markdown)
@@ -85,7 +87,11 @@ def build_stock_table_cards_html(
         status_by_symbol = {status.symbol: status for status in stock_statuses}
 
     cards = "\n".join(
-        _render_table_card(row, _find_status_for_table_row(row.raw, status_by_symbol))
+        _render_table_card(
+            row,
+            _find_status_for_table_row(row.raw, status_by_symbol),
+            bvid=bvid,
+        )
         for row in rows
     )
     return f"""
@@ -742,7 +748,33 @@ def _parse_markdown_table(markdown: str) -> list[StockTableRow]:
     return rows
 
 
-def _render_table_card(row: StockTableRow, status: StockDailyStatus | None) -> str:
+def _render_video_times(value: str, *, bvid: str) -> str:
+    rendered: list[str] = []
+    for match in re.finditer(r"(?<!\d)(\d{1,4}):([0-5]\d)(?!\d)", value):
+        minutes = int(match.group(1))
+        seconds_part = int(match.group(2))
+        timestamp = f"{minutes:02d}:{seconds_part:02d}"
+        if bvid:
+            rendered.append(
+                '<a class="stock-table-time-link" '
+                f'href="https://www.bilibili.com/video/{quote(bvid)}?t={minutes * 60 + seconds_part}" '
+                f'target="_blank" rel="noopener">{html.escape(timestamp)}</a>'
+            )
+        else:
+            rendered.append(
+                f'<span class="stock-table-time-link">{html.escape(timestamp)}</span>'
+            )
+    if rendered:
+        return '<span class="stock-table-time-links">' + "".join(rendered) + "</span>"
+    return html.escape(value)
+
+
+def _render_table_card(
+    row: StockTableRow,
+    status: StockDailyStatus | None,
+    *,
+    bvid: str = "",
+) -> str:
     table_name = (
         _first_matching_value(row.values, ("股票名称", "名称", "标的", "公司")) or ""
     )
@@ -775,14 +807,19 @@ def _render_table_card(row: StockTableRow, status: StockDailyStatus | None) -> s
         else ""
     )
 
-    body_html = "\n".join(
-        (
+    body_parts: list[str] = []
+    for label, value in body_items:
+        value_html = (
+            _render_video_times(value, bvid=bvid)
+            if label == "视频时间"
+            else html.escape(value)
+        )
+        body_parts.append(
             '      <div class="stock-table-field">'
-            f"<span>{html.escape(label)}</span><p>{html.escape(value)}</p>"
+            f"<span>{html.escape(label)}</span><p>{value_html}</p>"
             "</div>"
         )
-        for label, value in body_items
-    )
+    body_html = "\n".join(body_parts)
     fields_html = (
         f"""    <div class="stock-table-fields">
 {body_html}
