@@ -5,8 +5,8 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 from rich.console import Console
 from rich.table import Table
@@ -17,6 +17,8 @@ from b2t.history import HistoryDB, record_pipeline_run
 from b2t.monitor import BilibiliMonitorService
 from b2t.pipeline import run_pipeline
 from b2t.storage import StoredArtifact
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -464,7 +466,7 @@ def _run_pipeline_with_args(args: CLIArgs, console: Console) -> int:
         console.print("[bold #334155]已取消[/bold #334155]")
         return 130
     except Exception as exc:
-        logging.error("执行失败: %s", exc)
+        logger.error("执行失败: %s", exc)
         console.print(f"[bold red]执行失败:[/] {exc}")
         return 1
 
@@ -492,7 +494,7 @@ def _run_pipeline_with_args(args: CLIArgs, console: Console) -> int:
             summary_profile=args.summary_profile,
         )
     except Exception as exc:  # noqa: BLE001
-        logging.warning("记录历史转录失败: %s", exc)
+        logger.warning("记录历史转录失败: %s", exc)
 
     return 0
 
@@ -523,7 +525,7 @@ def _run_monitor_with_args(args: MonitorCLIArgs, console: Console) -> int:
         console.print("[bold #334155]已停止监控[/bold #334155]")
         return 130
     except Exception as exc:
-        logging.error("监控执行失败: %s", exc)
+        logger.error("监控执行失败: %s", exc)
         console.print(f"[bold red]监控执行失败:[/] {exc}")
         return 1
     finally:

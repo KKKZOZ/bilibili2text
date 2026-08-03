@@ -1,22 +1,23 @@
+import sys
 from pathlib import Path
 from types import SimpleNamespace
-import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "web-ui"))
 
-from backend.routes import runtime_routes  # noqa: E402
-from backend.schemas import (  # noqa: E402
+from backend.routes import runtime_routes
+from backend.schemas import (
     OpenPublicApiKeyTestRequest,
     OpenPublicCustomLlmTestRequest,
 )
-from b2t.config import (  # noqa: E402
+
+from b2t.config import (
     AnalyticsConfig,
     AppConfig,
     ConverterConfig,
     DownloadConfig,
     FancyHtmlConfig,
-    STTConfig,
     StorageConfig,
+    STTConfig,
     SummarizeConfig,
     SummarizeModelProfile,
     SummaryPresetsConfig,

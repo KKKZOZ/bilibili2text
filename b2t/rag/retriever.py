@@ -7,12 +7,16 @@ from dataclasses import dataclass
 
 os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "true")
 
-import litellm  # noqa: E402
+import litellm
 
-from b2t.config import AppConfig, resolve_rag_llm_profile, resolve_summarize_api_base  # noqa: E402
-from b2t.rag.embedder import embed_texts  # noqa: E402
-from b2t.rag.store import RagStore  # noqa: E402
-from b2t.summarize.litellm_client import _to_litellm_model_name  # noqa: E402
+from b2t.config import (
+    AppConfig,
+    resolve_rag_llm_profile,
+    resolve_summarize_api_base,
+)
+from b2t.rag.embedder import embed_texts
+from b2t.rag.store import RagStore
+from b2t.summarize.litellm_client import _to_litellm_model_name
 
 _ANSWER_PROMPT_TEMPLATE = """\
 You are a financial industry report assistant. Your task is not to write a generic summary, but to form a structured, information-rich financial report based on retrieved results.

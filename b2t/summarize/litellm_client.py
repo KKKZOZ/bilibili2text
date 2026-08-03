@@ -130,9 +130,8 @@ def extract_reasoning_text(delta: object) -> str:
 
             summary = get_message_field(item, "summary")
             summary_text = to_text(summary)
-            if summary_text:
-                if not parts or parts[-1] != summary_text:
-                    parts.append(summary_text)
+            if summary_text and (not parts or parts[-1] != summary_text):
+                parts.append(summary_text)
 
     return "".join(parts)
 

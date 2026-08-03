@@ -6,10 +6,11 @@ import html
 import logging
 import math
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from functools import lru_cache
-from typing import Any, Mapping
+from typing import Any
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
@@ -697,10 +698,8 @@ def _looks_like_table_separator(line: str) -> bool:
 
 def _split_table_cells(line: str) -> list[str]:
     stripped = line.strip()
-    if stripped.startswith("|"):
-        stripped = stripped[1:]
-    if stripped.endswith("|"):
-        stripped = stripped[:-1]
+    stripped = stripped.removeprefix("|")
+    stripped = stripped.removesuffix("|")
     return [cell.strip() for cell in stripped.split("|")]
 
 

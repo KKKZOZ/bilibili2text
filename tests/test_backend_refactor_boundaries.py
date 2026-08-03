@@ -1,9 +1,9 @@
 import sys
 import tempfile
+from collections.abc import Iterator
 from contextlib import contextmanager
 from io import BytesIO
 from pathlib import Path
-from typing import Iterator
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "web-ui"))
 

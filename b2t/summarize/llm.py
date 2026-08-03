@@ -1,9 +1,9 @@
 """LLM Summarization"""
 
 import logging
+import re
 from datetime import datetime
 from pathlib import Path
-import re
 
 from b2t.config import (
     SummarizeConfig,

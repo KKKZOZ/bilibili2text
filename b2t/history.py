@@ -4,11 +4,11 @@ import json
 import re
 import sqlite3
 import threading
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Iterator, Mapping
 
 from b2t.stock_status import StockDailyStatus
 from b2t.storage.base import StoredArtifact, classify_artifact_filename
@@ -210,7 +210,7 @@ class HistoryDB:
     ) -> None:
         """Insert or replace a transcription run and its artifacts."""
         if created_at is None:
-            created_at = datetime.now(tz=timezone.utc).isoformat()
+            created_at = datetime.now(tz=UTC).isoformat()
 
         artifact_list = artifacts or []
         conn = self._conn()
@@ -481,7 +481,7 @@ class HistoryDB:
         if not status_items:
             return
 
-        fetched_at = datetime.now(tz=timezone.utc).isoformat()
+        fetched_at = datetime.now(tz=UTC).isoformat()
         conn = self._conn()
         with conn:
             conn.executemany(
@@ -683,7 +683,7 @@ def record_rag_query(
     created_at: str | None = None,
 ) -> str:
     """Persist a RAG query + answer to the history DB. Returns run_id."""
-    from uuid import uuid4  # noqa: PLC0415
+    from uuid import uuid4
 
     run_id = uuid4().hex
     title = question[:200]
@@ -724,13 +724,11 @@ def infer_title(filename: str, *, bvid: str) -> str:
         return stem if stem else bvid
 
     remainder = stem[len(bvid) :]
-    if remainder.startswith("_"):
-        remainder = remainder[1:]
+    remainder = remainder.removeprefix("_")
 
     # Optional run suffix like "-a1b2c3d4" inserted before title.
     remainder = _RUN_ID_SUFFIX_PATTERN.sub("", remainder)
-    if remainder.startswith("_"):
-        remainder = remainder[1:]
+    remainder = remainder.removeprefix("_")
 
     multipart_match = _MULTIPART_TITLE_PATTERN.match(remainder)
     if multipart_match:

@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 import logging
 import shutil
+from collections.abc import Iterable
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import Event, Thread
-from typing import Iterable
 
 from b2t.storage import StoredArtifact
-
 from backend.dependencies import get_storage_backend
 from backend.download_registry import download_registry
 from backend.job_store import job_repository
@@ -26,9 +25,9 @@ _cleanup_thread: Thread | None = None
 
 
 def ephemeral_upload_expires_at(*, completed_at: datetime | None = None) -> str:
-    base = completed_at or datetime.now(tz=timezone.utc)
+    base = completed_at or datetime.now(tz=UTC)
     if base.tzinfo is None:
-        base = base.replace(tzinfo=timezone.utc)
+        base = base.replace(tzinfo=UTC)
     return (base + timedelta(seconds=EPHEMERAL_UPLOAD_TTL_SECONDS)).isoformat()
 
 

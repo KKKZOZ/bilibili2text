@@ -1,18 +1,18 @@
 from pathlib import Path
 
+import b2t.summarize.fancy_html as fancy_html_module
 from b2t.config import (
     AppConfig,
     ConverterConfig,
     DownloadConfig,
     FancyHtmlConfig,
     RagConfig,
-    STTConfig,
     StorageConfig,
+    STTConfig,
     SummarizeConfig,
     SummarizeModelProfile,
     SummaryPresetsConfig,
 )
-import b2t.summarize.fancy_html as fancy_html_module
 
 
 def _config() -> AppConfig:

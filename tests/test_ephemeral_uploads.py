@@ -1,13 +1,14 @@
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
 import sys
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "web-ui"))
 
-from b2t.storage import StoredArtifact  # noqa: E402
-from backend.download_registry import DownloadRegistry  # noqa: E402
-from backend.ephemeral_uploads import cleanup_expired_ephemeral_uploads  # noqa: E402
-from backend.job_store import JobPatch, JobRepository  # noqa: E402
+from backend.download_registry import DownloadRegistry
+from backend.ephemeral_uploads import cleanup_expired_ephemeral_uploads
+from backend.job_store import JobPatch, JobRepository
+
+from b2t.storage import StoredArtifact
 
 
 def test_job_repository_lists_and_marks_expired_ephemeral_uploads() -> None:
@@ -26,9 +27,7 @@ def test_job_repository_lists_and_marks_expired_ephemeral_uploads() -> None:
             stage="completed",
             progress=100,
             is_ephemeral_upload=True,
-            expires_at=(
-                datetime.now(tz=timezone.utc) - timedelta(seconds=1)
-            ).isoformat(),
+            expires_at=(datetime.now(tz=UTC) - timedelta(seconds=1)).isoformat(),
             ephemeral_artifacts=[
                 {
                     "filename": "upload_transcription.md",

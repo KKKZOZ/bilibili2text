@@ -3,8 +3,8 @@
 Keep the project root importable when the API is started from ``web-ui``.
 """
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:

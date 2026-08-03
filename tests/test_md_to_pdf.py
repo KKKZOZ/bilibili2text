@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from pathlib import Path
 import shutil
 import subprocess
+from pathlib import Path
 
 import b2t.converter.md_to_pdf as md_to_pdf_module
 from b2t.converter.md_to_pdf import MarkdownToPdfConverter

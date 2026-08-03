@@ -3,31 +3,33 @@
 from fastapi import APIRouter, HTTPException, Query
 from litellm import completion
 
+from b2t.config import resolve_summarize_api_base
+from b2t.summarize.litellm_client import _to_litellm_model_name
 from backend.schemas import (
-    OpenPublicCustomLlmTestRequest,
-    OpenPublicCustomLlmTestResponse,
+    OpenPublicApiKeyStatusResponse,
     OpenPublicApiKeyTestRequest,
     OpenPublicApiKeyTestResponse,
-    OpenPublicApiKeyStatusResponse,
     OpenPublicApiKeyUpdateRequest,
+    OpenPublicCustomLlmTestRequest,
+    OpenPublicCustomLlmTestResponse,
     RuntimeFeaturesResponse,
 )
 from backend.settings import (
+    _pick_bailian_summary_profile,
+    _pick_deepseek_summary_profile,
     clear_public_api_key,
     clear_public_deepseek_api_key,
     get_app_config,
     get_public_api_key,
     get_public_deepseek_api_key,
-    get_runtime_features as get_runtime_feature_flags,
     is_open_public_mode,
     mask_api_key,
     set_public_api_key,
     set_public_deepseek_api_key,
-    _pick_bailian_summary_profile,
-    _pick_deepseek_summary_profile,
 )
-from b2t.config import resolve_summarize_api_base
-from b2t.summarize.litellm_client import _to_litellm_model_name
+from backend.settings import (
+    get_runtime_features as get_runtime_feature_flags,
+)
 
 router = APIRouter()
 

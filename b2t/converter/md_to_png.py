@@ -828,20 +828,16 @@ class MarkdownToPngConverter:
 
     def _split_markdown_table_cells(self, line: str) -> list[str]:
         stripped = line.strip()
-        if stripped.startswith("|"):
-            stripped = stripped[1:]
-        if stripped.endswith("|"):
-            stripped = stripped[:-1]
+        stripped = stripped.removeprefix("|")
+        stripped = stripped.removesuffix("|")
         return [cell.strip() for cell in stripped.split("|")]
 
     def _looks_like_table_delimiter_line(self, line: str) -> bool:
         text = line.strip()
         if "|" not in text:
             return False
-        if text.startswith("|"):
-            text = text[1:]
-        if text.endswith("|"):
-            text = text[:-1]
+        text = text.removeprefix("|")
+        text = text.removesuffix("|")
 
         cells = [
             cell.strip().translate(TABLE_DASH_TRANSLATION) for cell in text.split("|")
@@ -1029,7 +1025,7 @@ class MarkdownToPngConverter:
             tile_target_heights: list[int] = []
             for y in scroll_positions:
                 css_height = min(step_height, full_height - y)
-                pixel_height = max(1, int(round(css_height * dpr)))
+                pixel_height = max(1, round(css_height * dpr))
                 tile_target_heights.append(pixel_height)
 
             with Image.open(tile_paths[0]) as first_img:

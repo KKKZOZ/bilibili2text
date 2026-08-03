@@ -1,4 +1,7 @@
+import tomllib
 from pathlib import Path
+
+import pytest
 
 from b2t.summarize.timeline import (
     export_summary_table_without_video_time,
@@ -16,6 +19,22 @@ SUMMARY_TABLE = """# 金融总结
 | 威高股份 | 01066.HK | 01:45 | 医疗器械增长 |
 """
 
+GENERAL_TIMELINE_TABLE = """# 通用总结
+
+| 主题 | 视频时间 | 内容摘要 |
+| --- | --- | --- |
+| 环境配置 | 00:42 | 安装依赖并检查版本 |
+| 核心流程 | 03:15<br>08:09 | 介绍主要处理步骤 |
+"""
+
+STUDY_TIMELINE_TABLE = """# 学习笔记
+
+| 学习主题 | 视频时间 | 核心知识点 |
+| --- | --- | --- |
+| 基础概念 | 01:07 | 定义与适用范围 |
+| 实践方法 | 05:30 | 操作步骤和注意事项 |
+"""
+
 
 def test_extract_timeline_entries_sorts_and_deduplicates_mentions() -> None:
     entries = extract_timeline_entries(SUMMARY_TABLE)
@@ -28,6 +47,48 @@ def test_extract_timeline_entries_sorts_and_deduplicates_mentions() -> None:
         ("01:46", "海吉亚", "06078.HK"),
         ("02:03", "海吉亚", "06078.HK"),
     ]
+
+
+@pytest.mark.parametrize(
+    ("table", "expected"),
+    [
+        (
+            GENERAL_TIMELINE_TABLE,
+            [
+                ("00:42", "环境配置", "-"),
+                ("03:15", "核心流程", "-"),
+                ("08:09", "核心流程", "-"),
+            ],
+        ),
+        (
+            STUDY_TIMELINE_TABLE,
+            [
+                ("01:07", "基础概念", "-"),
+                ("05:30", "实践方法", "-"),
+            ],
+        ),
+    ],
+)
+def test_extract_timeline_entries_supports_general_topics(
+    table: str,
+    expected: list[tuple[str, str, str]],
+) -> None:
+    entries = extract_timeline_entries(table)
+
+    assert [
+        (entry.timestamp, entry.stock_name, entry.stock_code) for entry in entries
+    ] == expected
+
+
+def test_general_presets_request_timestamped_timeline_tables() -> None:
+    presets_path = Path(__file__).parents[1] / "summary_presets.toml"
+    presets = tomllib.loads(presets_path.read_text(encoding="utf-8"))["presets"]
+
+    for preset_name in ("summary", "study_notes"):
+        template = presets[preset_name]["prompt_template"]
+        assert "视频时间" in template
+        assert "Speaker MM:SS" in template
+        assert "<br>" in template
 
 
 def test_remove_video_time_column_only_changes_exported_table() -> None:

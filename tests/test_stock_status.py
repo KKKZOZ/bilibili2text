@@ -180,7 +180,6 @@ def test_fetch_stock_daily_status_uses_as_of_date(monkeypatch) -> None:
     def fake_fetch(symbol, as_of_date):
         captured["symbol"] = symbol
         captured["as_of_date"] = as_of_date
-        return None
 
     monkeypatch.setattr(
         "b2t.stock_status._fetch_yfinance_status_for_symbol", fake_fetch

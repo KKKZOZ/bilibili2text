@@ -1,22 +1,23 @@
-from pathlib import Path
 import sys
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "web-ui"))
 
-from b2t.config import (  # noqa: E402
+from backend.services import _resolve_summary_selection
+
+from b2t.config import (
     AppConfig,
     ConverterConfig,
     DownloadConfig,
     FancyHtmlConfig,
     RagConfig,
-    STTConfig,
     StorageConfig,
+    STTConfig,
     SummarizeConfig,
     SummarizeModelProfile,
     SummaryPreset,
     SummaryPresetsConfig,
 )
-from backend.services import _resolve_summary_selection  # noqa: E402
 
 
 def _config() -> AppConfig:

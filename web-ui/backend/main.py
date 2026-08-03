@@ -6,7 +6,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from b2t.converter.md_to_png import shutdown_png_renderer, warmup_png_renderer
-
 from backend.ephemeral_uploads import (
     start_ephemeral_upload_cleanup,
     stop_ephemeral_upload_cleanup,

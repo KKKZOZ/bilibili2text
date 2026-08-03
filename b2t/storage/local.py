@@ -1,9 +1,10 @@
 """Local filesystem storage backend."""
 
+import re
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-import re
-from typing import BinaryIO, Iterator
+from typing import BinaryIO
 
 from b2t.storage.base import (
     StorageBackend,

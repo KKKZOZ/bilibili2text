@@ -1,11 +1,12 @@
 """MinIO storage backend."""
 
+import mimetypes
+import uuid
+from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import timedelta
-import mimetypes
 from pathlib import Path
-from typing import BinaryIO, Iterator
-import uuid
+from typing import BinaryIO
 
 from minio import Minio
 from minio.error import S3Error

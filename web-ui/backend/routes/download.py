@@ -343,13 +343,15 @@ def preview_rendered_html(
         temp_dir_path = Path(temp_dir)
         source_path = temp_dir_path / artifact.filename
         try:
-            with storage_backend.open_stream(artifact.storage_key) as stream:
-                with source_path.open("wb") as output:
-                    while True:
-                        chunk = stream.read(1024 * 1024)
-                        if not chunk:
-                            break
-                        output.write(chunk)
+            with (
+                storage_backend.open_stream(artifact.storage_key) as stream,
+                source_path.open("wb") as output,
+            ):
+                while True:
+                    chunk = stream.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    output.write(chunk)
         except FileNotFoundError:
             raise HTTPException(
                 status_code=410,
@@ -451,13 +453,15 @@ def convert_artifact(payload: ConvertRequest) -> ConvertResponse:
         source_path = temp_dir_path / artifact.filename
 
         try:
-            with storage_backend.open_stream(artifact.storage_key) as stream:
-                with source_path.open("wb") as output:
-                    while True:
-                        chunk = stream.read(1024 * 1024)
-                        if not chunk:
-                            break
-                        output.write(chunk)
+            with (
+                storage_backend.open_stream(artifact.storage_key) as stream,
+                source_path.open("wb") as output,
+            ):
+                while True:
+                    chunk = stream.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    output.write(chunk)
         except FileNotFoundError:
             raise HTTPException(
                 status_code=410,

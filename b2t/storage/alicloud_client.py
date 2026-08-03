@@ -1,12 +1,13 @@
 """Aliyun OSS storage backend."""
 
-from contextlib import contextmanager
 import mimetypes
-from pathlib import Path
 import tempfile
-from typing import BinaryIO, Iterator
-from urllib.parse import quote
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
+from pathlib import Path
+from typing import BinaryIO
+from urllib.parse import quote
 
 import alibabacloud_oss_v2 as oss
 

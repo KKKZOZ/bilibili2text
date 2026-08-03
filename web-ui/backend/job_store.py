@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import time
 from collections import OrderedDict
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
-import time
+from datetime import UTC, datetime
 from threading import Lock
 from uuid import uuid4
 
@@ -82,7 +82,7 @@ class JobState:
         summary_profile: str | None,
         summary_prompt_template: str | None,
         auto_generate_fancy_html: bool,
-    ) -> "JobState":
+    ) -> JobState:
         now = utc_iso()
         return cls(
             job_id=uuid4().hex,
@@ -305,7 +305,7 @@ class JobRepository:
     def list_expired_ephemeral_uploads(
         self, *, now: datetime | None = None
     ) -> list[dict[str, object]]:
-        cutoff = now or datetime.now(tz=timezone.utc)
+        cutoff = now or datetime.now(tz=UTC)
         expired: list[dict[str, object]] = []
         with self._lock:
             for job in self._jobs.values():
@@ -318,7 +318,7 @@ class JobRepository:
                 except ValueError:
                     continue
                 if expires_at.tzinfo is None:
-                    expires_at = expires_at.replace(tzinfo=timezone.utc)
+                    expires_at = expires_at.replace(tzinfo=UTC)
                 if expires_at > cutoff:
                     continue
                 expired.append(

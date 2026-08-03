@@ -1,11 +1,10 @@
 """Runtime settings, path-independent config loading, and feature flags."""
 
-from dataclasses import replace
-from datetime import datetime, timezone
 import os
+from dataclasses import replace
+from datetime import UTC, datetime
 from threading import Lock
 
-from backend import PROJECT_ROOT
 from b2t.config import (
     AppConfig,
     STTConfig,
@@ -14,6 +13,7 @@ from b2t.config import (
     SummarizeModelProfile,
     load_config,
 )
+from backend import PROJECT_ROOT
 
 ROOT_CONFIG_PATH = PROJECT_ROOT / "config.toml"
 
@@ -80,7 +80,7 @@ _public_deepseek_api_key = (
 
 
 def utc_iso() -> str:
-    return datetime.now(tz=timezone.utc).isoformat()
+    return datetime.now(tz=UTC).isoformat()
 
 
 def get_app_config() -> AppConfig:

@@ -7,10 +7,11 @@ import logging
 import os
 import tempfile
 import time
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any
 
 import httpx
 
@@ -22,8 +23,8 @@ from b2t.history import HistoryDB, record_pipeline_run
 from b2t.monitor.feishu import FeishuNotifier
 from b2t.pipeline import run_pipeline
 from b2t.storage import (
-    StoredArtifact,
     StorageBackend,
+    StoredArtifact,
     create_storage_backend,
     create_stt_storage_backend,
 )
@@ -174,7 +175,7 @@ class BilibiliMonitorService:
                         creator,
                         bootstrap_unsummarized_count=bootstrap_unsummarized_count,
                     )
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     logger.exception("监控 %s 失败", creator.name or creator.uid)
                     self.notifier.send_system_notification(
                         "ERROR",
@@ -401,7 +402,7 @@ class BilibiliMonitorService:
                     image_path.unlink(missing_ok=True)
             if not ok:
                 raise RuntimeError("飞书图片卡片发送失败")
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.exception("处理视频 %s 失败", event.bvid)
             self.notifier.send_system_notification(
                 "ERROR",
