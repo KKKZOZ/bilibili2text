@@ -6,8 +6,8 @@ from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, HTTPException
 
 from b2t.history import infer_run_id
-from b2t.storage import StoredArtifact
-from b2t.storage.base import classify_artifact_filename
+from b2t.storage import ArtifactKind, StoredArtifact
+from b2t.storage.base import resolve_artifact_kind
 from backend.dependencies import get_history_db, get_storage_backend
 from backend.download_registry import download_registry
 from backend.schemas import GenerateFancyHtmlRequest, GenerateFancyHtmlResponse
@@ -34,9 +34,9 @@ def generate_fancy_html(payload: GenerateFancyHtmlRequest) -> GenerateFancyHtmlR
 
     if source_artifact is None:
         raise HTTPException(status_code=404, detail="下载链接不存在或已过期")
-    if classify_artifact_filename(source_artifact.filename) not in (
-        "summary",
-        "rag_answer",
+    if resolve_artifact_kind(source_artifact.kind, source_artifact.filename) not in (
+        ArtifactKind.SUMMARY,
+        ArtifactKind.RAG_ANSWER,
     ):
         raise HTTPException(
             status_code=400,

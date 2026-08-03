@@ -5,9 +5,11 @@ import logging
 import shutil
 import tempfile
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
 
+from b2t.cancellation import CancellationToken
 from b2t.config import AppConfig, build_bilibili_cookie
 from b2t.converter.json_to_md import TIMELINE_SCHEMA_VERSION, convert_json_to_md
 from b2t.download.comments import (
@@ -29,6 +31,7 @@ from b2t.download.yutto_cli import (
     normalize_bilibili_target,
 )
 from b2t.storage import (
+    ArtifactKind,
     StorageBackend,
     StoredArtifact,
     create_storage_backend,
@@ -111,6 +114,7 @@ def run_pipeline(
     bilibili_subtitle_used_callback: Callable[[], None] | None = None,
     include_comments: bool = False,
     comment_limit: int | None = DEFAULT_COMMENT_LIMIT,
+    cancellation_token: CancellationToken | None = None,
 ) -> dict[str, StoredArtifact]:
     """Run the full transcription pipeline
 
@@ -160,16 +164,22 @@ def run_pipeline(
     temp_download_dir.mkdir(exist_ok=True)
 
     def emit_progress(stage: str, label: str, progress: int) -> None:
+        if cancellation_token is not None:
+            cancellation_token.raise_if_cancelled()
         if progress_callback is not None:
             progress_callback(stage, label, progress)
 
     try:
+        if cancellation_token is not None:
+            cancellation_token.raise_if_cancelled()
         normalized_audio_path = (
             Path(audio_path).expanduser().resolve() if audio_path is not None else None
         )
         use_local_audio = normalized_audio_path is not None
         subtitle = None
         if use_local_audio:
+            if cancellation_token is not None:
+                cancellation_token.raise_if_cancelled()
             if not normalized_audio_path.is_file():
                 raise FileNotFoundError(f"上传音频文件不存在: {normalized_audio_path}")
             emit_progress("downloading", "处理上传音频", 10)
@@ -179,6 +189,8 @@ def run_pipeline(
             bvid = input_bvid or extract_bvid(audio_file.name)
             transcription_id = bvid
         else:
+            if cancellation_token is not None:
+                cancellation_token.raise_if_cancelled()
             if not url.strip():
                 raise ValueError("URL 不能为空")
 
@@ -197,11 +209,15 @@ def run_pipeline(
                 transcription_id = extract_bilibili_target_id(normalized_url) or bvid
                 if bvid:
                     try:
+                        if cancellation_token is not None:
+                            cancellation_token.raise_if_cancelled()
                         metadata = get_video_metadata(bvid)
                     except Exception as e:
                         logger.warning("Failed to fetch video metadata: %s", e)
 
                 if prefer_bilibili_subtitle:
+                    if cancellation_token is not None:
+                        cancellation_token.raise_if_cancelled()
                     emit_progress("downloading", "获取 B 站字幕", 10)
                     logger.info("=== 获取 B 站字幕 ===")
                     subtitle = fetch_bilibili_subtitle(normalized_url)
@@ -209,6 +225,8 @@ def run_pipeline(
                     subtitle = None
 
                 if subtitle is None:
+                    if cancellation_token is not None:
+                        cancellation_token.raise_if_cancelled()
                     emit_progress("downloading", "下载视频音频", 10)
                     logger.info("=== 下载音频 ===")
                     audio_file, downloaded_metadata = download_audio(
@@ -223,6 +241,8 @@ def run_pipeline(
                 else:
                     audio_file = None
             elif platform == Platform.XIAOYUZHOU:
+                if cancellation_token is not None:
+                    cancellation_token.raise_if_cancelled()
                 emit_progress("downloading", "下载音频", 10)
                 logger.info("=== 下载小宇宙音频 ===")
                 from b2t.download.xiaoyuzhou import XiaoyuzhouDownloader
@@ -235,6 +255,8 @@ def run_pipeline(
                 bvid = input_bvid or metadata.bvid
                 transcription_id = bvid
             elif platform == Platform.XIMALAYA:
+                if cancellation_token is not None:
+                    cancellation_token.raise_if_cancelled()
                 emit_progress("downloading", "下载音频", 10)
                 logger.info("=== 下载喜马拉雅音频 ===")
                 from b2t.download.ximalaya import XimalayaDownloader
@@ -335,6 +357,8 @@ def run_pipeline(
             )
 
         if audio_file is None:
+            if cancellation_token is not None:
+                cancellation_token.raise_if_cancelled()
             if bilibili_subtitle_used_callback is not None:
                 bilibili_subtitle_used_callback()
             emit_progress("converting", "Generating Markdown", 80)
@@ -361,6 +385,8 @@ def run_pipeline(
                 encoding="utf-8",
             )
         else:
+            if cancellation_token is not None:
+                cancellation_token.raise_if_cancelled()
             # Move audio to work directory
             audio_filename = _ensure_bvid_prefixed_name(
                 audio_file.name,
@@ -376,6 +402,8 @@ def run_pipeline(
             logger.info("Work directory: %s", work_dir)
 
             # 2. Transcribe (each provider handles its own details, e.g. Qwen's OSS upload)
+            if cancellation_token is not None:
+                cancellation_token.raise_if_cancelled()
             stt_provider = create_stt_provider(config, stt_storage_backend)
             json_path = stt_provider.transcribe(
                 new_audio_path,
@@ -393,6 +421,8 @@ def run_pipeline(
         local_results["json"] = json_path
 
         # 3. JSON -> Markdown
+        if cancellation_token is not None:
+            cancellation_token.raise_if_cancelled()
         emit_progress("converting", "Generating Markdown", 80)
         logger.info("=== Generating Markdown ===")
         md_path = convert_json_to_md(json_path, min_length=config.converter.min_length)
@@ -400,6 +430,8 @@ def run_pipeline(
 
         # 4. LLM Summarization
         if not skip_summary:
+            if cancellation_token is not None:
+                cancellation_token.raise_if_cancelled()
             emit_progress("summarizing", "LLM summarization", 90)
             logger.info("=== Generating summary ===")
             summary_path = summarize_with_comment_viewpoints(
@@ -416,6 +448,8 @@ def run_pipeline(
             local_results["summary"] = summary_path
 
             # Extract summary table as a separate Markdown file
+            if cancellation_token is not None:
+                cancellation_token.raise_if_cancelled()
             summary_table_md_path = export_summary_table_without_video_time(
                 summary_path
             )
@@ -426,12 +460,50 @@ def run_pipeline(
                 local_results["summary_timeline"] = summary_timeline_path
 
         storage_prefix = f"{transcription_id}-{uuid4().hex[:8]}"
-        for artifact_key, artifact_path in local_results.items():
-            object_key = f"{storage_prefix}/{artifact_path.name}"
-            results[artifact_key] = storage_backend.store_file(
-                artifact_path,
-                object_key=object_key,
-            )
+        try:
+            for artifact_key, artifact_path in local_results.items():
+                if cancellation_token is not None:
+                    cancellation_token.raise_if_cancelled()
+                object_key = f"{storage_prefix}/{artifact_path.name}"
+
+                def _store_artifact(
+                    path: Path = artifact_path,
+                    key: str = object_key,
+                ) -> StoredArtifact:
+                    return storage_backend.store_file(
+                        path,
+                        object_key=key,
+                    )
+
+                stored = (
+                    cancellation_token.run_if_active(_store_artifact)
+                    if cancellation_token is not None
+                    else _store_artifact()
+                )
+                derived_from = ""
+                if artifact_key == ArtifactKind.SUMMARY:
+                    derived_from = results["markdown"].storage_key
+                elif artifact_key in {
+                    ArtifactKind.SUMMARY_TABLE_MD,
+                    ArtifactKind.SUMMARY_TIMELINE,
+                }:
+                    derived_from = results["summary"].storage_key
+                results[artifact_key] = replace(
+                    stored,
+                    kind=artifact_key,
+                    derived_from=derived_from,
+                )
+        except Exception:
+            for artifact in results.values():
+                try:
+                    storage_backend.delete_file(artifact.storage_key)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "清理未完成任务产物失败: %s: %s",
+                        artifact.storage_key,
+                        exc,
+                    )
+            raise
 
         emit_progress("completed", "处理完成", 100)
         logger.info(

@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from threading import get_ident
 
+from b2t.cancellation import CancellationToken, PipelineCancelled
 from b2t.config import STOCK_STATUS_MODE_BACKGROUND_HYBRID, get_stock_status_mode
 from b2t.download.comments import DEFAULT_COMMENT_LIMIT
 from b2t.download.platform import Platform
@@ -98,6 +99,7 @@ def _run_job(
     custom_llm_base_url: str | None = None,
     custom_llm_api_key: str | None = None,
     custom_llm_model: str | None = None,
+    cancellation_token: CancellationToken | None = None,
 ) -> None:
     normalized_url = (url or "").strip()
     normalized_audio_path = (input_audio_path or "").strip()
@@ -110,6 +112,10 @@ def _run_job(
     upload_temp_dir: Path | None = None
     if normalized_audio_path:
         upload_temp_dir = Path(normalized_audio_path).expanduser().resolve().parent
+
+    if cancellation_token is not None and cancellation_token.is_cancelled():
+        _cleanup_upload_temp_dir(upload_temp_dir)
+        return
 
     try:
         config = get_runtime_app_config(
@@ -155,6 +161,10 @@ def _run_job(
         _cleanup_upload_temp_dir(upload_temp_dir)
         return
 
+    if cancellation_token is not None and cancellation_token.is_cancelled():
+        _cleanup_upload_temp_dir(upload_temp_dir)
+        return
+
     if bvid is not None and not ephemeral_upload:
         _update_job(job_id, bvid=bvid)
 
@@ -174,8 +184,13 @@ def _run_job(
             auto_generate_fancy_html=auto_generate_fancy_html,
             include_comments=include_comments,
             comment_limit=comment_limit,
+            cancellation_token=cancellation_token,
         )
     ):
+        _cleanup_upload_temp_dir(upload_temp_dir)
+        return
+
+    if cancellation_token is not None and cancellation_token.is_cancelled():
         _cleanup_upload_temp_dir(upload_temp_dir)
         return
 
@@ -217,6 +232,18 @@ def _run_job(
     )
 
     try:
+
+        def _progress(stage: str, label: str, progress: int) -> None:
+            if cancellation_token is not None:
+                cancellation_token.raise_if_cancelled()
+            _update_job(
+                job_id,
+                status="running",
+                stage=stage,
+                stage_label=label,
+                progress=progress,
+            )
+
         try:
             if normalized_audio_path:
                 results = run_pipeline(
@@ -232,17 +259,12 @@ def _run_job(
                     stt_storage_backend=stt_storage_backend,
                     prefer_bilibili_subtitle=False,
                     include_comments=False,
-                    progress_callback=lambda stage, label, progress: _update_job(
-                        job_id,
-                        status="running",
-                        stage=stage,
-                        stage_label=label,
-                        progress=progress,
-                    ),
+                    progress_callback=_progress,
                     bilibili_subtitle_used_callback=lambda: _update_job(
                         job_id,
                         used_bilibili_subtitle=True,
                     ),
+                    cancellation_token=cancellation_token,
                 )
             else:
                 results = run_pipeline(
@@ -257,18 +279,15 @@ def _run_job(
                     prefer_bilibili_subtitle=prefer_bilibili_subtitle,
                     include_comments=include_comments,
                     comment_limit=comment_limit,
-                    progress_callback=lambda stage, label, progress: _update_job(
-                        job_id,
-                        status="running",
-                        stage=stage,
-                        stage_label=label,
-                        progress=progress,
-                    ),
+                    progress_callback=_progress,
                     bilibili_subtitle_used_callback=lambda: _update_job(
                         job_id,
                         used_bilibili_subtitle=True,
                     ),
+                    cancellation_token=cancellation_token,
                 )
+        except PipelineCancelled:
+            return
         except Exception as exc:
             _update_job(
                 job_id,
@@ -284,6 +303,8 @@ def _run_job(
             return
 
         png_export_warning: str | None = None
+        if cancellation_token is not None:
+            cancellation_token.raise_if_cancelled()
         if not skip_summary and "summary" in results:
             _update_job(
                 job_id,
@@ -296,6 +317,8 @@ def _run_job(
                 background_hybrid_stock = (
                     get_stock_status_mode(config) == STOCK_STATUS_MODE_BACKGROUND_HYBRID
                 )
+                if cancellation_token is not None:
+                    cancellation_token.raise_if_cancelled()
                 png_results = _generate_summary_png_exports(
                     results=results,
                     storage_backend=storage_backend,
@@ -310,6 +333,8 @@ def _run_job(
                     stock_status_max_workers=STOCK_STATUS_MAX_WORKERS,
                 )
                 results.update(png_results)
+            except PipelineCancelled:
+                return
             except Exception as exc:
                 png_export_warning = (
                     "PNG 图片导出失败，转录和总结已完成；可先下载 Markdown/文本结果。"
@@ -321,7 +346,11 @@ def _run_job(
                 )
 
         try:
+            if cancellation_token is not None:
+                cancellation_token.raise_if_cancelled()
             success_fields = _build_success_download_fields(results)
+        except PipelineCancelled:
+            return
         except ValueError as exc:
             _update_job(
                 job_id,
@@ -355,12 +384,16 @@ def _run_job(
             metadata_fields["bvid"] = bvid
 
         try:
+            if cancellation_token is not None:
+                cancellation_token.raise_if_cancelled()
             all_artifacts = _collect_all_artifacts_for_bvid(
                 storage_backend,
                 None if ephemeral_upload else transcription_id,
                 results,
             )
             all_downloads = _build_all_download_items(all_artifacts)
+        except PipelineCancelled:
+            return
         except Exception as exc:
             _update_job(
                 job_id,
@@ -375,40 +408,61 @@ def _run_job(
             )
             return
 
-        _update_job(
-            job_id,
-            status="succeeded",
-            stage="completed",
-            stage_label="处理完成",
-            progress=100,
-            already_transcribed=False,
-            notice=png_export_warning,
-            all_downloads=all_downloads,
-            error=None,
-            is_ephemeral_upload=ephemeral_upload,
-            expires_at=ephemeral_upload_expires_at() if ephemeral_upload else None,
-            ephemeral_artifacts=(
-                serialize_ephemeral_artifacts(all_artifacts) if ephemeral_upload else []
-            ),
-            **success_fields,
-            **metadata_fields,
-        )
-        if ephemeral_upload:
+        def _mark_succeeded() -> None:
             _update_job(
                 job_id,
-                notice="临时上传转录结果将在完成后 2 小时自动删除。",
-                fancy_html_status="idle",
+                status="succeeded",
+                stage="completed",
+                stage_label="处理完成",
+                progress=100,
+                already_transcribed=False,
+                notice=png_export_warning,
+                all_downloads=all_downloads,
+                error=None,
+                is_ephemeral_upload=ephemeral_upload,
+                expires_at=ephemeral_upload_expires_at() if ephemeral_upload else None,
+                ephemeral_artifacts=(
+                    serialize_ephemeral_artifacts(all_artifacts)
+                    if ephemeral_upload
+                    else []
+                ),
+                **success_fields,
+                **metadata_fields,
             )
+
+        if ephemeral_upload:
+
+            def _finish_ephemeral() -> None:
+                _mark_succeeded()
+                _update_job(
+                    job_id,
+                    notice="临时上传转录结果将在完成后 2 小时自动删除。",
+                    fancy_html_status="idle",
+                )
+
+            if cancellation_token is not None:
+                cancellation_token.run_if_active(_finish_ephemeral)
+            else:
+                _finish_ephemeral()
         elif bvid is not None:
-            _run_id = _record_history(
-                bvid=bvid,
-                results=results,
-                config=config,
-                summary_preset=summary_preset,
-                summary_profile=summary_profile,
-            )
-            if _run_id:
-                _update_job(job_id, history_run_id=_run_id)
+
+            def _persist_and_succeed() -> str | None:
+                run_id = _record_history(
+                    bvid=bvid,
+                    results=results,
+                    config=config,
+                    summary_preset=summary_preset,
+                    summary_profile=summary_profile,
+                )
+                _mark_succeeded()
+                if run_id:
+                    _update_job(job_id, history_run_id=run_id)
+                return run_id
+
+            if cancellation_token is not None:
+                _run_id = cancellation_token.run_if_active(_persist_and_succeed)
+            else:
+                _run_id = _persist_and_succeed()
             postprocess_scheduler.trigger_stock_status_refresh(
                 bvid=bvid,
                 results=results,
@@ -430,7 +484,17 @@ def _run_job(
                 _update_job(job_id, fancy_html_status="idle")
             postprocess_scheduler.trigger_rag_index(_run_id, config)
         else:
-            _update_job(job_id, fancy_html_status="idle")
+
+            def _finish_without_bvid() -> None:
+                _mark_succeeded()
+                _update_job(job_id, fancy_html_status="idle")
+
+            if cancellation_token is not None:
+                cancellation_token.run_if_active(_finish_without_bvid)
+            else:
+                _finish_without_bvid()
+    except PipelineCancelled:
+        return
     finally:
         if acquired_bvid_lock and transcription_id is not None:
             bvid_transcription_locks.release(transcription_id, job_id)

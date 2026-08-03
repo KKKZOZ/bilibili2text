@@ -9,7 +9,7 @@ from b2t.config import resolve_summarize_model_profile, resolve_summary_preset_n
 from b2t.download.metadata import VideoMetadata
 from b2t.download.yutto_cli import extract_bilibili_page_from_target_id
 from b2t.history import build_history_artifacts
-from b2t.storage import StoredArtifact
+from b2t.storage import SUMMARY_ARTIFACT_KINDS, StoredArtifact
 from b2t.summarize.llm import validate_summary_prompt_template
 from backend.dependencies import get_history_db, get_storage_backend
 from backend.download_registry import download_registry
@@ -26,17 +26,6 @@ from backend.settings import get_runtime_app_config, is_delete_enabled
 router = APIRouter()
 CUSTOM_SUMMARY_PRESET_VALUE = "__user_custom__"
 logger = logging.getLogger(__name__)
-SUMMARY_ARTIFACT_KINDS = {
-    "summary",
-    "summary_text",
-    "summary_fancy_html",
-    "summary_png",
-    "summary_no_table_png",
-    "summary_table_md",
-    "summary_table_png",
-    "summary_table_pdf",
-    "summary_timeline",
-}
 
 
 def _storage_parent_key(storage_key: str) -> str:
@@ -47,6 +36,22 @@ def _storage_parent_key(storage_key: str) -> str:
 
 
 def _summary_family_storage_keys(detail, summary_artifact) -> set[str]:
+    related = {summary_artifact.storage_key}
+    # New manifests explicitly link every derivative to its immediate source.
+    # Traverse the graph so table-derived exports remain in the same family.
+    while True:
+        expanded = {
+            artifact.storage_key
+            for artifact in detail.artifacts
+            if artifact.kind in SUMMARY_ARTIFACT_KINDS
+            and artifact.derived_from.strip() in related
+        }
+        if expanded.issubset(related):
+            break
+        related.update(expanded)
+
+    # Mixed manifests can contain an explicitly linked summary and legacy
+    # derivatives. Match only unlinked rows through the filename fallback.
     summary_stem = Path(summary_artifact.filename).stem
     expected_filenames = {
         summary_artifact.filename,
@@ -60,12 +65,13 @@ def _summary_family_storage_keys(detail, summary_artifact) -> set[str]:
         f"{summary_stem}_timeline.txt",
     }
     parent_key = _storage_parent_key(summary_artifact.storage_key)
-    related: set[str] = set()
     for artifact in detail.artifacts:
         if artifact.kind not in SUMMARY_ARTIFACT_KINDS:
             continue
         if artifact.storage_key == summary_artifact.storage_key:
             related.add(artifact.storage_key)
+            continue
+        if artifact.derived_from.strip():
             continue
         if _storage_parent_key(artifact.storage_key) != parent_key:
             continue
@@ -111,6 +117,10 @@ def _to_history_detail_response(
             filename=artifact.filename,
             storage_key=artifact.storage_key,
             backend=artifact.backend,
+            kind=artifact.kind,
+            derived_from=artifact.derived_from,
+            summary_preset=artifact.summary_preset,
+            summary_profile=artifact.summary_profile,
         )
         download_id = download_registry.store_artifact(stored)
         artifacts.append(
@@ -120,6 +130,7 @@ def _to_history_detail_response(
                 download_url=f"/api/download/{download_id}",
                 summary_preset=artifact.summary_preset,
                 summary_profile=artifact.summary_profile,
+                derived_from=artifact.derived_from,
             )
         )
 
@@ -310,6 +321,10 @@ def regenerate_history_summary(
             filename=artifact.filename,
             storage_key=artifact.storage_key,
             backend=artifact.backend,
+            kind=artifact.kind,
+            derived_from=artifact.derived_from,
+            summary_preset=artifact.summary_preset,
+            summary_profile=artifact.summary_profile,
         )
 
     if "markdown" not in existing_results:

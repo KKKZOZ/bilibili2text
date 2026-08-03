@@ -5,11 +5,12 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
+from b2t.cancellation import CancellationToken, PipelineCancelled
 from b2t.config import resolve_summarize_model_profile, resolve_summary_preset_name
 from b2t.converter.json_to_md import TIMELINE_SCHEMA_VERSION
 from b2t.download.comments import DEFAULT_COMMENT_LIMIT
 from b2t.history import infer_run_id
-from b2t.storage import StorageBackend
+from b2t.storage import SUMMARY_ARTIFACT_KINDS, StorageBackend
 from b2t.storage.base import StoredArtifact
 from backend.dependencies import get_history_db
 from backend.jobs import _append_job_log, _update_job
@@ -134,6 +135,18 @@ def _find_existing_summary_results_for_selection(
     if matched_summary is None:
         return None
 
+    selected_keys = {matched_summary.storage_key}
+    while True:
+        expanded = {
+            artifact.storage_key
+            for artifact in detail.artifacts
+            if artifact.kind in SUMMARY_ARTIFACT_KINDS
+            and artifact.derived_from.strip() in selected_keys
+        }
+        if expanded.issubset(selected_keys):
+            break
+        selected_keys.update(expanded)
+
     summary_stem = Path(matched_summary.filename).stem
     expected_filenames = {
         matched_summary.filename,
@@ -147,23 +160,14 @@ def _find_existing_summary_results_for_selection(
         f"{summary_stem}_table.png",
     }
     parent_key = _storage_parent_key(matched_summary.storage_key)
-    summary_kinds = {
-        "summary",
-        "summary_text",
-        "summary_fancy_html",
-        "summary_png",
-        "summary_no_table_png",
-        "summary_table_md",
-        "summary_table_png",
-        "summary_table_pdf",
-        "summary_timeline",
-    }
-
     selected_results = dict(existing_results)
     for artifact in detail.artifacts:
-        if artifact.kind not in summary_kinds:
+        if artifact.kind not in SUMMARY_ARTIFACT_KINDS:
             continue
-        if artifact.storage_key != matched_summary.storage_key:
+        if artifact.storage_key not in selected_keys:
+            # Legacy records have no source relation, so retain filename matching.
+            if artifact.derived_from.strip():
+                continue
             if _storage_parent_key(artifact.storage_key) != parent_key:
                 continue
             if artifact.filename not in expected_filenames:
@@ -172,6 +176,10 @@ def _find_existing_summary_results_for_selection(
             filename=artifact.filename,
             storage_key=artifact.storage_key,
             backend=artifact.backend,
+            kind=artifact.kind,
+            derived_from=artifact.derived_from,
+            summary_preset=artifact.summary_preset,
+            summary_profile=artifact.summary_profile,
         )
 
     return run_id, selected_results
@@ -193,7 +201,10 @@ class ExistingTranscriptionService:
         auto_generate_fancy_html: bool,
         include_comments: bool = False,
         comment_limit: int | None = DEFAULT_COMMENT_LIMIT,
+        cancellation_token: CancellationToken | None = None,
     ) -> bool:
+        if cancellation_token is not None and cancellation_token.is_cancelled():
+            return True
         storage_id = (transcription_id or bvid).strip()
         try:
             existing_results = storage_backend.find_existing_transcription(storage_id)
@@ -203,6 +214,8 @@ class ExistingTranscriptionService:
 
         if existing_results is None:
             return False
+        if cancellation_token is not None and cancellation_token.is_cancelled():
+            return True
 
         if (
             not skip_summary
@@ -227,6 +240,7 @@ class ExistingTranscriptionService:
                 storage_backend=storage_backend,
                 config=config,
                 existing_results=existing_results,
+                cancellation_token=cancellation_token,
             )
 
         return self._summarize_existing(
@@ -242,6 +256,7 @@ class ExistingTranscriptionService:
             auto_generate_fancy_html=auto_generate_fancy_html,
             include_comments=include_comments,
             comment_limit=comment_limit,
+            cancellation_token=cancellation_token,
         )
 
     def _return_existing_without_summary(
@@ -253,7 +268,10 @@ class ExistingTranscriptionService:
         storage_backend: StorageBackend,
         config,
         existing_results,
+        cancellation_token: CancellationToken | None = None,
     ) -> bool:
+        if cancellation_token is not None and cancellation_token.is_cancelled():
+            return True
         try:
             success_fields = _build_success_download_fields(existing_results)
         except ValueError:
@@ -264,27 +282,41 @@ class ExistingTranscriptionService:
             transcription_id,
             existing_results,
         )
+        if cancellation_token is not None and cancellation_token.is_cancelled():
+            return True
         notice = f"检测到 {transcription_id} 已经转录过，已直接返回历史文件。"
-        _update_job(
-            job_id,
-            status="succeeded",
-            stage="completed",
-            stage_label="已命中历史转录结果",
-            progress=100,
-            already_transcribed=True,
-            notice=notice,
-            all_downloads=_build_all_download_items(all_artifacts),
-            error=None,
-            **success_fields,
-        )
+
+        def _persist_and_succeed() -> str | None:
+            run_id = _record_history(
+                bvid=bvid,
+                results=existing_results,
+                config=config,
+            )
+            _update_job(
+                job_id,
+                status="succeeded",
+                stage="completed",
+                stage_label="已命中历史转录结果",
+                progress=100,
+                already_transcribed=True,
+                notice=notice,
+                all_downloads=_build_all_download_items(all_artifacts),
+                error=None,
+                **success_fields,
+            )
+            if run_id:
+                _update_job(job_id, history_run_id=run_id)
+            return run_id
+
+        try:
+            run_id = (
+                cancellation_token.run_if_active(_persist_and_succeed)
+                if cancellation_token is not None
+                else _persist_and_succeed()
+            )
+        except PipelineCancelled:
+            return True
         _append_info(job_id, notice)
-        run_id = _record_history(
-            bvid=bvid,
-            results=existing_results,
-            config=config,
-        )
-        if run_id:
-            _update_job(job_id, history_run_id=run_id)
         postprocess_scheduler.trigger_rag_index(run_id, config)
         return True
 
@@ -303,7 +335,10 @@ class ExistingTranscriptionService:
         auto_generate_fancy_html: bool,
         include_comments: bool,
         comment_limit: int | None,
+        cancellation_token: CancellationToken | None = None,
     ) -> bool:
+        if cancellation_token is not None and cancellation_token.is_cancelled():
+            return True
         resolved_preset, resolved_profile = _resolve_requested_summary_selection(
             config=config,
             summary_preset=summary_preset,
@@ -334,23 +369,35 @@ class ExistingTranscriptionService:
                 transcription_id,
                 matched_results,
             )
+            if cancellation_token is not None and cancellation_token.is_cancelled():
+                return True
             notice = (
                 f"检测到 {transcription_id} 已存在使用模型配置 {resolved_profile} "
                 f"与总结模板 {resolved_preset} 生成的总结，已直接返回历史文件。"
             )
-            _update_job(
-                job_id,
-                status="succeeded",
-                stage="completed",
-                stage_label="已命中历史总结结果",
-                progress=100,
-                already_transcribed=True,
-                notice=notice,
-                all_downloads=_build_all_download_items(all_artifacts),
-                history_run_id=run_id,
-                error=None,
-                **success_fields,
-            )
+
+            def _mark_succeeded() -> None:
+                _update_job(
+                    job_id,
+                    status="succeeded",
+                    stage="completed",
+                    stage_label="已命中历史总结结果",
+                    progress=100,
+                    already_transcribed=True,
+                    notice=notice,
+                    all_downloads=_build_all_download_items(all_artifacts),
+                    history_run_id=run_id,
+                    error=None,
+                    **success_fields,
+                )
+
+            try:
+                if cancellation_token is not None:
+                    cancellation_token.run_if_active(_mark_succeeded)
+                else:
+                    _mark_succeeded()
+            except PipelineCancelled:
+                return True
             _append_info(job_id, notice)
             postprocess_scheduler.trigger_rag_index(run_id, config)
             return True
@@ -362,6 +409,8 @@ class ExistingTranscriptionService:
             stage_label="命中历史转录，正在重新总结",
             progress=90,
         )
+        if cancellation_token is not None and cancellation_token.is_cancelled():
+            return True
         try:
             summary_results = _run_summary_only_from_existing(
                 bvid=bvid,
@@ -374,9 +423,15 @@ class ExistingTranscriptionService:
                 summary_prompt_template=summary_prompt_template,
                 include_comments=include_comments,
                 comment_limit=comment_limit,
+                cancellation_token=cancellation_token,
             )
+        except PipelineCancelled:
+            return True
         except Exception as exc:
             _fail_job(job_id, str(exc))
+            return True
+
+        if cancellation_token is not None and cancellation_token.is_cancelled():
             return True
 
         combined_results = dict(existing_results)
@@ -397,29 +452,42 @@ class ExistingTranscriptionService:
             if include_comments
             else f"检测到 {transcription_id} 已经转录过，已复用历史转录并完成新的总结。"
         )
-        _update_job(
-            job_id,
-            status="succeeded",
-            stage="completed",
-            stage_label="处理完成（复用历史转录）",
-            progress=100,
-            already_transcribed=True,
-            notice=notice,
-            all_downloads=_build_all_download_items(all_artifacts),
-            error=None,
-            **success_fields,
-        )
-        _append_info(job_id, notice)
+        if cancellation_token is not None and cancellation_token.is_cancelled():
+            return True
 
-        run_id = _record_history(
-            bvid=bvid,
-            results=combined_results,
-            config=config,
-            summary_preset=summary_preset,
-            summary_profile=summary_profile,
-        )
-        if run_id:
-            _update_job(job_id, history_run_id=run_id)
+        def _persist_and_succeed() -> str | None:
+            run_id = _record_history(
+                bvid=bvid,
+                results=combined_results,
+                config=config,
+                summary_preset=summary_preset,
+                summary_profile=summary_profile,
+            )
+            _update_job(
+                job_id,
+                status="succeeded",
+                stage="completed",
+                stage_label="处理完成（复用历史转录）",
+                progress=100,
+                already_transcribed=True,
+                notice=notice,
+                all_downloads=_build_all_download_items(all_artifacts),
+                error=None,
+                **success_fields,
+            )
+            if run_id:
+                _update_job(job_id, history_run_id=run_id)
+            return run_id
+
+        try:
+            run_id = (
+                cancellation_token.run_if_active(_persist_and_succeed)
+                if cancellation_token is not None
+                else _persist_and_succeed()
+            )
+        except PipelineCancelled:
+            return True
+        _append_info(job_id, notice)
         if auto_generate_fancy_html:
             postprocess_scheduler.trigger_fancy_html_generation(
                 job_id=job_id,

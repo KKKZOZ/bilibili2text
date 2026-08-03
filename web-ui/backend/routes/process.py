@@ -9,7 +9,7 @@ from pathlib import Path
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from b2t.summarize.llm import validate_summary_prompt_template
-from backend.job_store import job_repository
+from backend.job_store import JobCapacityError, job_manager
 from backend.jobs import _create_job, _get_job, _list_active_jobs
 from backend.runner import _run_job
 from backend.schemas import (
@@ -228,15 +228,20 @@ def process_video(payload: ProcessRequest) -> ProcessStartResponse:
         summary_profile=summary_profile,
     )
 
-    job = _create_job(
-        skip_summary=payload.skip_summary,
-        summary_preset=summary_preset,
-        summary_profile=summary_profile,
-        summary_prompt_template=summary_prompt_template,
-        auto_generate_fancy_html=payload.auto_generate_fancy_html,
-    )
-    submit_job(
+    try:
+        job = _create_job(
+            skip_summary=payload.skip_summary,
+            summary_preset=summary_preset,
+            summary_profile=summary_profile,
+            summary_prompt_template=summary_prompt_template,
+            auto_generate_fancy_html=payload.auto_generate_fancy_html,
+        )
+    except JobCapacityError as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from None
+    job_manager.submit(
+        str(job["job_id"]),
         _run_job,
+        submitter=submit_job,
         job_id=str(job["job_id"]),
         url=payload.url.strip(),
         skip_summary=payload.skip_summary,
@@ -327,17 +332,23 @@ def process_uploaded_audio(
             shutil.rmtree(temp_dir, ignore_errors=True)
             raise
 
-    job = _create_job(
-        skip_summary=skip_summary,
-        summary_preset=cleaned_summary_preset,
-        summary_profile=cleaned_summary_profile,
-        summary_prompt_template=cleaned_summary_prompt_template,
-        auto_generate_fancy_html=auto_generate_fancy_html,
-    )
+    try:
+        job = _create_job(
+            skip_summary=skip_summary,
+            summary_preset=cleaned_summary_preset,
+            summary_profile=cleaned_summary_profile,
+            summary_prompt_template=cleaned_summary_prompt_template,
+            auto_generate_fancy_html=auto_generate_fancy_html,
+        )
+    except JobCapacityError as exc:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise HTTPException(status_code=429, detail=str(exc)) from None
     job_id = str(job["job_id"])
     input_bvid = f"upload-{job_id}" if open_public else bvid
-    submit_job(
+    submitted = job_manager.submit(
+        job_id,
         _run_job,
+        submitter=submit_job,
         job_id=job_id,
         url=None,
         input_audio_path=str(input_path),
@@ -354,6 +365,8 @@ def process_uploaded_audio(
         custom_llm_api_key=_clean_optional_text(custom_llm_api_key),
         custom_llm_model=_clean_optional_text(custom_llm_model),
     )
+    if submitted is None:
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
     return ProcessStartResponse(job_id=job_id)
 
@@ -366,7 +379,7 @@ def list_active_jobs() -> ActiveJobsResponse:
 
 @router.post("/api/process/{job_id}/cancel")
 def cancel_job(job_id: str) -> dict:
-    cancelled, status = job_repository.cancel(job_id)
+    cancelled, status = job_manager.cancel(job_id)
     if status is None:
         raise HTTPException(status_code=404, detail="任务不存在或已过期")
     if not cancelled:

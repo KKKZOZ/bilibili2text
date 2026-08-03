@@ -238,6 +238,7 @@ class HistoryDetailArtifactResponse(BaseModel):
     download_url: str
     summary_preset: str = ""
     summary_profile: str = ""
+    derived_from: str = ""
 
 
 class HistoryDetailResponse(BaseModel):

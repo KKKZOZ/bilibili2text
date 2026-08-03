@@ -1,3 +1,5 @@
+import sqlite3
+
 from b2t.history import (
     HistoryArtifact,
     HistoryDB,
@@ -5,7 +7,7 @@ from b2t.history import (
     infer_title,
     record_pipeline_run,
 )
-from b2t.storage.base import StoredArtifact, classify_artifact_filename
+from b2t.storage.base import ArtifactKind, StoredArtifact, classify_artifact_filename
 
 
 def _mock_results(
@@ -71,6 +73,100 @@ def test_record_pipeline_run_persists_summary_metadata(tmp_path) -> None:
     assert len(markdown_artifacts) == 1
     assert markdown_artifacts[0].summary_preset == ""
     assert markdown_artifacts[0].summary_profile == ""
+
+
+def test_history_artifact_metadata_round_trips_and_links_timeline(tmp_path) -> None:
+    db = HistoryDB(tmp_path)
+    markdown = StoredArtifact(
+        filename="custom-input.md",
+        storage_key="run/custom-input.md",
+        backend="local",
+        kind=ArtifactKind.MARKDOWN,
+    )
+    summary = StoredArtifact(
+        filename="not-a-summary-filename.md",
+        storage_key="run/generated.md",
+        backend="local",
+        kind=ArtifactKind.SUMMARY,
+        derived_from=markdown.storage_key,
+        summary_preset="key_points",
+        summary_profile="profile_a",
+    )
+    timeline = StoredArtifact(
+        filename="chapters.txt",
+        storage_key="run/chapters.txt",
+        backend="local",
+        kind=ArtifactKind.SUMMARY_TIMELINE,
+        derived_from=summary.storage_key,
+        summary_preset="key_points",
+        summary_profile="profile_a",
+    )
+
+    db.record_run(
+        run_id="metadata-round-trip",
+        bvid="BV1AB411c7mD",
+        title="metadata",
+        has_summary=True,
+        artifacts=build_history_artifacts(
+            {"markdown": markdown, "summary": summary, "timeline": timeline}
+        ),
+    )
+
+    detail = db.get_run_detail("metadata-round-trip")
+    assert detail is not None
+    artifacts = {artifact.storage_key: artifact for artifact in detail.artifacts}
+    assert artifacts[timeline.storage_key].kind == ArtifactKind.SUMMARY_TIMELINE
+    assert artifacts[timeline.storage_key].derived_from == summary.storage_key
+    assert artifacts[timeline.storage_key].summary_preset == "key_points"
+    assert artifacts[timeline.storage_key].summary_profile == "profile_a"
+
+
+def test_history_db_migrates_legacy_artifact_table_and_falls_back_to_filename(
+    tmp_path,
+) -> None:
+    db_path = tmp_path / "b2t_history.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE transcription_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT NOT NULL UNIQUE,
+                bvid TEXT NOT NULL,
+                title TEXT NOT NULL DEFAULT '',
+                author TEXT NOT NULL DEFAULT '',
+                pubdate TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                has_summary INTEGER NOT NULL DEFAULT 0,
+                file_count INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE TABLE transcription_artifacts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                filename TEXT NOT NULL,
+                storage_key TEXT NOT NULL,
+                backend TEXT NOT NULL
+            );
+            INSERT INTO transcription_runs
+                (run_id, bvid, title, created_at)
+            VALUES ('legacy-run', 'BV1AB411c7mD', 'legacy', '2026-01-01T00:00:00+00:00');
+            INSERT INTO transcription_artifacts
+                (run_id, kind, filename, storage_key, backend)
+            VALUES
+                ('legacy-run', 'file', 'legacy_summary_timeline.txt', 'legacy/timeline.txt', 'local');
+            """
+        )
+
+    db = HistoryDB(tmp_path)
+    detail = db.get_run_detail("legacy-run")
+
+    assert detail is not None
+    assert detail.artifacts[0].kind == ArtifactKind.SUMMARY_TIMELINE
+    with sqlite3.connect(db_path) as conn:
+        columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(transcription_artifacts)")
+        }
+    assert {"derived_from", "summary_preset", "summary_profile"} <= columns
 
 
 def test_classify_summary_png_artifacts() -> None:

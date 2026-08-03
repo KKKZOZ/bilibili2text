@@ -2,18 +2,17 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
-from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from backend.dependencies import get_history_db, get_rag_store, get_storage_backend
 from backend.download_registry import download_registry
+from backend.rag_answer_repository import RagAnswerRepository
+from backend.rag_query import RagQueryService
 from backend.schemas_rag import (
     RagAuthorItem,
     RagAuthorsResponse,
@@ -23,7 +22,6 @@ from backend.schemas_rag import (
     RagIndexResponse,
     RagQueryRequest,
     RagQueryResponse,
-    RagSourceItem,
     RagStatusResponse,
 )
 from backend.settings import get_runtime_app_config
@@ -32,15 +30,6 @@ router = APIRouter(prefix="/api/rag", tags=["rag"])
 logger = logging.getLogger(__name__)
 
 _executor = ThreadPoolExecutor(max_workers=2)
-_SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
-
-
-def _escape_markdown_table_cell(value: str) -> str:
-    return value.replace("|", "\\|").replace("\n", "<br />").strip()
-
-
-def _shanghai_now() -> datetime:
-    return datetime.now(tz=_SHANGHAI_TZ)
 
 
 def _require_rag_enabled() -> None:
@@ -72,265 +61,22 @@ def rag_authors() -> RagAuthorsResponse:
     return RagAuthorsResponse(authors=items)
 
 
-@router.get("/query-stream")
-async def rag_query_stream(
-    question: str,
-    filter_authors: str = "",
-    llm_profile: str = "",
-    api_key: str = "",
-    deepseek_api_key: str = "",
-    custom_llm_base_url: str = "",
-    custom_llm_api_key: str = "",
-    custom_llm_model: str = "",
-) -> StreamingResponse:
-    authors = [a.strip() for a in filter_authors.split(",") if a.strip()]
-    return _rag_query_stream_impl(
-        question=question,
-        filter_authors=authors,
-        llm_profile=llm_profile,
-        api_key=api_key,
-        deepseek_api_key=deepseek_api_key,
-        custom_llm_base_url=custom_llm_base_url,
-        custom_llm_api_key=custom_llm_api_key,
-        custom_llm_model=custom_llm_model,
-    )
-
-
 @router.post("/query-stream")
 async def rag_query_stream_post(payload: RagQueryRequest) -> StreamingResponse:
-    return _rag_query_stream_impl(
-        question=payload.question,
-        filter_authors=payload.filter_authors,
-        llm_profile=(payload.llm_profile or "").strip(),
-        api_key=(payload.api_key or "").strip(),
-        deepseek_api_key=(payload.deepseek_api_key or "").strip(),
-        custom_llm_base_url=(payload.custom_llm_base_url or "").strip(),
-        custom_llm_api_key=(payload.custom_llm_api_key or "").strip(),
-        custom_llm_model=(payload.custom_llm_model or "").strip(),
-    )
+    service = _create_rag_query_service(payload)
 
-
-def _rag_query_stream_impl(
-    *,
-    question: str,
-    filter_authors: list[str],
-    llm_profile: str,
-    api_key: str,
-    deepseek_api_key: str,
-    custom_llm_base_url: str,
-    custom_llm_api_key: str,
-    custom_llm_model: str,
-) -> StreamingResponse:
-    """Stream RAG query progress as Server-Sent Events."""
-    _require_rag_enabled()
-    config = get_runtime_app_config(
-        api_key=api_key.strip(),
-        deepseek_api_key=deepseek_api_key.strip(),
-        custom_llm_base_url=custom_llm_base_url.strip(),
-        custom_llm_api_key=custom_llm_api_key.strip(),
-        custom_llm_model=custom_llm_model.strip(),
-    )
-    store = get_rag_store()
-    history_db = get_history_db()
-
-    # Build ChromaDB where filter from author list
-    where_filter: dict | None = None
-    authors = [a.strip() for a in filter_authors if a.strip()]
-    if authors:
-        run_ids = history_db.get_run_ids_for_authors(authors)
-        if run_ids:
-            where_filter = {"run_id": {"$in": run_ids}}
-        else:
-            where_filter = {"run_id": {"$in": ["__no_match__"]}}
-
-    async def _generate():
-        import litellm
-
-        from b2t.rag.embedder import embed_texts
-        from b2t.rag.retriever import _ANSWER_PROMPT_TEMPLATE
-
-        def _sse(payload: dict) -> str:
-            return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
-
-        try:
-            yield _sse({"stage": "embedding", "message": "正在向量化问题…"})
-
-            query_embeddings = await asyncio.to_thread(
-                embed_texts, [question], config=config.rag.embedding
-            )
-            query_embedding = query_embeddings[0]
-
-            yield _sse({"stage": "retrieving", "message": "正在向量数据库检索…"})
-
-            raw_results = await asyncio.to_thread(
-                lambda: store.query(
-                    query_embedding, top_k=config.rag.top_k, where=where_filter
-                )
-            )
-
-            sources = []
-            chunk_texts = []
-            for result in raw_results:
-                meta = result.get("metadata") or {}
-                distance = result.get("distance", 1.0)
-                score = max(0.0, 1.0 - float(distance))
-                sources.append(
-                    {
-                        "run_id": str(meta.get("run_id", "")),
-                        "title": str(meta.get("title", "")),
-                        "bvid": str(meta.get("bvid", "")),
-                        "text": result.get("document", "")[:500],
-                        "score": score,
-                    }
-                )
-                chunk_texts.append(result.get("document", ""))
-
-            yield _sse(
-                {
-                    "stage": "retrieved",
-                    "sources": sources,
-                    "message": f"找到 {len(sources)} 个相关片段，正在生成回答…",
-                }
-            )
-
-            chunks_str = (
-                "\n---\n".join(f"[{i + 1}] {t}" for i, t in enumerate(chunk_texts))
-                if chunk_texts
-                else "（未检索到相关内容）"
-            )
-            prompt = _ANSWER_PROMPT_TEMPLATE.format(
-                chunks=chunks_str, question=question
-            )
-
-            from b2t.config import (
-                resolve_rag_llm_profile,
-                resolve_summarize_api_base,
-            )
-            from b2t.summarize.litellm_client import (
-                _to_litellm_model_name,
-            )
-
-            profile = resolve_rag_llm_profile(config, override=llm_profile.strip())
-            llm_model = _to_litellm_model_name(profile.model, profile.provider)
-            llm_api_key = profile.api_key or None
-            llm_api_base = resolve_summarize_api_base(profile) or None
-
-            def _call_llm():
-                resp = litellm.completion(
-                    model=llm_model,
-                    messages=[{"role": "user", "content": prompt}],
-                    api_key=llm_api_key,
-                    api_base=llm_api_base,
-                )
-                return resp.choices[0].message.content or ""
-
-            answer = await asyncio.to_thread(_call_llm)
-
-            # Build markdown content for download / history
-            query_time = _shanghai_now()
-            now_str = query_time.strftime("%Y%m%d_%H%M%S")
-            safe_q = "".join(
-                c if c.isalnum() or c in "-_" else "_" for c in question[:40]
-            )
-            answer_filename = f"rag_{now_str}_{safe_q}.md"
-
-            if sources:
-                source_rows = [
-                    "| 编号 | 标题 | BV号 | 相关度 |",
-                    "| --- | --- | --- | --- |",
-                ]
-                for i, source in enumerate(sources, 1):
-                    source_rows.append(
-                        "| "
-                        f"{i} | "
-                        f"{_escape_markdown_table_cell(source['title'] or source['bvid'] or '未知')} | "
-                        f"{_escape_markdown_table_cell(source['bvid'] or '-')} | "
-                        f"{round(source['score'] * 100)}% |"
-                    )
-                sources_md = "\n".join(source_rows)
-            else:
-                sources_md = "（无参考来源）"
-
-            answer_md = (
-                f"# 知识库查询\n\n"
-                f"**问题：** {question}\n\n"
-                f"**查询时间：** {query_time.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-                f"## AI 回答\n\n{answer}\n\n"
-                f"## 参考来源\n\n{sources_md}\n"
-            )
-            answer_bytes = answer_md.encode("utf-8")
-
-            # Register in-memory download
-            download_id = await asyncio.to_thread(
-                download_registry.store_content, answer_bytes, answer_filename
-            )
-
-            # Persist to storage and record in history (best-effort)
-            try:
-                import tempfile
-                from pathlib import Path
-
-                from b2t.history import (
-                    HistoryArtifact,
-                    record_rag_query,
-                )
-
-                def _persist():
-                    storage = get_storage_backend()
-                    with tempfile.NamedTemporaryFile(
-                        suffix=".md", delete=False, prefix="rag_answer_"
-                    ) as tmp:
-                        tmp.write(answer_bytes)
-                        tmp_path = Path(tmp.name)
-                    try:
-                        from uuid import uuid4
-
-                        artifact = storage.store_file(
-                            tmp_path,
-                            object_key=f"rag_answers/{uuid4().hex}/{answer_filename}",
-                        )
-                    finally:
-                        tmp_path.unlink(missing_ok=True)
-                    record_rag_query(
-                        db=history_db,
-                        question=question,
-                        answer_artifact=HistoryArtifact(
-                            kind="rag_answer",
-                            filename=answer_filename,
-                            storage_key=artifact.storage_key,
-                            backend=artifact.backend,
-                        ),
-                    )
-
-                await asyncio.to_thread(_persist)
-            except Exception as persist_exc:
-                logger.warning("RAG 答案持久化失败（不影响下载）: %s", persist_exc)
-
-            yield _sse(
-                {
-                    "stage": "done",
-                    "answer": answer,
-                    "sources": sources,
-                    "download_id": download_id,
-                    "filename": answer_filename,
-                }
-            )
-
-        except Exception as exc:
-            logger.error("RAG 流式查询失败: %s", exc)
-            yield _sse({"stage": "error", "message": str(exc)})
+    async def serialize_events():
+        async for event in service.events():
+            yield f"data: {json.dumps(event.payload(), ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
-        _generate(),
+        serialize_events(),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 
-@router.post("/query", response_model=RagQueryResponse)
-def rag_query(request: RagQueryRequest) -> RagQueryResponse:
-    """Answer a question using RAG over indexed video transcripts."""
-    _require_rag_enabled()
+def _create_rag_query_service(request: RagQueryRequest) -> RagQueryService:
     config = get_runtime_app_config(
         api_key=(request.api_key or "").strip(),
         deepseek_api_key=(request.deepseek_api_key or "").strip(),
@@ -338,35 +84,31 @@ def rag_query(request: RagQueryRequest) -> RagQueryResponse:
         custom_llm_api_key=(request.custom_llm_api_key or "").strip(),
         custom_llm_model=(request.custom_llm_model or "").strip(),
     )
-    store = get_rag_store()
-
-    try:
-        from b2t.rag.retriever import retrieve_and_answer
-
-        result = retrieve_and_answer(
-            request.question,
-            config=config,
-            store=store,
+    if not config.rag.enabled:
+        raise HTTPException(
+            status_code=503,
+            detail="RAG 功能未启用，请在 config.toml 中设置 [rag] enabled = true",
         )
-    except Exception as exc:
-        logger.error("RAG 查询失败: %s", exc)
-        raise HTTPException(status_code=500, detail=f"查询失败: {exc}") from exc
-
-    sources = [
-        RagSourceItem(
-            run_id=src.run_id,
-            title=src.title,
-            bvid=src.bvid,
-            text=src.text[:500],
-            score=src.score,
-        )
-        for src in result.sources
-    ]
-    return RagQueryResponse(
-        answer=result.answer,
-        sources=sources,
-        question=result.question,
+    return RagQueryService(
+        request=request,
+        config=config,
+        store=get_rag_store(),
+        history_db=get_history_db(),
+        answer_repository=RagAnswerRepository(get_storage_backend),
+        download_store=download_registry.store_content,
     )
+
+
+@router.post("/query", response_model=RagQueryResponse)
+async def rag_query(request: RagQueryRequest) -> RagQueryResponse:
+    """Return the terminal result from the shared RAG event sequence."""
+    service = _create_rag_query_service(request)
+    async for event in service.events():
+        if event.stage == "done" and event.result is not None:
+            return event.result
+        if event.stage == "error":
+            raise HTTPException(status_code=500, detail=f"查询失败: {event.message}")
+    raise HTTPException(status_code=500, detail="查询失败: 未收到完成事件")
 
 
 @router.post("/index/{run_id}", response_model=RagIndexResponse)

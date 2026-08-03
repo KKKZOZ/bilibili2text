@@ -60,17 +60,29 @@ def retrieve_and_answer(
     config: AppConfig,
     store: RagStore,
     llm_profile_override: str | None = None,
+    where: dict | None = None,
 ) -> RagAnswer:
     """Embed question, retrieve top-k chunks, and generate an answer with LLM."""
-    # 1. Embed question
-    query_embeddings = embed_texts([question], config=config.rag.embedding)
-    query_embedding = query_embeddings[0]
+    sources = retrieve_sources(question, config=config, store=store, where=where)
+    prompt = build_answer_prompt(question, sources)
+    profile = resolve_rag_llm_profile(config, override=llm_profile_override)
+    answer = generate_answer(prompt, profile)
 
-    # 2. Retrieve top-k chunks
-    raw_results = store.query(query_embedding, top_k=config.rag.top_k)
+    return RagAnswer(answer=answer, sources=sources, question=question)
+
+
+def retrieve_sources(
+    question: str,
+    *,
+    config: AppConfig,
+    store: RagStore,
+    where: dict | None = None,
+) -> list[SourceChunk]:
+    """Embed a question and retrieve its closest source chunks."""
+    query_embeddings = embed_texts([question], config=config.rag.embedding)
+    raw_results = store.query(query_embeddings[0], top_k=config.rag.top_k, where=where)
 
     sources: list[SourceChunk] = []
-    chunk_texts: list[str] = []
     for result in raw_results:
         meta = result.get("metadata") or {}
         distance = result.get("distance", 1.0)
@@ -84,18 +96,24 @@ def retrieve_and_answer(
                 score=score,
             )
         )
-        chunk_texts.append(result.get("document", ""))
 
-    # 3. Build prompt
+    return sources
+
+
+def build_answer_prompt(question: str, sources: list[SourceChunk]) -> str:
+    """Build the LLM prompt from a question and retrieved source chunks."""
+    chunk_texts = [source.text for source in sources]
+
     chunks_str = (
         "\n---\n".join(f"[{i + 1}] {t}" for i, t in enumerate(chunk_texts))
         if chunk_texts
         else "(No relevant content retrieved)"
     )
-    prompt = _ANSWER_PROMPT_TEMPLATE.format(chunks=chunks_str, question=question)
+    return _ANSWER_PROMPT_TEMPLATE.format(chunks=chunks_str, question=question)
 
-    # 4. Call LLM
-    profile = resolve_rag_llm_profile(config, override=llm_profile_override)
+
+def generate_answer(prompt: str, profile) -> str:
+    """Generate an answer with a resolved summarize-model profile."""
     model = _to_litellm_model_name(profile.model, profile.provider)
 
     response = litellm.completion(
@@ -104,6 +122,4 @@ def retrieve_and_answer(
         api_key=profile.api_key.strip() or None,
         api_base=resolve_summarize_api_base(profile) or None,
     )
-    answer = response.choices[0].message.content or ""
-
-    return RagAnswer(answer=answer, sources=sources, question=question)
+    return response.choices[0].message.content or ""

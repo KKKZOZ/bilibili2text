@@ -14,7 +14,7 @@ from backend.services import (
     _run_fancy_html_only_from_summary,
 )
 from backend.settings import STOCK_STATUS_MAX_WORKERS
-from backend.task_queue import submit_postprocess
+from backend.task_queue import TaskQueueFull, submit_postprocess
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +78,10 @@ class PostProcessScheduler:
             except Exception as exc:
                 logger.warning("RAG 索引失败（不影响转录结果）: %s", exc)
 
-        submit_postprocess(_do_index)
+        try:
+            submit_postprocess(_do_index)
+        except TaskQueueFull:
+            logger.warning("RAG 索引任务队列已满，跳过本次索引: run_id=%s", run_id)
 
     def trigger_fancy_html_generation(
         self,
@@ -166,7 +169,20 @@ class PostProcessScheduler:
                     ),
                 )
 
-        submit_postprocess(_do_generate)
+        try:
+            submit_postprocess(_do_generate)
+        except TaskQueueFull:
+            message = "Fancy HTML 生成任务队列已满，未能提交。"
+            logger.warning(message)
+            _update_job(
+                job_id,
+                fancy_html_status="failed",
+                fancy_html_error=message,
+            )
+            _append_job_log(
+                job_id,
+                f"{datetime.now().strftime(JOB_LOG_DATE_FORMAT)} [WARNING] b2t.pipeline: {message}",
+            )
 
 
 postprocess_scheduler = PostProcessScheduler()

@@ -4,49 +4,96 @@ from abc import ABC, abstractmethod
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import BinaryIO
 
 
-def classify_artifact_filename(filename: str) -> str | None:
+class ArtifactKind(StrEnum):
+    """Canonical artifact kinds persisted in manifests and history."""
+
+    FILE = "file"
+    MARKDOWN = "markdown"
+    JSON = "json"
+    TEXT = "text"
+    AUDIO = "audio"
+    SUMMARY = "summary"
+    SUMMARY_TEXT = "summary_text"
+    SUMMARY_FANCY_HTML = "summary_fancy_html"
+    SUMMARY_PNG = "summary_png"
+    SUMMARY_NO_TABLE_PNG = "summary_no_table_png"
+    SUMMARY_TABLE_MD = "summary_table_md"
+    SUMMARY_TABLE_PNG = "summary_table_png"
+    SUMMARY_TABLE_PDF = "summary_table_pdf"
+    SUMMARY_TIMELINE = "summary_timeline"
+    RAG_ANSWER = "rag_answer"
+
+
+SUMMARY_ARTIFACT_KINDS = frozenset(
+    {
+        ArtifactKind.SUMMARY,
+        ArtifactKind.SUMMARY_TEXT,
+        ArtifactKind.SUMMARY_FANCY_HTML,
+        ArtifactKind.SUMMARY_PNG,
+        ArtifactKind.SUMMARY_NO_TABLE_PNG,
+        ArtifactKind.SUMMARY_TABLE_MD,
+        ArtifactKind.SUMMARY_TABLE_PNG,
+        ArtifactKind.SUMMARY_TABLE_PDF,
+        ArtifactKind.SUMMARY_TIMELINE,
+    }
+)
+
+
+def classify_artifact_filename(filename: str) -> ArtifactKind | None:
     """Infer artifact type key from filename."""
     lowered = filename.lower()
 
     if lowered.endswith("_summary_fancy.html"):
-        return "summary_fancy_html"
+        return ArtifactKind.SUMMARY_FANCY_HTML
     if lowered.startswith("rag_") and lowered.endswith("_fancy.html"):
-        return "summary_fancy_html"
+        return ArtifactKind.SUMMARY_FANCY_HTML
     if lowered.startswith("rag_") and lowered.endswith(".md"):
-        return "rag_answer"
+        return ArtifactKind.RAG_ANSWER
     if lowered.endswith("_summary_table.pdf"):
-        return "summary_table_pdf"
+        return ArtifactKind.SUMMARY_TABLE_PDF
     if lowered.endswith("_summary_table.png"):
-        return "summary_table_png"
+        return ArtifactKind.SUMMARY_TABLE_PNG
     if lowered.endswith("_summary_table.md"):
-        return "summary_table_md"
+        return ArtifactKind.SUMMARY_TABLE_MD
     if lowered.endswith("_summary_no_table.png"):
-        return "summary_no_table_png"
+        return ArtifactKind.SUMMARY_NO_TABLE_PNG
     if lowered.endswith("_summary_timeline.txt"):
-        return "summary_timeline"
+        return ArtifactKind.SUMMARY_TIMELINE
     if lowered.endswith("_summary.png"):
-        return "summary_png"
+        return ArtifactKind.SUMMARY_PNG
     if lowered.endswith("_summary.txt"):
-        return "summary_text"
+        return ArtifactKind.SUMMARY_TEXT
     if lowered.endswith("_summary.md"):
-        return "summary"
+        return ArtifactKind.SUMMARY
     if lowered.endswith("_comments.json"):
         return "comments_json"
     if lowered.endswith("_comments.md"):
         return "comments_markdown"
     if lowered.endswith("_transcription.json"):
-        return "json"
+        return ArtifactKind.JSON
     if lowered.endswith(".txt"):
-        return "text"
+        return ArtifactKind.TEXT
     if lowered.endswith(".md"):
-        return "markdown"
+        return ArtifactKind.MARKDOWN
     if lowered.endswith((".m4a", ".mp3", ".flac", ".wav", ".aac", ".ogg")):
-        return "audio"
+        return ArtifactKind.AUDIO
     return None
+
+
+def resolve_artifact_kind(
+    kind: ArtifactKind | str | None,
+    filename: str,
+) -> ArtifactKind | str:
+    """Use explicit manifest metadata, with filename inference for legacy artifacts."""
+    normalized = str(kind or "").strip()
+    if normalized and normalized != ArtifactKind.FILE:
+        return normalized
+    return classify_artifact_filename(filename) or normalized or ArtifactKind.FILE
 
 
 @dataclass(frozen=True)
@@ -56,6 +103,10 @@ class StoredArtifact:
     filename: str
     storage_key: str
     backend: str
+    kind: ArtifactKind | str | None = None
+    derived_from: str = ""
+    summary_preset: str = ""
+    summary_profile: str = ""
 
 
 class StorageBackend(ABC):

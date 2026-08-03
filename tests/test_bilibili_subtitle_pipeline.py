@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from b2t.cancellation import CancellationToken, PipelineCancelled
 from b2t.config import create_app_config
 from b2t.download.subtitle import (
     BilibiliSubtitle,
@@ -11,6 +12,7 @@ from b2t.download.subtitle import (
     fetch_bilibili_subtitle,
 )
 from b2t.pipeline import run_pipeline
+from b2t.storage import StoredArtifact
 from b2t.storage.local import LocalStorageBackend
 
 
@@ -74,6 +76,53 @@ def test_fetch_bilibili_subtitle_returns_none_when_unavailable(monkeypatch) -> N
     monkeypatch.setattr("b2t.download.subtitle.subprocess.run", fake_run)
 
     assert fetch_bilibili_subtitle("BV1ABcsztEcY") is None
+
+
+def test_pipeline_cancellation_removes_partially_stored_artifacts(
+    monkeypatch, tmp_path: Path
+) -> None:
+    token = CancellationToken()
+    stored_keys: list[str] = []
+    deleted_keys: list[str] = []
+
+    class FakeStorage:
+        persist_local_outputs = False
+        backend_name = "memory"
+
+        def store_file(self, local_path: Path, *, object_key: str) -> StoredArtifact:
+            stored_keys.append(object_key)
+            token.cancel()
+            return StoredArtifact(
+                filename=local_path.name,
+                storage_key=object_key,
+                backend=self.backend_name,
+            )
+
+        def delete_file(self, storage_key: str) -> None:
+            deleted_keys.append(storage_key)
+
+    monkeypatch.setattr(
+        "b2t.pipeline.get_video_metadata",
+        lambda bvid: None,
+    )
+    monkeypatch.setattr(
+        "b2t.pipeline.fetch_bilibili_subtitle",
+        lambda target: BilibiliSubtitle(text="第一句", items=()),
+    )
+
+    storage = FakeStorage()
+    with pytest.raises(PipelineCancelled):
+        run_pipeline(
+            "https://www.bilibili.com/video/BV1ABcsztEcY",
+            create_app_config(output_dir=tmp_path),
+            skip_summary=True,
+            storage_backend=storage,
+            stt_storage_backend=storage,
+            cancellation_token=token,
+        )
+
+    assert len(stored_keys) == 1
+    assert deleted_keys == stored_keys
 
 
 def test_pipeline_uses_bilibili_subtitle_before_asr(

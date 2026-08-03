@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import time
 from collections import OrderedDict
+from collections.abc import Callable
+from concurrent.futures import CancelledError, Future
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
-from threading import Lock
+from threading import Lock, RLock
 from uuid import uuid4
 
+from b2t.cancellation import CancellationToken
 from backend.settings import JOB_LOG_LIMIT, STAGE_KEYS, utc_iso
 
 JobValue = (
@@ -157,6 +160,10 @@ class JobPatch:
     ephemeral_artifacts: list[dict[str, str]] | None = None
 
 
+class JobCapacityError(RuntimeError):
+    """Raised when retained active jobs leave no room for another record."""
+
+
 def _format_elapsed(seconds: int) -> str:
     seconds = max(0, int(seconds))
     hours, remainder = divmod(seconds, 3600)
@@ -189,15 +196,32 @@ class JobRepository:
             auto_generate_fancy_html=auto_generate_fancy_html,
         )
         with self._lock:
+            self._evict_terminal_jobs_locked()
+            if len(self._jobs) >= self._limit:
+                raise JobCapacityError("任务记录容量已满，当前任务仍在处理中")
             self._jobs[job.job_id] = job
-            while len(self._jobs) > self._limit:
-                self._jobs.popitem(last=False)
         return job.to_payload()
+
+    def _evict_terminal_jobs_locked(self) -> None:
+        while len(self._jobs) >= self._limit:
+            terminal_job_id = next(
+                (
+                    job_id
+                    for job_id, job in self._jobs.items()
+                    if job.status in {"succeeded", "failed", "cancelled"}
+                ),
+                None,
+            )
+            if terminal_job_id is None:
+                return
+            del self._jobs[terminal_job_id]
 
     def patch(self, job_id: str, patch: JobPatch) -> None:
         with self._lock:
             job = self._jobs.get(job_id)
             if job is None:
+                return
+            if job.status == "cancelled":
                 return
 
             now_mono = time.monotonic()
@@ -216,9 +240,6 @@ class JobRepository:
 
             if patch.stage is not None and patch.stage in STAGE_KEYS:
                 job.stage_seen[patch.stage] = True
-
-            if job.status == "cancelled":
-                return
 
             for field_name, value in asdict(patch).items():
                 if value is None:
@@ -284,7 +305,7 @@ class JobRepository:
     def mark_expired(self, job_id: str) -> None:
         with self._lock:
             job = self._jobs.get(job_id)
-            if job is None:
+            if job is None or job.status == "cancelled":
                 return
             job.status = "failed"
             job.stage = "failed"
@@ -364,4 +385,129 @@ class JobRepository:
         return self._lock
 
 
-job_repository = JobRepository()
+class JobManager(JobRepository):
+    """Own job state, submitted futures, and cooperative cancellation tokens."""
+
+    def __init__(self, *, limit: int = 200) -> None:
+        super().__init__(limit=limit)
+        self._futures: dict[str, Future] = {}
+        self._tokens: dict[str, CancellationToken] = {}
+        self._lifecycle_lock = RLock()
+
+    def create(self, **kwargs) -> dict[str, JobValue]:
+        job = super().create(**kwargs)
+        job_id = str(job["job_id"])
+        with self._lifecycle_lock:
+            self._tokens[job_id] = CancellationToken()
+            with self._lock:
+                retained_job_ids = set(self._jobs)
+            self._tokens = {
+                retained_id: token
+                for retained_id, token in self._tokens.items()
+                if retained_id in retained_job_ids
+            }
+            self._futures = {
+                retained_id: future
+                for retained_id, future in self._futures.items()
+                if retained_id in retained_job_ids
+            }
+        return job
+
+    def cancellation_token(self, job_id: str) -> CancellationToken | None:
+        with self._lifecycle_lock:
+            return self._tokens.get(job_id)
+
+    def submit(
+        self,
+        job_id: str,
+        fn: Callable[..., object],
+        /,
+        *args: object,
+        submitter: Callable[..., Future] | None = None,
+        **kwargs: object,
+    ) -> Future | None:
+        """Submit a job and atomically associate its future with its record.
+
+        A rejection is represented by a terminal failed job so clients never
+        poll a permanently queued record for work that was not accepted.
+        """
+        if submitter is None:
+            from backend.task_queue import submit_job
+
+            submitter = submit_job
+        with self._lifecycle_lock:
+            token = self._tokens.get(job_id)
+        if token is None:
+            # Preserve legacy callers that submit work for externally managed jobs.
+            return submitter(fn, *args, **kwargs)
+        kwargs.setdefault("cancellation_token", token)
+        try:
+            future = submitter(fn, *args, **kwargs)
+        except Exception as exc:
+            self.patch(
+                job_id,
+                JobPatch(
+                    status="failed",
+                    stage="failed",
+                    stage_label="任务未能提交",
+                    error=f"后台任务提交失败: {exc}",
+                ),
+            )
+            self.append_log(job_id, f"[ERROR] 后台任务提交失败: {exc}")
+            return None
+
+        # Test and legacy submitters may deliberately return no Future.
+        if future is None:
+            return None
+
+        with self._lifecycle_lock:
+            self._futures[job_id] = future
+            if token.is_cancelled():
+                future.cancel()
+        future.add_done_callback(
+            lambda completed_future: self._observe_future(job_id, completed_future)
+        )
+        return future
+
+    def cancel(self, job_id: str) -> tuple[bool, str | None]:
+        with self._lifecycle_lock:
+            token = self._tokens.get(job_id)
+            future = self._futures.get(job_id)
+        if token is None:
+            cancelled, status = super().cancel(job_id)
+        else:
+            cancelled, status = token.cancel_if(
+                lambda: JobRepository.cancel(self, job_id)
+            )
+        if cancelled and future is not None:
+            future.cancel()
+        return cancelled, status
+
+    def _observe_future(self, job_id: str, future: Future) -> None:
+        with self._lifecycle_lock:
+            if self._futures.get(job_id) is future:
+                del self._futures[job_id]
+            token = self._tokens.get(job_id)
+        if future.cancelled():
+            return
+        try:
+            exception = future.exception()
+        except CancelledError:
+            return
+        if exception is None or (token is not None and token.is_cancelled()):
+            return
+        self.patch(
+            job_id,
+            JobPatch(
+                status="failed",
+                stage="failed",
+                stage_label="处理失败",
+                error=f"后台任务异常: {exception}",
+            ),
+        )
+        self.append_log(job_id, f"[ERROR] 后台任务异常: {exception}")
+
+
+job_manager = JobManager()
+# Kept for callers that still import the original repository name.
+job_repository = job_manager

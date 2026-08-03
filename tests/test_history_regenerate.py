@@ -191,3 +191,51 @@ def test_regenerate_same_config_replaces_only_matching_summary_family(
         "old/BV1AB411c7mD_demo_summary.png",
         "old/BV1AB411c7mD_demo_summary_timeline.txt",
     }
+
+
+def test_summary_family_prefers_explicit_source_relationships(tmp_path) -> None:
+    db = HistoryDB(tmp_path)
+    db.record_run(
+        run_id="relationship-run",
+        bvid="BV1AB411c7mD",
+        title="relationship",
+        has_summary=True,
+        artifacts=[
+            HistoryArtifact(
+                kind="summary",
+                filename="summary-one.md",
+                storage_key="run/summary-one.md",
+                backend="local",
+            ),
+            HistoryArtifact(
+                kind="summary_timeline",
+                filename="unrelated-name.txt",
+                storage_key="run/chapters.txt",
+                backend="local",
+                derived_from="run/summary-one.md",
+            ),
+            HistoryArtifact(
+                kind="summary_png",
+                filename="summary-one.png",
+                storage_key="run/legacy-summary-one.png",
+                backend="local",
+            ),
+            HistoryArtifact(
+                kind="summary",
+                filename="summary-two.md",
+                storage_key="run/summary-two.md",
+                backend="local",
+            ),
+        ],
+    )
+    detail = db.get_run_detail("relationship-run")
+    assert detail is not None
+    summary = next(
+        item for item in detail.artifacts if item.storage_key == "run/summary-one.md"
+    )
+
+    assert history._summary_family_storage_keys(detail, summary) == {
+        "run/summary-one.md",
+        "run/chapters.txt",
+        "run/legacy-summary-one.png",
+    }

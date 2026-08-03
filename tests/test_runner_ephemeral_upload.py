@@ -5,6 +5,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "web-ui"))
 
 from backend import runner
 
+from b2t.cancellation import CancellationToken
 from b2t.storage import StoredArtifact
 
 
@@ -199,3 +200,74 @@ def test_png_export_failure_does_not_fail_completed_summary(monkeypatch) -> None
     assert success_update["error"] is None
     assert "PNG 图片导出失败" in str(success_update["notice"])
     assert any("[WARNING]" in message for message in captured_logs)
+
+
+def test_runner_cancellation_after_pipeline_skips_persistence_and_postprocessing(
+    monkeypatch, tmp_path
+) -> None:
+    uploaded = tmp_path / "BV1R9i4BoE7H_audio.wav"
+    uploaded.write_bytes(b"audio")
+    token = CancellationToken()
+    updates: list[dict[str, object]] = []
+
+    class FakeStorage:
+        persist_local_outputs = False
+        backend_name = "local"
+
+    monkeypatch.setattr(runner, "get_runtime_app_config", lambda **kwargs: object())
+    monkeypatch.setattr(runner, "get_storage_backend", lambda: FakeStorage())
+    monkeypatch.setattr(runner, "get_stt_storage_backend", lambda: FakeStorage())
+    monkeypatch.setattr(
+        runner.existing_transcription_service,
+        "handle_if_existing",
+        lambda **kwargs: False,
+    )
+
+    def cancel_after_pipeline(*_args, **kwargs):
+        kwargs["cancellation_token"].cancel()
+        return {}
+
+    monkeypatch.setattr(runner, "run_pipeline", cancel_after_pipeline)
+    monkeypatch.setattr(
+        runner,
+        "_build_success_download_fields",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("must not persist cancelled work")
+        ),
+    )
+    monkeypatch.setattr(
+        runner,
+        "_record_history",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("must not write history after cancellation")
+        ),
+    )
+    monkeypatch.setattr(
+        runner.postprocess_scheduler,
+        "trigger_rag_index",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("must not schedule postprocessing after cancellation")
+        ),
+    )
+    monkeypatch.setattr(
+        runner,
+        "_update_job",
+        lambda _job_id, **kwargs: updates.append(kwargs),
+    )
+
+    runner._run_job(
+        "job-1",
+        url=None,
+        input_audio_path=str(uploaded),
+        input_bvid="BV1R9i4BoE7H",
+        ephemeral_upload=False,
+        skip_summary=True,
+        summary_preset=None,
+        summary_profile=None,
+        summary_prompt_template=None,
+        auto_generate_fancy_html=True,
+        cancellation_token=token,
+    )
+
+    assert token.is_cancelled()
+    assert not any(item.get("status") == "succeeded" for item in updates)

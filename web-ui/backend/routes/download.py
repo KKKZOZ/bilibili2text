@@ -11,8 +11,8 @@ from fastapi.responses import HTMLResponse, PlainTextResponse, StreamingResponse
 from b2t.converter.converter import ConversionFormat, convert_file
 from b2t.converter.md_remove_table import MarkdownRemoveTableConverter
 from b2t.converter.md_to_png import MarkdownToPngConverter
-from b2t.storage import StoredArtifact
-from b2t.storage.base import classify_artifact_filename
+from b2t.storage import ArtifactKind, StoredArtifact
+from b2t.storage.base import resolve_artifact_kind
 from backend.dependencies import get_history_db, get_storage_backend
 from backend.download_registry import download_registry, media_type_for_filename
 from backend.schemas import ConvertRequest, ConvertResponse
@@ -64,7 +64,7 @@ def _find_precomputed_conversion(
     source_variant: str | None,
     render_mode: str | None = None,
 ) -> StoredArtifact | None:
-    source_kind = classify_artifact_filename(artifact.filename) or ""
+    source_kind = resolve_artifact_kind(artifact.kind, artifact.filename)
     filename = _precomputed_convert_filename(
         artifact.filename,
         source_kind,
@@ -266,7 +266,10 @@ def preview_timeline_text(download_id: str) -> PlainTextResponse:
     artifact = download_registry.get_artifact(download_id)
     if artifact is None:
         raise HTTPException(status_code=404, detail="下载链接不存在或已过期")
-    if classify_artifact_filename(artifact.filename) != "summary_timeline":
+    if (
+        resolve_artifact_kind(artifact.kind, artifact.filename)
+        != ArtifactKind.SUMMARY_TIMELINE
+    ):
         raise HTTPException(status_code=400, detail="此文件不支持 TXT 预览")
 
     try:
@@ -296,7 +299,7 @@ def preview_rendered_html(
     if artifact is None:
         raise HTTPException(status_code=404, detail="下载链接不存在或已过期")
 
-    source_kind = classify_artifact_filename(artifact.filename) or ""
+    source_kind = resolve_artifact_kind(artifact.kind, artifact.filename)
     if not _uses_summary_render_html(
         source_kind,
         ConversionFormat.HTML,
@@ -477,7 +480,7 @@ def convert_artifact(payload: ConvertRequest) -> ConvertResponse:
 
         # Execute conversion
         try:
-            source_kind = classify_artifact_filename(artifact.filename) or ""
+            source_kind = resolve_artifact_kind(artifact.kind, artifact.filename)
             render_source_path = source_path
             explicit_output_path = None
             if (

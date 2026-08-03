@@ -12,6 +12,7 @@ from backend.existing_transcriptions import (
     _summary_requires_video_timestamps,
 )
 
+from b2t.cancellation import CancellationToken
 from b2t.config import (
     AppConfig,
     ConverterConfig,
@@ -417,3 +418,67 @@ def test_summary_only_fetches_xiaoyuzhou_metadata_without_redownloading_audio(
         bvid="xiaoyuzhou_episode-1",
         existing_results=existing_results,
     )
+
+
+def test_existing_transcription_cancellation_stops_before_summary_persistence(
+    monkeypatch,
+) -> None:
+    token = CancellationToken()
+    artifacts = {
+        "markdown": StoredArtifact(
+            filename="demo.md",
+            storage_key="run/demo.md",
+            backend="memory",
+        )
+    }
+
+    class FakeStorage:
+        def find_existing_transcription(self, bvid: str):
+            return artifacts
+
+    monkeypatch.setattr(
+        "backend.existing_transcriptions._find_existing_summary_results_for_selection",
+        lambda **kwargs: None,
+    )
+
+    def cancel_during_summary(**kwargs):
+        assert kwargs["cancellation_token"] is token
+        token.cancel()
+        token.raise_if_cancelled()
+
+    monkeypatch.setattr(
+        "backend.existing_transcriptions._run_summary_only_from_existing",
+        cancel_during_summary,
+    )
+    monkeypatch.setattr(
+        "backend.existing_transcriptions._record_history",
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("cancelled summary must not be persisted")
+        ),
+    )
+    monkeypatch.setattr(
+        "backend.existing_transcriptions.postprocess_scheduler.trigger_rag_index",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("cancelled summary must not be indexed")
+        ),
+    )
+    monkeypatch.setattr(
+        "backend.existing_transcriptions._update_job",
+        lambda *args, **kwargs: None,
+    )
+
+    handled = ExistingTranscriptionService().handle_if_existing(
+        job_id="job-cancelled",
+        bvid="BV1bLdgBEEKu",
+        storage_backend=FakeStorage(),
+        config=_config(),
+        skip_summary=False,
+        summary_preset="financial_timeline_merge",
+        summary_profile="qwen3-5-plus",
+        summary_prompt_template=None,
+        auto_generate_fancy_html=False,
+        cancellation_token=token,
+    )
+
+    assert handled is True
+    assert token.is_cancelled()

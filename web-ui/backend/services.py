@@ -3,9 +3,11 @@
 import logging
 import tempfile
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
 
+from b2t.cancellation import CancellationToken, PipelineCancelled
 from b2t.config import (
     AppConfig,
     build_bilibili_cookie,
@@ -25,8 +27,13 @@ from b2t.download.comments import (
 from b2t.download.metadata import VideoMetadata
 from b2t.download.platform import Platform
 from b2t.history import HistoryArtifact, infer_run_id, record_pipeline_run
-from b2t.storage import StorageBackend, StoredArtifact
-from b2t.storage.base import classify_artifact_filename
+from b2t.storage import (
+    SUMMARY_ARTIFACT_KINDS,
+    ArtifactKind,
+    StorageBackend,
+    StoredArtifact,
+)
+from b2t.storage.base import resolve_artifact_kind
 from b2t.summarize.fancy_html import generate_fancy_summary_html
 from b2t.summarize.llm import (
     summarize_with_comment_viewpoints,
@@ -299,7 +306,7 @@ def _build_all_download_items(
         seen_keys.add(artifact.storage_key)
 
         download_id = download_registry.store_artifact(artifact)
-        kind = classify_artifact_filename(artifact.filename) or "file"
+        kind = resolve_artifact_kind(artifact.kind, artifact.filename)
         items.append(
             {
                 "url": f"/api/download/{download_id}",
@@ -573,11 +580,15 @@ def _generate_summary_png_exports(
             stock_statuses=stock_statuses,
             dpr=4,
         )
-        generated["summary_png"] = _store_sibling_artifact(
-            storage_backend=storage_backend,
-            config=config,
-            source_artifact=summary_artifact,
-            path=summary_png_path,
+        generated["summary_png"] = replace(
+            _store_sibling_artifact(
+                storage_backend=storage_backend,
+                config=config,
+                source_artifact=summary_artifact,
+                path=summary_png_path,
+            ),
+            kind=ArtifactKind.SUMMARY_PNG,
+            derived_from=summary_artifact.storage_key,
         )
 
         if include_no_table:
@@ -585,11 +596,15 @@ def _generate_summary_png_exports(
             MarkdownRemoveTableConverter().convert(summary_path, no_table_md_path)
             no_table_png_path = no_table_md_path.with_suffix(".png")
             png_converter.convert(no_table_md_path, no_table_png_path, is_table=False)
-            generated["summary_no_table_png"] = _store_sibling_artifact(
-                storage_backend=storage_backend,
-                config=config,
-                source_artifact=summary_artifact,
-                path=no_table_png_path,
+            generated["summary_no_table_png"] = replace(
+                _store_sibling_artifact(
+                    storage_backend=storage_backend,
+                    config=config,
+                    source_artifact=summary_artifact,
+                    path=no_table_png_path,
+                ),
+                kind=ArtifactKind.SUMMARY_NO_TABLE_PNG,
+                derived_from=summary_artifact.storage_key,
             )
 
         if summary_table_artifact is not None and table_md_path is not None:
@@ -601,11 +616,15 @@ def _generate_summary_png_exports(
                 as_of_date=as_of_date,
                 stock_statuses=stock_statuses,
             )
-            generated["summary_table_png"] = _store_sibling_artifact(
-                storage_backend=storage_backend,
-                config=config,
-                source_artifact=summary_table_artifact,
-                path=table_png_path,
+            generated["summary_table_png"] = replace(
+                _store_sibling_artifact(
+                    storage_backend=storage_backend,
+                    config=config,
+                    source_artifact=summary_table_artifact,
+                    path=table_png_path,
+                ),
+                kind=ArtifactKind.SUMMARY_TABLE_PNG,
+                derived_from=summary_table_artifact.storage_key,
             )
     finally:
         if cleanup_temp_dir is not None:
@@ -634,6 +653,7 @@ def _run_summary_only_from_existing(
     pubdate: str = "",
     include_comments: bool = False,
     comment_limit: int | None = DEFAULT_COMMENT_LIMIT,
+    cancellation_token: CancellationToken | None = None,
 ) -> dict[str, object]:
     markdown_artifact = existing_results.get("markdown")
     if markdown_artifact is None:
@@ -660,6 +680,8 @@ def _run_summary_only_from_existing(
         work_dir = Path(cleanup_temp_dir.name)
 
     try:
+        if cancellation_token is not None:
+            cancellation_token.raise_if_cancelled()
         markdown_path = _materialize_artifact_to_file(
             storage_backend,
             markdown_artifact,
@@ -669,6 +691,8 @@ def _run_summary_only_from_existing(
         comment_results: dict[str, StoredArtifact] = {}
         comments_markdown_text = ""
         if include_comments:
+            if cancellation_token is not None:
+                cancellation_token.raise_if_cancelled()
             comment_results, comments_markdown_text = (
                 _fetch_comments_for_existing_summary(
                     bvid=bvid,
@@ -680,6 +704,8 @@ def _run_summary_only_from_existing(
                     comment_limit=comment_limit,
                 )
             )
+            if cancellation_token is not None:
+                cancellation_token.raise_if_cancelled()
 
         summary_path = summarize_with_comment_viewpoints(
             markdown_path,
@@ -692,6 +718,8 @@ def _run_summary_only_from_existing(
             prompt_template_override=summary_prompt_template,
             metadata=metadata,
         )
+        if cancellation_token is not None:
+            cancellation_token.raise_if_cancelled()
 
         summary_table_md: Path | None = None
         try:
@@ -699,23 +727,56 @@ def _run_summary_only_from_existing(
         except Exception as exc:
             logger.warning("总结表格 Markdown 导出失败，已跳过: %s", exc)
 
-        results: dict[str, object] = {}
-        results["summary"] = storage_backend.store_file(
-            summary_path,
-            object_key=f"{run_prefix}/{summary_path.name}",
-        )
-        if summary_table_md is not None:
-            results["summary_table_md"] = storage_backend.store_file(
-                summary_table_md,
-                object_key=f"{run_prefix}/{summary_table_md.name}",
+        results: dict[str, object] = dict(comment_results)
+
+        def _store(path: Path) -> StoredArtifact:
+            def _store_path() -> StoredArtifact:
+                return storage_backend.store_file(
+                    path,
+                    object_key=f"{run_prefix}/{path.name}",
+                )
+
+            if cancellation_token is not None:
+                return cancellation_token.run_if_active(_store_path)
+            return _store_path()
+
+        try:
+            if cancellation_token is not None:
+                cancellation_token.raise_if_cancelled()
+            results["summary"] = replace(
+                _store(summary_path),
+                kind=ArtifactKind.SUMMARY,
+                derived_from=markdown_artifact.storage_key,
             )
-        summary_timeline = export_summary_timeline_text(summary_path)
-        if summary_timeline is not None:
-            results["summary_timeline"] = storage_backend.store_file(
-                summary_timeline,
-                object_key=f"{run_prefix}/{summary_timeline.name}",
-            )
-        results.update(comment_results)
+            if summary_table_md is not None:
+                results["summary_table_md"] = replace(
+                    _store(summary_table_md),
+                    kind=ArtifactKind.SUMMARY_TABLE_MD,
+                    derived_from=results["summary"].storage_key,
+                )
+            summary_timeline = export_summary_timeline_text(summary_path)
+            if summary_timeline is not None:
+                results["summary_timeline"] = replace(
+                    _store(summary_timeline),
+                    kind=ArtifactKind.SUMMARY_TIMELINE,
+                    derived_from=results["summary"].storage_key,
+                )
+            if cancellation_token is not None:
+                cancellation_token.raise_if_cancelled()
+        except PipelineCancelled:
+            for artifact in results.values():
+                if not isinstance(artifact, StoredArtifact):
+                    continue
+                try:
+                    storage_backend.delete_file(artifact.storage_key)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "清理已取消的总结产物失败: %s: %s",
+                        artifact.storage_key,
+                        exc,
+                    )
+            raise
+
         if metadata is not None:
             results["_metadata"] = metadata
 
@@ -736,9 +797,9 @@ def _run_fancy_html_only_from_summary(
     config: AppConfig,
     summary_profile: str | None,
 ) -> StoredArtifact:
-    if classify_artifact_filename(summary_artifact.filename) not in (
-        "summary",
-        "rag_answer",
+    if resolve_artifact_kind(summary_artifact.kind, summary_artifact.filename) not in (
+        ArtifactKind.SUMMARY,
+        ArtifactKind.RAG_ANSWER,
     ):
         raise ValueError("仅支持基于总结 Markdown 或知识库回答生成 fancy HTML")
 
@@ -779,7 +840,13 @@ def _run_fancy_html_only_from_summary(
         if storage_backend.persist_local_outputs:
             summary_path.unlink(missing_ok=True)
             fancy_html_path.unlink(missing_ok=True)
-        return stored
+        return replace(
+            stored,
+            kind=ArtifactKind.SUMMARY_FANCY_HTML,
+            derived_from=summary_artifact.storage_key,
+            summary_preset=summary_artifact.summary_preset,
+            summary_profile=summary_artifact.summary_profile,
+        )
     finally:
         if cleanup_temp_dir is not None:
             cleanup_temp_dir.cleanup()
@@ -823,12 +890,15 @@ def _merge_history_artifact(
             has_summary=True,
             artifacts=[
                 HistoryArtifact(
-                    kind=classify_artifact_filename(artifact.filename) or "file",
+                    kind=resolve_artifact_kind(artifact.kind, artifact.filename),
                     filename=artifact.filename,
                     storage_key=artifact.storage_key,
                     backend=artifact.backend,
-                    summary_preset=(summary_preset or "").strip(),
-                    summary_profile=(summary_profile or "").strip(),
+                    derived_from=artifact.derived_from,
+                    summary_preset=(summary_preset or artifact.summary_preset).strip(),
+                    summary_profile=(
+                        summary_profile or artifact.summary_profile
+                    ).strip(),
                 )
             ],
             fancy_html_status=fancy_html_status,
@@ -840,29 +910,16 @@ def _merge_history_artifact(
     if not any(item.storage_key == artifact.storage_key for item in merged_artifacts):
         merged_artifacts.append(
             HistoryArtifact(
-                kind=classify_artifact_filename(artifact.filename) or "file",
+                kind=resolve_artifact_kind(artifact.kind, artifact.filename),
                 filename=artifact.filename,
                 storage_key=artifact.storage_key,
                 backend=artifact.backend,
-                summary_preset=(summary_preset or "").strip(),
-                summary_profile=(summary_profile or "").strip(),
+                derived_from=artifact.derived_from,
+                summary_preset=(summary_preset or artifact.summary_preset).strip(),
+                summary_profile=(summary_profile or artifact.summary_profile).strip(),
             )
         )
-    has_summary = any(
-        item.kind
-        in {
-            "summary",
-            "summary_text",
-            "summary_fancy_html",
-            "summary_png",
-            "summary_no_table_png",
-            "summary_table_md",
-            "summary_table_png",
-            "summary_table_pdf",
-            "summary_timeline",
-        }
-        for item in merged_artifacts
-    )
+    has_summary = any(item.kind in SUMMARY_ARTIFACT_KINDS for item in merged_artifacts)
     db.record_run(
         run_id=detail.run_id,
         bvid=detail.bvid,
@@ -883,7 +940,7 @@ def _artifact_download_item(artifact: StoredArtifact) -> dict[str, str]:
     return {
         "url": f"/api/download/{download_registry.store_artifact(artifact)}",
         "filename": artifact.filename,
-        "kind": classify_artifact_filename(artifact.filename) or "file",
+        "kind": resolve_artifact_kind(artifact.kind, artifact.filename),
     }
 
 

@@ -11,7 +11,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from b2t.stock_status import StockDailyStatus
-from b2t.storage.base import StoredArtifact, classify_artifact_filename
+from b2t.storage.base import (
+    SUMMARY_ARTIFACT_KINDS,
+    ArtifactKind,
+    StoredArtifact,
+    resolve_artifact_kind,
+)
 
 _DB_FILENAME = "b2t_history.db"
 _RUN_ID_SUFFIX_PATTERN = re.compile(r"^-[0-9a-f]{8}(?:_|$)", re.IGNORECASE)
@@ -43,6 +48,7 @@ CREATE TABLE IF NOT EXISTS transcription_artifacts (
     filename      TEXT    NOT NULL,
     storage_key   TEXT    NOT NULL,
     backend       TEXT    NOT NULL,
+    derived_from    TEXT  NOT NULL DEFAULT '',
     summary_preset  TEXT  NOT NULL DEFAULT '',
     summary_profile TEXT  NOT NULL DEFAULT ''
 );
@@ -82,10 +88,11 @@ class HistoryItem:
 class HistoryArtifact:
     """One downloadable file within a run."""
 
-    kind: str
+    kind: ArtifactKind | str
     filename: str
     storage_key: str
     backend: str
+    derived_from: str = ""
     summary_preset: str = ""
     summary_profile: str = ""
 
@@ -148,12 +155,11 @@ class HistoryDB:
         yield self._conn()
 
     @staticmethod
-    def _normalize_artifact_kind(kind: str, filename: str) -> str:
-        inferred = classify_artifact_filename(filename)
-        normalized_kind = (kind or "").strip()
-        if normalized_kind in {"", "file"} and inferred:
-            return inferred
-        return normalized_kind or inferred or "file"
+    def _normalize_artifact_kind(
+        kind: ArtifactKind | str | None,
+        filename: str,
+    ) -> ArtifactKind | str:
+        return resolve_artifact_kind(kind, filename)
 
     @staticmethod
     def _ensure_schema(conn: sqlite3.Connection) -> None:
@@ -167,6 +173,11 @@ class HistoryDB:
             conn.execute(
                 "ALTER TABLE transcription_artifacts "
                 "ADD COLUMN summary_preset TEXT NOT NULL DEFAULT ''"
+            )
+        if "derived_from" not in existing_columns:
+            conn.execute(
+                "ALTER TABLE transcription_artifacts "
+                "ADD COLUMN derived_from TEXT NOT NULL DEFAULT ''"
             )
         if "summary_profile" not in existing_columns:
             conn.execute(
@@ -217,12 +228,13 @@ class HistoryDB:
         with conn:
             existing_artifact_meta = {
                 str(row["storage_key"]): (
+                    str(row["derived_from"] or ""),
                     str(row["summary_preset"] or ""),
                     str(row["summary_profile"] or ""),
                 )
                 for row in conn.execute(
                     """\
-                    SELECT storage_key, summary_preset, summary_profile
+                    SELECT storage_key, derived_from, summary_preset, summary_profile
                     FROM transcription_artifacts
                     WHERE run_id = ?
                     """,
@@ -302,25 +314,32 @@ class HistoryDB:
                         filename,
                         storage_key,
                         backend,
+                        derived_from,
                         summary_preset,
                         summary_profile
                     )
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     (
                         run_id,
-                        a.kind,
+                        self._normalize_artifact_kind(a.kind, a.filename),
                         a.filename,
                         a.storage_key,
                         a.backend,
+                        a.derived_from.strip()
+                        or existing_artifact_meta.get(a.storage_key, ("", "", ""))[0],
                         (
                             a.summary_preset.strip()
-                            or existing_artifact_meta.get(a.storage_key, ("", ""))[0]
+                            or existing_artifact_meta.get(a.storage_key, ("", "", ""))[
+                                1
+                            ]
                         ),
                         (
                             a.summary_profile.strip()
-                            or existing_artifact_meta.get(a.storage_key, ("", ""))[1]
+                            or existing_artifact_meta.get(a.storage_key, ("", "", ""))[
+                                2
+                            ]
                         ),
                     )
                     for a in artifact_list
@@ -410,7 +429,7 @@ class HistoryDB:
 
         artifact_rows = conn.execute(
             """\
-            SELECT kind, filename, storage_key, backend, summary_preset, summary_profile
+            SELECT kind, filename, storage_key, backend, derived_from, summary_preset, summary_profile
             FROM transcription_artifacts
             WHERE run_id = ?
             ORDER BY id ASC
@@ -424,6 +443,7 @@ class HistoryDB:
                 filename=r["filename"],
                 storage_key=r["storage_key"],
                 backend=r["backend"],
+                derived_from=r["derived_from"],
                 summary_preset=r["summary_preset"],
                 summary_profile=r["summary_profile"],
             )
@@ -634,7 +654,7 @@ class HistoryDB:
         # Get artifacts before deleting
         artifact_rows = conn.execute(
             """\
-            SELECT kind, filename, storage_key, backend, summary_preset, summary_profile
+            SELECT kind, filename, storage_key, backend, derived_from, summary_preset, summary_profile
             FROM transcription_artifacts
             WHERE run_id = ?
             """,
@@ -647,6 +667,7 @@ class HistoryDB:
                 filename=r["filename"],
                 storage_key=r["storage_key"],
                 backend=r["backend"],
+                derived_from=r["derived_from"],
                 summary_preset=r["summary_preset"],
                 summary_profile=r["summary_profile"],
             )
@@ -745,32 +766,36 @@ def build_history_artifacts(
     summary_profile: str | None = None,
 ) -> list[HistoryArtifact]:
     """Convert stored artifacts to history rows."""
-    summary_kinds = {
-        "summary",
-        "summary_text",
-        "summary_fancy_html",
-        "summary_png",
-        "summary_no_table_png",
-        "summary_table_md",
-        "summary_table_png",
-        "summary_table_pdf",
-        "summary_timeline",
-    }
     cleaned_preset = (summary_preset or "").strip()
     cleaned_profile = (summary_profile or "").strip()
-
-    return [
-        HistoryArtifact(
-            kind=kind,
-            filename=artifact.filename,
-            storage_key=artifact.storage_key,
-            backend=artifact.backend,
-            summary_preset=cleaned_preset if kind in summary_kinds else "",
-            summary_profile=cleaned_profile if kind in summary_kinds else "",
+    markdown = results.get("markdown")
+    summary = results.get("summary")
+    artifacts: list[HistoryArtifact] = []
+    for result_key, artifact in results.items():
+        kind = resolve_artifact_kind(artifact.kind or result_key, artifact.filename)
+        derived_from = artifact.derived_from.strip()
+        if not derived_from and kind == ArtifactKind.SUMMARY and markdown is not None:
+            derived_from = markdown.storage_key
+        elif (
+            not derived_from and kind in SUMMARY_ARTIFACT_KINDS and summary is not None
+        ):
+            derived_from = summary.storage_key
+        artifacts.append(
+            HistoryArtifact(
+                kind=kind,
+                filename=artifact.filename,
+                storage_key=artifact.storage_key,
+                backend=artifact.backend,
+                derived_from=derived_from,
+                summary_preset=(artifact.summary_preset or cleaned_preset).strip()
+                if kind in SUMMARY_ARTIFACT_KINDS
+                else "",
+                summary_profile=(artifact.summary_profile or cleaned_profile).strip()
+                if kind in SUMMARY_ARTIFACT_KINDS
+                else "",
+            )
         )
-        for artifact in results.values()
-        for kind in [classify_artifact_filename(artifact.filename) or "file"]
-    ]
+    return artifacts
 
 
 def record_pipeline_run(
@@ -830,21 +855,7 @@ def record_pipeline_run(
                 author = existing.author
             if not pubdate.strip():
                 pubdate = existing.pubdate
-    has_summary = any(
-        artifact.kind
-        in {
-            "summary",
-            "summary_text",
-            "summary_fancy_html",
-            "summary_png",
-            "summary_no_table_png",
-            "summary_table_md",
-            "summary_table_png",
-            "summary_table_pdf",
-            "summary_timeline",
-        }
-        for artifact in artifacts
-    )
+    has_summary = any(artifact.kind in SUMMARY_ARTIFACT_KINDS for artifact in artifacts)
 
     db.record_run(
         run_id=run_id,
