@@ -53,24 +53,44 @@ def test_job_repository_create_patch_cancel() -> None:
     assert repository.get(job_id)["status"] == "cancelled"
 
 
-def test_download_registry_artifacts_content_and_media_types() -> None:
-    registry = DownloadRegistry(artifact_limit=10, content_limit=10)
-    artifact = StoredArtifact(
-        filename="summary.md",
-        storage_key="runs/summary.md",
+def test_download_registry_eviction_storage_key_removal_and_media_types() -> None:
+    registry = DownloadRegistry(artifact_limit=2, content_limit=2)
+    first_artifact = StoredArtifact(
+        filename="first.md",
+        storage_key="runs/first.md",
+        backend="local",
+    )
+    second_artifact = StoredArtifact(
+        filename="second.md",
+        storage_key="runs/second.md",
+        backend="local",
+    )
+    third_artifact = StoredArtifact(
+        filename="third.md",
+        storage_key="runs/third.md",
         backend="local",
     )
 
-    artifact_id = registry.store_artifact(artifact)
-    content_id = registry.store_content(b"hello", "answer.txt")
+    first_artifact_id = registry.store_artifact(first_artifact)
+    second_artifact_id = registry.store_artifact(second_artifact)
+    third_artifact_id = registry.store_artifact(third_artifact)
+    first_content_id = registry.store_content(b"first", "first.txt")
+    second_content_id = registry.store_content(b"second", "second.txt")
+    third_content_id = registry.store_content(b"third", "third.txt")
 
-    assert registry.get_artifact(artifact_id) == artifact
-    assert registry.get_content(content_id) == (b"hello", "answer.txt")
+    assert registry.get_artifact(first_artifact_id) is None
+    assert registry.get_artifact(second_artifact_id) == second_artifact
+    assert registry.get_artifact(third_artifact_id) == third_artifact
+    assert registry.get_content(first_content_id) is None
+    assert registry.get_content(second_content_id) == (b"second", "second.txt")
+    assert registry.get_content(third_content_id) == (b"third", "third.txt")
+
+    registry.remove_artifacts_by_storage_keys({"runs/second.md"})
+    assert registry.get_artifact(second_artifact_id) is None
+    assert registry.get_artifact(third_artifact_id) == third_artifact
+
     assert media_type_for_filename("answer.txt") == "text/plain; charset=utf-8"
     assert media_type_for_filename("summary.md") == "text/markdown; charset=utf-8"
-
-    registry.remove_artifacts_by_storage_keys({"runs/summary.md"})
-    assert registry.get_artifact(artifact_id) is None
 
 
 def test_preview_timeline_text_returns_inline_plain_text(monkeypatch) -> None:
