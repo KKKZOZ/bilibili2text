@@ -2,6 +2,7 @@
  * Composable function for file conversion
  */
 import { ref } from 'vue'
+import { artifactApi } from '../api'
 
 export function useConversion() {
   const convertingItems = ref(new Set())
@@ -24,22 +25,11 @@ export function useConversion() {
     conversionError.value = ''
 
     try {
-      const resp = await fetch('/api/convert', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          download_id: downloadId,
-          target_format: targetFormat,
-          ...extraPayload
-        })
+      const data = await artifactApi.convert({
+        download_id: downloadId,
+        target_format: targetFormat,
+        ...extraPayload
       })
-      const data = await resp.json()
-
-      if (!resp.ok) {
-        throw new Error(data.detail || '转换失败')
-      }
 
       // Automatically download the converted file
       download(data.download_url, data.filename)

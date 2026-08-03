@@ -22,6 +22,19 @@
   } from 'lucide-vue-next'
   import FileList from './FileList.vue'
   import {
+    ApiError,
+    artifactApi,
+    historyApi,
+    processApi,
+    summaryApi
+  } from '../api'
+  import {
+    CUSTOM_LLM_PROFILE_NAME,
+    usePublicCredentials
+  } from '../composables/usePublicCredentials'
+  import { useRuntimeFeatures } from '../composables/useRuntimeFeatures'
+  import { useSummaryConfig } from '../composables/useSummaryConfig'
+  import {
     formatTime,
     resourceAuthorLabel,
     resourceDisplayLabel,
@@ -31,37 +44,24 @@
 
   const route = useRoute()
   const router = useRouter()
-
-  const props = defineProps({
-    summaryPresets: {
-      type: Array,
-      required: true
-    },
-    summaryDefaultPreset: {
-      type: String,
-      required: true
-    },
-    selectedSummaryPreset: {
-      type: String,
-      required: true
-    },
-    summaryProfiles: {
-      type: Array,
-      required: true
-    },
-    selectedSummaryProfile: {
-      type: String,
-      required: true
-    },
-    allowDelete: {
-      type: Boolean,
-      default: true
-    },
-    requiresApiKey: {
-      type: Boolean,
-      default: false
-    }
-  })
+  const { runtimeFeatures } = useRuntimeFeatures()
+  const allowDelete = computed(() => runtimeFeatures.value.allow_delete)
+  const requiresApiKey = computed(
+    () => runtimeFeatures.value.requires_user_api_key
+  )
+  const {
+    summaryPresets,
+    summaryDefaultPreset,
+    summaryProfiles,
+    selectedSummaryPreset,
+    selectedSummaryProfile
+  } = useSummaryConfig()
+  const {
+    getApiKey,
+    getDeepseekApiKey,
+    getSummaryTemplate,
+    getCustomLlmPayload
+  } = usePublicCredentials()
 
   const historyItems = ref([])
   const historyTotal = ref(0)
@@ -90,20 +90,15 @@
   const ragFancyHtmlGenerating = ref(false)
   const ragFancyHtmlError = ref('')
   let ragFancyHtmlPollTimer = null
+  let ragFancyHtmlPollInFlight = false
+  let historyDetailRequestVersion = 0
 
   // ─── Active jobs (in-progress) ───────────────────────────────
   const ACTIVE_JOB_IDS_KEY = 'b2t.active-job-ids'
-  const LOCAL_API_KEY_KEY = 'b2t.public-api-key'
-  const LOCAL_DEEPSEEK_API_KEY_KEY = 'b2t.public-deepseek-api-key'
-  const LOCAL_CUSTOM_LLM_BASE_URL_KEY = 'b2t.public-custom-llm-base-url'
-  const LOCAL_CUSTOM_LLM_API_KEY_KEY = 'b2t.public-custom-llm-api-key'
-  const LOCAL_CUSTOM_LLM_MODEL_KEY = 'b2t.public-custom-llm-model'
-  const LOCAL_OPEN_PUBLIC_SUMMARY_TEMPLATE_KEY =
-    'b2t.open-public-summary-template'
   const CUSTOM_SUMMARY_PRESET_VALUE = '__user_custom__'
-  const CUSTOM_LLM_PROFILE_NAME = 'open_public_custom_llm'
   const activeJobs = ref([])
   let activeJobsPollTimer = null
+  let activeJobsLoading = false
 
   const readActiveJobIds = () => {
     try {
@@ -126,39 +121,43 @@
   }
 
   const loadActiveJobs = async () => {
+    if (activeJobsLoading) return
     const ids = readActiveJobIds()
     if (ids.length === 0) {
       activeJobs.value = []
       return
     }
-    const results = await Promise.allSettled(
-      ids.map((id) => fetch(`/api/process/${id}`).then((r) => r.json()))
-    )
-    const next = []
-    for (let i = 0; i < ids.length; i++) {
-      const r = results[i]
-      if (r.status === 'fulfilled') {
-        const data = r.value
-        if (data.status === 'queued' || data.status === 'running') {
-          next.push(data)
-        } else {
-          // Job is done/failed/cancelled – remove from tracking
+    activeJobsLoading = true
+    try {
+      const results = await Promise.allSettled(
+        ids.map((id) => processApi.getJob(id))
+      )
+      const next = []
+      for (let i = 0; i < ids.length; i++) {
+        const result = results[i]
+        if (result.status === 'fulfilled') {
+          const data = result.value
+          if (data.status === 'queued' || data.status === 'running') {
+            next.push(data)
+          } else {
+            removeActiveJobId(ids[i])
+          }
+        } else if (
+          result.reason instanceof ApiError &&
+          result.reason.status === 404
+        ) {
           removeActiveJobId(ids[i])
         }
       }
+      activeJobs.value = next
+    } finally {
+      activeJobsLoading = false
     }
-    activeJobs.value = next
   }
 
   const cancelActiveJob = async (jobId) => {
     try {
-      const resp = await fetch(`/api/process/${jobId}/cancel`, {
-        method: 'POST'
-      })
-      if (!resp.ok) {
-        const data = await resp.json().catch(() => ({}))
-        throw new Error(data.detail || '取消失败')
-      }
+      await processApi.cancelJob(jobId)
       removeActiveJobId(jobId)
       activeJobs.value = activeJobs.value.filter((j) => j.job_id !== jobId)
     } catch (err) {
@@ -201,14 +200,14 @@
 
   const selectedRegeneratePresetName = computed(() => {
     if (!selectedHistorySummaryPreset.value) {
-      return props.summaryDefaultPreset || ''
+      return summaryDefaultPreset.value || ''
     }
     return selectedHistorySummaryPreset.value
   })
 
   const selectedRegenerateProfileName = computed(
     () =>
-      selectedHistorySummaryProfile.value || props.selectedSummaryProfile || ''
+      selectedHistorySummaryProfile.value || selectedSummaryProfile.value || ''
   )
 
   const isSelectedSummaryAlreadyGenerated = computed(() => {
@@ -231,56 +230,6 @@
 
   const regenerateDisabled = computed(() => regenerateLoading.value)
 
-  const getLocalApiKey = () => {
-    try {
-      return (window.localStorage.getItem(LOCAL_API_KEY_KEY) || '').trim()
-    } catch {
-      return ''
-    }
-  }
-
-  const getLocalDeepseekApiKey = () => {
-    try {
-      return (
-        window.localStorage.getItem(LOCAL_DEEPSEEK_API_KEY_KEY) || ''
-      ).trim()
-    } catch {
-      return ''
-    }
-  }
-
-  const getCustomLlmPayload = () => {
-    if (!props.requiresApiKey) {
-      return {
-        custom_llm_base_url: null,
-        custom_llm_api_key: null,
-        custom_llm_model: null
-      }
-    }
-    try {
-      return {
-        custom_llm_base_url:
-          (
-            window.localStorage.getItem(LOCAL_CUSTOM_LLM_BASE_URL_KEY) || ''
-          ).trim() || null,
-        custom_llm_api_key:
-          (
-            window.localStorage.getItem(LOCAL_CUSTOM_LLM_API_KEY_KEY) || ''
-          ).trim() || null,
-        custom_llm_model:
-          (
-            window.localStorage.getItem(LOCAL_CUSTOM_LLM_MODEL_KEY) || ''
-          ).trim() || null
-      }
-    } catch {
-      return {
-        custom_llm_base_url: null,
-        custom_llm_api_key: null,
-        custom_llm_model: null
-      }
-    }
-  }
-
   const formatSummaryProfileLabel = (profile) => {
     if (!profile) return ''
     if (profile.name === CUSTOM_LLM_PROFILE_NAME) {
@@ -290,8 +239,8 @@
   }
 
   const historyPresetOptions = computed(() => {
-    const base = Array.isArray(props.summaryPresets) ? props.summaryPresets : []
-    if (!props.requiresApiKey) {
+    const base = Array.isArray(summaryPresets.value) ? summaryPresets.value : []
+    if (!requiresApiKey.value) {
       return base
     }
     return [
@@ -315,11 +264,7 @@
       if (q) params.set('search', q)
       if (historyRecordType.value)
         params.set('record_type', historyRecordType.value)
-      const resp = await fetch(`/api/history?${params}`)
-      const data = await resp.json()
-      if (!resp.ok) {
-        throw new Error(data.detail || '获取历史记录失败')
-      }
+      const data = await historyApi.list(params)
       historyItems.value = data.items
       historyTotal.value = data.total
       historyHasMore.value = data.has_more
@@ -336,6 +281,7 @@
     if (!requestedRunId) {
       return
     }
+    const requestVersion = ++historyDetailRequestVersion
     historyDetailLoading.value = true
     showHistoryDetail.value = true
     historyDetail.value = null
@@ -346,31 +292,31 @@
     regenerateSuccess.value = ''
     regenerateOverwriteConfirm.value = false
     selectedHistorySummaryPreset.value =
-      props.selectedSummaryPreset || props.summaryDefaultPreset || ''
-    selectedHistorySummaryProfile.value = props.selectedSummaryProfile || ''
+      selectedSummaryPreset.value || summaryDefaultPreset.value || ''
+    selectedHistorySummaryProfile.value = selectedSummaryProfile.value || ''
     try {
-      const resp = await fetch(
-        `/api/history/${encodeURIComponent(requestedRunId)}`
-      )
-      const data = await resp.json()
-      if (!resp.ok) {
-        throw new Error(data.detail || '获取详情失败')
-      }
-      if (routeRunId.value !== requestedRunId) {
+      const data = await historyApi.getDetail(requestedRunId)
+      if (
+        requestVersion !== historyDetailRequestVersion ||
+        routeRunId.value !== requestedRunId
+      ) {
         return
       }
       historyDetail.value = data
       ragFancyHtmlError.value = data.fancy_html_error || ''
       syncRagFancyHtmlPolling()
       if (data.record_type === 'rag_query') {
-        await loadRagAnswerMarkdown(data)
+        await loadRagAnswerMarkdown(data, requestVersion)
       }
     } catch (err) {
+      if (requestVersion !== historyDetailRequestVersion) return
       historyError.value = err instanceof Error ? err.message : '获取详情失败'
       showHistoryDetail.value = false
       stopRagFancyHtmlPolling()
     } finally {
-      historyDetailLoading.value = false
+      if (requestVersion === historyDetailRequestVersion) {
+        historyDetailLoading.value = false
+      }
     }
   }
 
@@ -398,15 +344,16 @@
     if (!shouldPoll) return
 
     ragFancyHtmlPollTimer = setInterval(async () => {
+      if (ragFancyHtmlPollInFlight) return
       const runId = historyDetail.value?.run_id
       if (!runId || !showHistoryDetail.value) {
         stopRagFancyHtmlPolling()
         return
       }
+      ragFancyHtmlPollInFlight = true
       try {
-        const resp = await fetch(`/api/history/${encodeURIComponent(runId)}`)
-        const data = await resp.json()
-        if (!resp.ok) return
+        const data = await historyApi.getDetail(runId)
+        if (historyDetail.value?.run_id !== runId) return
         historyDetail.value = data
         if (data.record_type === 'rag_query') {
           ragFancyHtmlError.value = data.fancy_html_error || ''
@@ -415,7 +362,10 @@
           stopRagFancyHtmlPolling()
           await loadHistory()
         }
-      } catch {}
+      } catch {
+      } finally {
+        ragFancyHtmlPollInFlight = false
+      }
     }, 2000)
   }
 
@@ -429,21 +379,15 @@
     ragFancyHtmlGenerating.value = true
     ragFancyHtmlError.value = ''
     try {
-      const resp = await fetch('/api/summary/fancy-html', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          download_id: downloadId,
-          history_run_id: historyDetail.value?.run_id || null,
-          api_key: props.requiresApiKey ? getLocalApiKey() || null : null,
-          deepseek_api_key: props.requiresApiKey
-            ? getLocalDeepseekApiKey() || null
-            : null,
-          ...getCustomLlmPayload()
-        })
+      const data = await summaryApi.generateFancyHtml({
+        download_id: downloadId,
+        history_run_id: historyDetail.value?.run_id || null,
+        api_key: requiresApiKey.value ? getApiKey() || null : null,
+        deepseek_api_key: requiresApiKey.value
+          ? getDeepseekApiKey() || null
+          : null,
+        ...getCustomLlmPayload(requiresApiKey.value)
       })
-      const data = await resp.json()
-      if (!resp.ok) throw new Error(data.detail || '生成 Fancy HTML 失败')
       if (data.history_detail) {
         historyDetail.value = data.history_detail
         ragFancyHtmlError.value = data.history_detail.fancy_html_error || ''
@@ -464,7 +408,10 @@
     }
   }
 
-  const loadRagAnswerMarkdown = async (detail = historyDetail.value) => {
+  const loadRagAnswerMarkdown = async (
+    detail = historyDetail.value,
+    requestVersion = historyDetailRequestVersion
+  ) => {
     const artifact = detail?.artifacts?.find(
       (item) => item.kind === 'rag_answer'
     )
@@ -472,16 +419,25 @@
     ragAnswerLoading.value = true
     ragAnswerError.value = ''
     try {
-      const resp = await fetch(artifact.download_url)
-      if (!resp.ok) {
-        throw new Error(`读取知识库回答失败（HTTP ${resp.status}）`)
+      const markdown = await artifactApi.readText(
+        artifact.download_url,
+        '读取知识库回答失败'
+      )
+      if (
+        requestVersion !== historyDetailRequestVersion ||
+        historyDetail.value?.run_id !== detail?.run_id
+      ) {
+        return
       }
-      ragAnswerMarkdown.value = await resp.text()
+      ragAnswerMarkdown.value = markdown
     } catch (err) {
+      if (requestVersion !== historyDetailRequestVersion) return
       ragAnswerError.value =
         err instanceof Error ? err.message : '读取知识库回答失败'
     } finally {
-      ragAnswerLoading.value = false
+      if (requestVersion === historyDetailRequestVersion) {
+        ragAnswerLoading.value = false
+      }
     }
   }
 
@@ -492,17 +448,10 @@
     }
     let customTemplate = null
     if (
-      props.requiresApiKey &&
+      requiresApiKey.value &&
       selectedHistorySummaryPreset.value === CUSTOM_SUMMARY_PRESET_VALUE
     ) {
-      try {
-        customTemplate = (
-          window.localStorage.getItem(LOCAL_OPEN_PUBLIC_SUMMARY_TEMPLATE_KEY) ||
-          ''
-        ).trim()
-      } catch {
-        customTemplate = ''
-      }
+      customTemplate = getSummaryTemplate()
       if (!customTemplate) {
         regenerateError.value =
           '请先在「API Key」页面保存自定义总结模板，再选择“用户自定义”模板'
@@ -521,30 +470,17 @@
     regenerateError.value = ''
     regenerateSuccess.value = ''
     try {
-      const resp = await fetch(
-        `/api/history/${encodeURIComponent(runId)}/regenerate-summary`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            summary_preset: selectedRegeneratePresetName.value || null,
-            summary_profile: selectedRegenerateProfileName.value || null,
-            summary_prompt_template: customTemplate || null,
-            overwrite_existing: overwriteExisting,
-            api_key: props.requiresApiKey ? getLocalApiKey() : null,
-            deepseek_api_key: props.requiresApiKey
-              ? getLocalDeepseekApiKey() || null
-              : null,
-            ...getCustomLlmPayload()
-          })
-        }
-      )
-      const data = await resp.json()
-      if (!resp.ok) {
-        throw new Error(data.detail || '重新生成总结失败')
-      }
+      const data = await historyApi.regenerateSummary(runId, {
+        summary_preset: selectedRegeneratePresetName.value || null,
+        summary_profile: selectedRegenerateProfileName.value || null,
+        summary_prompt_template: customTemplate || null,
+        overwrite_existing: overwriteExisting,
+        api_key: requiresApiKey.value ? getApiKey() : null,
+        deepseek_api_key: requiresApiKey.value
+          ? getDeepseekApiKey() || null
+          : null,
+        ...getCustomLlmPayload(requiresApiKey.value)
+      })
 
       historyDetail.value = data
       regenerateSuccess.value = overwriteExisting
@@ -608,7 +544,7 @@
   }
 
   const confirmDelete = (runId) => {
-    if (!props.allowDelete) {
+    if (!allowDelete.value) {
       return
     }
     deleteConfirmRunId.value = runId
@@ -619,18 +555,12 @@
   }
 
   const deleteHistory = async (runId) => {
-    if (!props.allowDelete) {
+    if (!allowDelete.value) {
       return
     }
     deleteLoading.value = true
     try {
-      const resp = await fetch(`/api/history/${encodeURIComponent(runId)}`, {
-        method: 'DELETE'
-      })
-      const data = await resp.json()
-      if (!resp.ok) {
-        throw new Error(data.detail || '删除失败')
-      }
+      await historyApi.deleteRun(runId)
       // Close detail view if currently viewing deleted item
       if (showHistoryDetail.value && historyDetail.value?.run_id === runId) {
         showHistoryDetail.value = false
@@ -686,6 +616,7 @@
       loadHistoryDetail(runId)
       return
     }
+    historyDetailRequestVersion += 1
     showHistoryDetail.value = false
     historyDetail.value = null
     historyDetailLoading.value = false
@@ -698,7 +629,24 @@
     stopRagFancyHtmlPolling()
   })
 
+  watch(
+    [selectedSummaryPreset, summaryDefaultPreset],
+    ([selectedPreset, defaultPreset]) => {
+      if (showHistoryDetail.value && !selectedHistorySummaryPreset.value) {
+        selectedHistorySummaryPreset.value =
+          selectedPreset || defaultPreset || ''
+      }
+    }
+  )
+
+  watch(selectedSummaryProfile, (profile) => {
+    if (showHistoryDetail.value && !selectedHistorySummaryProfile.value) {
+      selectedHistorySummaryProfile.value = profile || ''
+    }
+  })
+
   onBeforeUnmount(() => {
+    historyDetailRequestVersion += 1
     stopRagFancyHtmlPolling()
     if (activeJobsPollTimer !== null) {
       clearInterval(activeJobsPollTimer)
@@ -972,15 +920,10 @@
         <FileList
           class="detail-download-list"
           :items="historyDetailDownloadRows"
-          :summary-presets="summaryPresets"
-          :summary-default-preset="summaryDefaultPreset"
           :selected-summary-preset="selectedHistorySummaryPreset"
-          :summary-profiles="summaryProfiles"
           :selected-summary-profile="selectedHistorySummaryProfile"
           :bvid="historyDetail.bvid"
           :history-run-id="historyDetail.run_id"
-          :allow-delete="allowDelete"
-          :requires-api-key="requiresApiKey"
           title="文件列表"
           :filter-kinds="
             historyDetail.record_type === 'rag_query'

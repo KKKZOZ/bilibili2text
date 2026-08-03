@@ -9,99 +9,20 @@
   } from 'vue'
   import { useRoute, useRouter } from 'vue-router'
   import { Brain, History, KeyRound, Sparkles } from 'lucide-vue-next'
+  import { usePublicCredentials } from './composables/usePublicCredentials'
+  import { useRuntimeFeatures } from './composables/useRuntimeFeatures'
+  import { useSummaryConfig } from './composables/useSummaryConfig'
 
   const route = useRoute()
   const router = useRouter()
-
-  // ─── Summary configuration state ─────────────────────────────────
-  const summaryPresets = ref([])
-  const summaryDefaultPreset = ref('')
-  const summaryDefaultPromptTemplate = ref('')
-  const summaryProfiles = ref([])
-  const selectedSummaryPreset = ref('')
-  const selectedSummaryProfile = ref('')
-  const summaryPresetError = ref('')
-  const summaryProfileError = ref('')
-  const isLoadingSummaryPresets = ref(false)
-  const isLoadingSummaryProfiles = ref(false)
+  const { isOpenPublic, loadRuntimeFeatures } = useRuntimeFeatures()
+  const { refreshCredentials } = usePublicCredentials()
+  const { initializeSummaryConfig } = useSummaryConfig()
   const tabBarRef = ref(null)
   const tabIndicatorStyle = ref({
     width: '0px',
     transform: 'translateX(0px)'
   })
-  const runtimeFeatures = ref({
-    mode: 'default',
-    allow_upload_audio: true,
-    allow_delete: true,
-    requires_user_api_key: false,
-    api_key_configured: true
-  })
-
-  const LOCAL_API_KEY_KEY = 'b2t.public-api-key'
-  const LOCAL_DEEPSEEK_API_KEY_KEY = 'b2t.public-deepseek-api-key'
-  const LOCAL_CUSTOM_LLM_BASE_URL_KEY = 'b2t.public-custom-llm-base-url'
-  const LOCAL_CUSTOM_LLM_API_KEY_KEY = 'b2t.public-custom-llm-api-key'
-  const LOCAL_CUSTOM_LLM_MODEL_KEY = 'b2t.public-custom-llm-model'
-  const CUSTOM_LLM_PROFILE_NAME = 'open_public_custom_llm'
-  const localApiKeyConfigured = ref(true)
-  const localDeepseekApiKeyConfigured = ref(false)
-  const localCustomLlmConfigured = ref(false)
-
-  const refreshLocalApiKeyStatus = () => {
-    try {
-      const key = (window.localStorage.getItem(LOCAL_API_KEY_KEY) || '').trim()
-      localApiKeyConfigured.value = key.length > 0
-      const dsKey = (
-        window.localStorage.getItem(LOCAL_DEEPSEEK_API_KEY_KEY) || ''
-      ).trim()
-      localDeepseekApiKeyConfigured.value = dsKey.length > 0
-      const customBaseUrl = (
-        window.localStorage.getItem(LOCAL_CUSTOM_LLM_BASE_URL_KEY) || ''
-      ).trim()
-      const customApiKey = (
-        window.localStorage.getItem(LOCAL_CUSTOM_LLM_API_KEY_KEY) || ''
-      ).trim()
-      const customModel = (
-        window.localStorage.getItem(LOCAL_CUSTOM_LLM_MODEL_KEY) || ''
-      ).trim()
-      localCustomLlmConfigured.value = Boolean(
-        customBaseUrl && customApiKey && customModel
-      )
-    } catch {
-      localApiKeyConfigured.value = false
-      localDeepseekApiKeyConfigured.value = false
-      localCustomLlmConfigured.value = false
-    }
-  }
-
-  const getLocalCustomLlmProfile = () => {
-    try {
-      const baseUrl = (
-        window.localStorage.getItem(LOCAL_CUSTOM_LLM_BASE_URL_KEY) || ''
-      ).trim()
-      const apiKey = (
-        window.localStorage.getItem(LOCAL_CUSTOM_LLM_API_KEY_KEY) || ''
-      ).trim()
-      const model = (
-        window.localStorage.getItem(LOCAL_CUSTOM_LLM_MODEL_KEY) || ''
-      ).trim()
-      if (!baseUrl || !apiKey || !model) {
-        return null
-      }
-      return {
-        name: CUSTOM_LLM_PROFILE_NAME,
-        provider: 'openai_compatible',
-        model,
-        api_base: baseUrl
-      }
-    } catch {
-      return null
-    }
-  }
-
-  const isOpenPublic = computed(
-    () => runtimeFeatures.value.mode === 'open-public'
-  )
 
   // Active tab detection
   const currentView = computed(() => {
@@ -112,164 +33,6 @@
     if (path.startsWith('/settings')) return 'settings'
     return 'process'
   })
-
-  const parseJsonSafely = async (resp, fallbackMessage) => {
-    const raw = await resp.text()
-    if (!raw) {
-      return null
-    }
-    try {
-      return JSON.parse(raw)
-    } catch {
-      throw new Error(
-        `${fallbackMessage}（服务返回了非 JSON 响应，HTTP ${resp.status}）`
-      )
-    }
-  }
-
-  const pickApiError = (resp, data, fallbackMessage) => {
-    if (
-      data &&
-      typeof data === 'object' &&
-      typeof data.detail === 'string' &&
-      data.detail.trim()
-    ) {
-      return data.detail
-    }
-    return `${fallbackMessage}（HTTP ${resp.status}）`
-  }
-
-  const loadRuntimeFeatures = async () => {
-    try {
-      const resp = await fetch('/api/runtime')
-      const data = await parseJsonSafely(resp, '获取运行时配置失败')
-
-      if (!resp.ok) {
-        throw new Error(pickApiError(resp, data, '获取运行时配置失败'))
-      }
-      if (!data || typeof data !== 'object') {
-        throw new Error('获取运行时配置失败（服务返回空响应）')
-      }
-
-      runtimeFeatures.value = {
-        mode: data.mode === 'open-public' ? 'open-public' : 'default',
-        allow_upload_audio: Boolean(data.allow_upload_audio),
-        allow_delete: Boolean(data.allow_delete),
-        requires_user_api_key: Boolean(data.requires_user_api_key),
-        api_key_configured: Boolean(data.api_key_configured)
-      }
-    } catch (err) {
-      console.error(err)
-      runtimeFeatures.value = {
-        mode: 'default',
-        allow_upload_audio: true,
-        allow_delete: true,
-        requires_user_api_key: false,
-        api_key_configured: true
-      }
-    }
-  }
-
-  const loadSummaryPresets = async () => {
-    isLoadingSummaryPresets.value = true
-    summaryPresetError.value = ''
-    try {
-      const resp = await fetch('/api/summary-presets')
-      const data = await parseJsonSafely(resp, '获取总结 presets 失败')
-
-      if (!resp.ok) {
-        throw new Error(pickApiError(resp, data, '获取总结 presets 失败'))
-      }
-      if (!data || typeof data !== 'object') {
-        throw new Error('获取总结 presets 失败（服务返回空响应）')
-      }
-
-      const presets = Array.isArray(data.presets) ? data.presets : []
-      summaryPresets.value = presets
-      if (presets.length === 0) {
-        summaryDefaultPreset.value = ''
-        summaryDefaultPromptTemplate.value = ''
-        selectedSummaryPreset.value = ''
-        return
-      }
-
-      const fallback = presets[0].name
-      summaryDefaultPreset.value = data.default_preset || fallback
-      selectedSummaryPreset.value =
-        data.selected_preset || summaryDefaultPreset.value || fallback
-      const defaultPreset =
-        presets.find((item) => item.name === summaryDefaultPreset.value) ||
-        presets.find((item) => item.name === selectedSummaryPreset.value) ||
-        presets[0]
-      summaryDefaultPromptTemplate.value =
-        typeof defaultPreset?.prompt_template === 'string'
-          ? defaultPreset.prompt_template
-          : ''
-    } catch (err) {
-      console.error(err)
-      summaryPresets.value = []
-      summaryDefaultPreset.value = ''
-      summaryDefaultPromptTemplate.value = ''
-      selectedSummaryPreset.value = ''
-      summaryPresetError.value =
-        err instanceof Error
-          ? `preset 加载失败：${err.message}`
-          : 'preset 加载失败，请检查后端服务是否已启动'
-    } finally {
-      isLoadingSummaryPresets.value = false
-    }
-  }
-
-  const loadSummaryProfiles = async () => {
-    isLoadingSummaryProfiles.value = true
-    summaryProfileError.value = ''
-    try {
-      const resp = await fetch('/api/summarize-profiles')
-      const data = await parseJsonSafely(resp, '获取总结模型配置失败')
-
-      if (!resp.ok) {
-        throw new Error(pickApiError(resp, data, '获取总结模型配置失败'))
-      }
-      if (!data || typeof data !== 'object') {
-        throw new Error('获取总结模型配置失败（服务返回空响应）')
-      }
-
-      const profiles = Array.isArray(data.profiles) ? [...data.profiles] : []
-      const customProfile = isOpenPublic.value
-        ? getLocalCustomLlmProfile()
-        : null
-      if (customProfile) {
-        const existingIndex = profiles.findIndex(
-          (profile) => profile.name === CUSTOM_LLM_PROFILE_NAME
-        )
-        if (existingIndex >= 0) {
-          profiles.splice(existingIndex, 1, customProfile)
-        } else {
-          profiles.push(customProfile)
-        }
-      }
-      summaryProfiles.value = profiles
-      if (profiles.length === 0) {
-        selectedSummaryProfile.value = ''
-        return
-      }
-
-      const fallback = profiles[0].name
-      selectedSummaryProfile.value = customProfile
-        ? CUSTOM_LLM_PROFILE_NAME
-        : data.selected_profile || data.default_profile || fallback
-    } catch (err) {
-      console.error(err)
-      summaryProfiles.value = []
-      selectedSummaryProfile.value = ''
-      summaryProfileError.value =
-        err instanceof Error
-          ? `模型配置加载失败：${err.message}`
-          : '模型配置加载失败，请检查后端服务是否已启动'
-    } finally {
-      isLoadingSummaryProfiles.value = false
-    }
-  }
 
   // Tab bar indicator animation
   const tabRefs = ref({})
@@ -294,11 +57,6 @@
     }
   }
 
-  const onApiKeyUpdated = async () => {
-    refreshLocalApiKeyStatus()
-    await loadSummaryProfiles()
-  }
-
   const navigateTo = (path) => {
     router.push(path)
   }
@@ -306,10 +64,10 @@
   onMounted(() => {
     void nextTick(updateTabIndicator)
     window.addEventListener('resize', updateTabIndicator)
-    refreshLocalApiKeyStatus()
+    refreshCredentials()
     void (async () => {
       await loadRuntimeFeatures()
-      await Promise.all([loadSummaryProfiles(), loadSummaryPresets()])
+      await initializeSummaryConfig()
       await nextTick()
       updateTabIndicator()
     })()
@@ -385,33 +143,7 @@
       </button>
     </nav>
 
-    <!-- Routed views -->
-    <RouterView v-slot="{ Component }">
-      <component
-        :is="Component"
-        :summary-presets="summaryPresets"
-        :summary-default-preset="summaryDefaultPreset"
-        :summary-default-prompt-template="summaryDefaultPromptTemplate"
-        :selected-summary-preset="selectedSummaryPreset"
-        :summary-profiles="summaryProfiles"
-        :selected-summary-profile="selectedSummaryProfile"
-        :summary-preset-error="summaryPresetError"
-        :summary-profile-error="summaryProfileError"
-        :is-loading-summary-presets="isLoadingSummaryPresets"
-        :is-loading-summary-profiles="isLoadingSummaryProfiles"
-        :allow-upload="runtimeFeatures.allow_upload_audio"
-        :requires-api-key="runtimeFeatures.requires_user_api_key"
-        :api-key-configured="localApiKeyConfigured"
-        :deepseek-api-key-configured="localDeepseekApiKeyConfigured"
-        :custom-llm-configured="localCustomLlmConfigured"
-        :allow-delete="runtimeFeatures.allow_delete"
-        @update:selected-summary-preset="selectedSummaryPreset = $event"
-        @update:selected-summary-profile="selectedSummaryProfile = $event"
-        @load-summary-presets="loadSummaryPresets"
-        @load-summary-profiles="loadSummaryProfiles"
-        @api-key-updated="onApiKeyUpdated"
-      />
-    </RouterView>
+    <RouterView />
   </main>
 </template>
 

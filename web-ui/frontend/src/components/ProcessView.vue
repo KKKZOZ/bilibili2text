@@ -23,80 +23,45 @@
   } from 'lucide-vue-next'
   import ProgressPanel from './ProgressPanel.vue'
   import FileList from './FileList.vue'
+  import { ApiError, processApi } from '../api'
+  import {
+    CUSTOM_LLM_PROFILE_NAME,
+    usePublicCredentials
+  } from '../composables/usePublicCredentials'
+  import { useRuntimeFeatures } from '../composables/useRuntimeFeatures'
+  import { useSummaryConfig } from '../composables/useSummaryConfig'
   import { inferSummaryPresetFromFilename } from '../utils/fileUtils'
 
   const route = useRoute()
   const router = useRouter()
-
-  const props = defineProps({
-    summaryPresets: {
-      type: Array,
-      required: true
-    },
-    summaryDefaultPreset: {
-      type: String,
-      required: true
-    },
-    summaryDefaultPromptTemplate: {
-      type: String,
-      default: ''
-    },
-    selectedSummaryPreset: {
-      type: String,
-      required: true
-    },
-    summaryProfiles: {
-      type: Array,
-      required: true
-    },
-    selectedSummaryProfile: {
-      type: String,
-      required: true
-    },
-    summaryPresetError: {
-      type: String,
-      default: ''
-    },
-    summaryProfileError: {
-      type: String,
-      default: ''
-    },
-    isLoadingSummaryPresets: {
-      type: Boolean,
-      default: false
-    },
-    isLoadingSummaryProfiles: {
-      type: Boolean,
-      default: false
-    },
-    allowUpload: {
-      type: Boolean,
-      default: true
-    },
-    requiresApiKey: {
-      type: Boolean,
-      default: false
-    },
-    apiKeyConfigured: {
-      type: Boolean,
-      default: true
-    },
-    deepseekApiKeyConfigured: {
-      type: Boolean,
-      default: false
-    },
-    customLlmConfigured: {
-      type: Boolean,
-      default: false
-    }
-  })
-
-  const emit = defineEmits([
-    'update:selectedSummaryPreset',
-    'update:selectedSummaryProfile',
-    'loadSummaryPresets',
-    'loadSummaryProfiles'
-  ])
+  const { runtimeFeatures } = useRuntimeFeatures()
+  const allowUpload = computed(() => runtimeFeatures.value.allow_upload_audio)
+  const requiresApiKey = computed(
+    () => runtimeFeatures.value.requires_user_api_key
+  )
+  const {
+    summaryPresets,
+    summaryDefaultPromptTemplate,
+    summaryProfiles,
+    selectedSummaryPreset,
+    selectedSummaryProfile,
+    summaryPresetError,
+    summaryProfileError,
+    isLoadingSummaryPresets,
+    isLoadingSummaryProfiles,
+    loadSummaryPresets,
+    loadSummaryProfiles
+  } = useSummaryConfig()
+  const {
+    apiKeyConfigured,
+    deepseekApiKeyConfigured,
+    customLlmConfigured,
+    getApiKey,
+    getDeepseekApiKey,
+    getSummaryTemplate,
+    getCustomLlmPayload,
+    appendCustomLlmFormData
+  } = usePublicCredentials()
 
   const url = ref('')
   const error = ref('')
@@ -156,15 +121,7 @@
   let lastRenderedJobSignature = ''
   const maxPollErrors = 3
   const ACTIVE_JOB_IDS_KEY = 'b2t.active-job-ids'
-  const LOCAL_API_KEY_KEY = 'b2t.public-api-key'
-  const LOCAL_DEEPSEEK_API_KEY_KEY = 'b2t.public-deepseek-api-key'
-  const LOCAL_CUSTOM_LLM_BASE_URL_KEY = 'b2t.public-custom-llm-base-url'
-  const LOCAL_CUSTOM_LLM_API_KEY_KEY = 'b2t.public-custom-llm-api-key'
-  const LOCAL_CUSTOM_LLM_MODEL_KEY = 'b2t.public-custom-llm-model'
-  const LOCAL_OPEN_PUBLIC_SUMMARY_TEMPLATE_KEY =
-    'b2t.open-public-summary-template'
   const CUSTOM_SUMMARY_PRESET_VALUE = '__user_custom__'
-  const CUSTOM_LLM_PROFILE_NAME = 'open_public_custom_llm'
   const uploadAccept =
     '.aac,.flac,.m4a,.mp3,.ogg,.opus,.wav,.webm,.avi,.m4v,.mkv,.mov,.mp4'
   const uploadFilenamePattern =
@@ -179,9 +136,9 @@
   // Job from route param
   const routeJobId = computed(() => String(route.params.jobId || ''))
   const isJobDetailMode = computed(() => !!routeJobId.value)
-  const isOpenPublic = computed(() => props.requiresApiKey)
+  const isOpenPublic = requiresApiKey
   const presetOptions = computed(() => {
-    const base = Array.isArray(props.summaryPresets) ? props.summaryPresets : []
+    const base = Array.isArray(summaryPresets.value) ? summaryPresets.value : []
     if (!isOpenPublic.value) {
       return base
     }
@@ -200,7 +157,7 @@
     if (!isOpenPublic.value) {
       return ''
     }
-    if (props.selectedSummaryPreset !== CUSTOM_SUMMARY_PRESET_VALUE) {
+    if (selectedSummaryPreset.value !== CUSTOM_SUMMARY_PRESET_VALUE) {
       return ''
     }
     return userSummaryPromptTemplate.value.trim()
@@ -208,7 +165,7 @@
   const selectedSummaryPresetOption = computed(
     () =>
       presetOptions.value.find(
-        (item) => item.name === props.selectedSummaryPreset
+        (item) => item.name === selectedSummaryPreset.value
       ) ||
       presetOptions.value[0] ||
       null
@@ -247,12 +204,12 @@
     if (presetName === CUSTOM_SUMMARY_PRESET_VALUE) {
       return (
         userSummaryPromptTemplate.value.trim() ||
-        props.summaryDefaultPromptTemplate ||
+        summaryDefaultPromptTemplate.value ||
         ''
       )
     }
 
-    const matched = props.summaryPresets.find(
+    const matched = summaryPresets.value.find(
       (item) => item.name === presetName
     )
     return typeof matched?.prompt_template === 'string'
@@ -325,68 +282,6 @@
     jobId.value = ''
   }
 
-  const parseJsonSafely = async (resp, fallbackMessage) => {
-    const raw = await resp.text()
-    if (!raw) {
-      return null
-    }
-    try {
-      return JSON.parse(raw)
-    } catch {
-      throw new Error(
-        `${fallbackMessage}（服务返回了非 JSON 响应，HTTP ${resp.status}）`
-      )
-    }
-  }
-
-  const pickApiError = (resp, data, fallbackMessage) => {
-    if (
-      data &&
-      typeof data === 'object' &&
-      typeof data.detail === 'string' &&
-      data.detail.trim()
-    ) {
-      return data.detail
-    }
-    return `${fallbackMessage}（HTTP ${resp.status}）`
-  }
-
-  const getLocalApiKey = () => {
-    try {
-      return (window.localStorage.getItem(LOCAL_API_KEY_KEY) || '').trim()
-    } catch {
-      return ''
-    }
-  }
-
-  const getLocalDeepseekApiKey = () => {
-    try {
-      return (
-        window.localStorage.getItem(LOCAL_DEEPSEEK_API_KEY_KEY) || ''
-      ).trim()
-    } catch {
-      return ''
-    }
-  }
-
-  const getLocalCustomLlmConfig = () => {
-    try {
-      return {
-        baseUrl: (
-          window.localStorage.getItem(LOCAL_CUSTOM_LLM_BASE_URL_KEY) || ''
-        ).trim(),
-        apiKey: (
-          window.localStorage.getItem(LOCAL_CUSTOM_LLM_API_KEY_KEY) || ''
-        ).trim(),
-        model: (
-          window.localStorage.getItem(LOCAL_CUSTOM_LLM_MODEL_KEY) || ''
-        ).trim()
-      }
-    } catch {
-      return { baseUrl: '', apiKey: '', model: '' }
-    }
-  }
-
   const formatSummaryProfileLabel = (profile) => {
     if (!profile) return ''
     if (profile.name === CUSTOM_LLM_PROFILE_NAME) {
@@ -395,47 +290,14 @@
     return `${profile.name} (${profile.model})`
   }
 
-  const appendCustomLlmFormData = (formData) => {
-    if (!props.requiresApiKey) return
-    const customLlm = getLocalCustomLlmConfig()
-    if (customLlm.baseUrl && customLlm.apiKey && customLlm.model) {
-      formData.append('custom_llm_base_url', customLlm.baseUrl)
-      formData.append('custom_llm_api_key', customLlm.apiKey)
-      formData.append('custom_llm_model', customLlm.model)
-    }
-  }
-
-  const getCustomLlmPayload = () => {
-    if (!props.requiresApiKey) {
-      return {
-        custom_llm_base_url: null,
-        custom_llm_api_key: null,
-        custom_llm_model: null
-      }
-    }
-    const customLlm = getLocalCustomLlmConfig()
-    return {
-      custom_llm_base_url: customLlm.baseUrl || null,
-      custom_llm_api_key: customLlm.apiKey || null,
-      custom_llm_model: customLlm.model || null
-    }
-  }
-
   const loadLocalSummaryPromptTemplate = () => {
     if (!isOpenPublic.value) {
       userSummaryPromptTemplate.value = ''
       return
     }
-    try {
-      const stored = (
-        window.localStorage.getItem(LOCAL_OPEN_PUBLIC_SUMMARY_TEMPLATE_KEY) ||
-        ''
-      ).trim()
-      userSummaryPromptTemplate.value =
-        stored || props.summaryDefaultPromptTemplate || ''
-    } catch {
-      userSummaryPromptTemplate.value = props.summaryDefaultPromptTemplate || ''
-    }
+    userSummaryPromptTemplate.value = getSummaryTemplate(
+      summaryDefaultPromptTemplate.value
+    )
   }
 
   const isRunning = computed(
@@ -454,11 +316,11 @@
     return currentSkipSummary.value
   })
   const isUploadMode = computed(
-    () => props.allowUpload && inputMode.value === 'upload'
+    () => allowUpload.value && inputMode.value === 'upload'
   )
 
   watch(
-    () => props.allowUpload,
+    allowUpload,
     (allowUpload) => {
       if (allowUpload || inputMode.value !== 'upload') {
         return
@@ -484,8 +346,8 @@
       presetName:
         job.value.summary_preset ||
         inferSummaryPresetFromFilename(item.filename) ||
-        props.selectedSummaryPreset,
-      summaryProfile: job.value.summary_profile || props.selectedSummaryProfile
+        selectedSummaryPreset.value,
+      summaryProfile: job.value.summary_profile || selectedSummaryProfile.value
     }))
   })
 
@@ -605,7 +467,7 @@
   }
 
   const setInputMode = (mode) => {
-    if (mode === 'upload' && !props.allowUpload) {
+    if (mode === 'upload' && !allowUpload.value) {
       return
     }
     inputMode.value = mode
@@ -639,10 +501,10 @@
   }
 
   const openSummaryPresetMenu = () => {
-    if (props.isLoadingSummaryPresets || presetOptions.value.length === 0) {
+    if (isLoadingSummaryPresets.value || presetOptions.value.length === 0) {
       return
     }
-    hoveredSummaryPresetName.value = props.selectedSummaryPreset || ''
+    hoveredSummaryPresetName.value = selectedSummaryPreset.value || ''
     isSummaryPresetMenuOpen.value = true
   }
 
@@ -664,7 +526,7 @@
   }
 
   const selectSummaryPreset = (presetName) => {
-    emit('update:selectedSummaryPreset', presetName)
+    selectedSummaryPreset.value = presetName
     closeSummaryPresetMenu()
   }
 
@@ -685,19 +547,7 @@
 
     isPolling.value = true
     try {
-      const resp = await fetch(`/api/process/${jobId.value}`)
-      const data = await parseJsonSafely(resp, '获取任务进度失败')
-
-      if (!resp.ok) {
-        if (resp.status === 404) {
-          clearActiveJobId()
-          stopPolling()
-        }
-        throw new Error(pickApiError(resp, data, '获取任务进度失败'))
-      }
-      if (!data || typeof data !== 'object') {
-        throw new Error('获取任务进度失败（服务返回空响应）')
-      }
+      const data = await processApi.getJob(jobId.value)
 
       const previousLogCount = Array.isArray(job.value.logs)
         ? job.value.logs.length
@@ -742,6 +592,10 @@
         stopPolling()
       }
     } catch (err) {
+      if (err instanceof ApiError && err.status === 404) {
+        clearActiveJobId()
+        stopPolling()
+      }
       pollErrorCount.value += 1
       const message = err instanceof Error ? err.message : '获取任务进度失败'
       if (pollErrorCount.value >= maxPollErrors) {
@@ -763,12 +617,12 @@
     resetJob()
 
     try {
-      if (props.requiresApiKey && !props.apiKeyConfigured) {
+      if (requiresApiKey.value && !apiKeyConfigured.value) {
         throw new Error('请先在「API Key」页面配置阿里云 DashScope API Key')
       }
       if (
         enableSummary.value &&
-        props.selectedSummaryPreset === CUSTOM_SUMMARY_PRESET_VALUE &&
+        selectedSummaryPreset.value === CUSTOM_SUMMARY_PRESET_VALUE &&
         !effectiveSummaryPromptTemplate.value
       ) {
         throw new Error(
@@ -780,9 +634,9 @@
       currentSkipSummary.value = skipSummary
       pollErrorCount.value = 0
 
-      let resp
+      let data
       if (isUploadMode.value) {
-        if (!props.allowUpload) {
+        if (!allowUpload.value) {
           throw new Error('当前模式不允许上传音频，请改为输入播客/视频链接')
         }
         const validationMessage = validateUploadedAudio(uploadedAudioFile.value)
@@ -794,14 +648,14 @@
         formData.append('skip_summary', String(skipSummary))
         if (
           !skipSummary &&
-          props.selectedSummaryPreset &&
-          (props.selectedSummaryPreset !== CUSTOM_SUMMARY_PRESET_VALUE ||
+          selectedSummaryPreset.value &&
+          (selectedSummaryPreset.value !== CUSTOM_SUMMARY_PRESET_VALUE ||
             effectiveSummaryPromptTemplate.value)
         ) {
-          formData.append('summary_preset', props.selectedSummaryPreset)
+          formData.append('summary_preset', selectedSummaryPreset.value)
         }
-        if (!skipSummary && props.selectedSummaryProfile) {
-          formData.append('summary_profile', props.selectedSummaryProfile)
+        if (!skipSummary && selectedSummaryProfile.value) {
+          formData.append('summary_profile', selectedSummaryProfile.value)
         }
         if (!skipSummary && effectiveSummaryPromptTemplate.value) {
           formData.append(
@@ -815,67 +669,45 @@
             String(autoGenerateFancyHtml.value)
           )
         }
-        if (props.requiresApiKey) {
-          formData.append('api_key', getLocalApiKey())
-          const dsKey = getLocalDeepseekApiKey()
+        if (requiresApiKey.value) {
+          formData.append('api_key', getApiKey())
+          const dsKey = getDeepseekApiKey()
           if (dsKey) formData.append('deepseek_api_key', dsKey)
-          appendCustomLlmFormData(formData)
+          appendCustomLlmFormData(formData, true)
         }
-        resp = await fetch('/api/process/upload', {
-          method: 'POST',
-          body: formData
-        })
+        data = await processApi.startFromUpload(formData)
       } else {
         if (!url.value.trim()) {
           throw new Error('请输入播客链接或视频 URL')
         }
-        resp = await fetch('/api/process', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            url: url.value.trim(),
-            skip_summary: skipSummary,
-            summary_preset:
-              skipSummary || !props.selectedSummaryPreset
-                ? null
-                : props.selectedSummaryPreset,
-            summary_profile:
-              skipSummary || !props.selectedSummaryProfile
-                ? null
-                : props.selectedSummaryProfile,
-            summary_prompt_template:
-              skipSummary || !effectiveSummaryPromptTemplate.value
-                ? null
-                : effectiveSummaryPromptTemplate.value,
-            auto_generate_fancy_html: skipSummary
-              ? false
-              : autoGenerateFancyHtml.value,
-            prefer_bilibili_subtitle: preferBilibiliSubtitle.value,
-            include_comments:
-              !skipSummary && includeComments.value && !isUploadMode.value,
-            comment_limit: normalizedCommentLimit.value,
-            api_key: props.requiresApiKey ? getLocalApiKey() : null,
-            deepseek_api_key: props.requiresApiKey
-              ? getLocalDeepseekApiKey() || null
-              : null,
-            ...getCustomLlmPayload()
-          })
+        data = await processApi.startFromUrl({
+          url: url.value.trim(),
+          skip_summary: skipSummary,
+          summary_preset:
+            skipSummary || !selectedSummaryPreset.value
+              ? null
+              : selectedSummaryPreset.value,
+          summary_profile:
+            skipSummary || !selectedSummaryProfile.value
+              ? null
+              : selectedSummaryProfile.value,
+          summary_prompt_template:
+            skipSummary || !effectiveSummaryPromptTemplate.value
+              ? null
+              : effectiveSummaryPromptTemplate.value,
+          auto_generate_fancy_html: skipSummary
+            ? false
+            : autoGenerateFancyHtml.value,
+          prefer_bilibili_subtitle: preferBilibiliSubtitle.value,
+          include_comments:
+            !skipSummary && includeComments.value && !isUploadMode.value,
+          comment_limit: normalizedCommentLimit.value,
+          api_key: requiresApiKey.value ? getApiKey() : null,
+          deepseek_api_key: requiresApiKey.value
+            ? getDeepseekApiKey() || null
+            : null,
+          ...getCustomLlmPayload(requiresApiKey.value)
         })
-      }
-
-      const data = await parseJsonSafely(resp, '提交任务失败')
-      if (!resp.ok) {
-        throw new Error(pickApiError(resp, data, '提交任务失败'))
-      }
-      if (
-        !data ||
-        typeof data !== 'object' ||
-        typeof data.job_id !== 'string' ||
-        !data.job_id
-      ) {
-        throw new Error('提交任务失败（服务未返回有效 job_id）')
       }
 
       jobId.value = data.job_id
@@ -915,7 +747,7 @@
   })
 
   watch(
-    () => props.summaryDefaultPromptTemplate,
+    summaryDefaultPromptTemplate,
     () => {
       if (!isOpenPublic.value) {
         return
@@ -923,29 +755,26 @@
       const hasLocalValue = userSummaryPromptTemplate.value.trim().length > 0
       if (!hasLocalValue) {
         userSummaryPromptTemplate.value =
-          props.summaryDefaultPromptTemplate || ''
+          summaryDefaultPromptTemplate.value || ''
       }
     },
     { immediate: true }
   )
 
   watch(
-    () => props.requiresApiKey,
+    requiresApiKey,
     () => {
       loadLocalSummaryPromptTemplate()
     },
     { immediate: true }
   )
 
-  watch(
-    () => props.selectedSummaryPreset,
-    () => {
-      if (!isSummaryPresetMenuOpen.value) {
-        return
-      }
-      hoveredSummaryPresetName.value = props.selectedSummaryPreset || ''
+  watch(selectedSummaryPreset, () => {
+    if (!isSummaryPresetMenuOpen.value) {
+      return
     }
-  )
+    hoveredSummaryPresetName.value = selectedSummaryPreset.value || ''
+  })
 </script>
 
 <template>
@@ -1234,9 +1063,7 @@
                     :disabled="
                       isLoadingSummaryProfiles || summaryProfiles.length === 0
                     "
-                    @change="
-                      emit('update:selectedSummaryProfile', $event.target.value)
-                    "
+                    @change="selectedSummaryProfile = $event.target.value"
                   >
                     <option v-if="isLoadingSummaryProfiles" value="">
                       正在加载模型配置...
@@ -1266,7 +1093,7 @@
                   <button
                     class="preset-retry"
                     type="button"
-                    @click="emit('loadSummaryProfiles')"
+                    @click="loadSummaryProfiles"
                   >
                     重试
                   </button>
@@ -1365,7 +1192,7 @@
                   <button
                     class="preset-retry"
                     type="button"
-                    @click="emit('loadSummaryPresets')"
+                    @click="loadSummaryPresets"
                   >
                     重试
                   </button>
@@ -1465,13 +1292,7 @@
             </p>
             <FileList
               :items="allDownloadRows"
-              :summary-presets="summaryPresets"
-              :summary-default-preset="summaryDefaultPreset"
-              :selected-summary-preset="selectedSummaryPreset"
-              :summary-profiles="summaryProfiles"
-              :selected-summary-profile="selectedSummaryProfile"
               :history-run-id="job.history_run_id || ''"
-              :requires-api-key="requiresApiKey"
             />
           </template>
           <p v-else class="download-placeholder">

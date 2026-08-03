@@ -1,5 +1,5 @@
 <script setup>
-  import { onMounted, ref } from 'vue'
+  import { onMounted, ref, watch } from 'vue'
   import {
     AlertCircle,
     CheckCircle2,
@@ -7,23 +7,20 @@
     Shield,
     Info
   } from 'lucide-vue-next'
+  import { openPublicApi } from '../api'
+  import { usePublicCredentials } from '../composables/usePublicCredentials'
+  import { useSummaryConfig } from '../composables/useSummaryConfig'
 
-  const emit = defineEmits(['apiKeyUpdated'])
-
-  const LOCAL_API_KEY_KEY = 'b2t.public-api-key'
-  const LOCAL_DEEPSEEK_API_KEY_KEY = 'b2t.public-deepseek-api-key'
-  const LOCAL_CUSTOM_LLM_BASE_URL_KEY = 'b2t.public-custom-llm-base-url'
-  const LOCAL_CUSTOM_LLM_API_KEY_KEY = 'b2t.public-custom-llm-api-key'
-  const LOCAL_CUSTOM_LLM_MODEL_KEY = 'b2t.public-custom-llm-model'
-  const LOCAL_OPEN_PUBLIC_SUMMARY_TEMPLATE_KEY =
-    'b2t.open-public-summary-template'
-
-  const props = defineProps({
-    summaryDefaultPromptTemplate: {
-      type: String,
-      default: ''
-    }
-  })
+  const { keys, readValue, writeValue, removeValue, refreshCredentials } =
+    usePublicCredentials()
+  const { summaryDefaultPromptTemplate } = useSummaryConfig()
+  const notifyCredentialsUpdated = () => refreshCredentials({ notify: true })
+  const LOCAL_API_KEY_KEY = keys.apiKey
+  const LOCAL_DEEPSEEK_API_KEY_KEY = keys.deepseekApiKey
+  const LOCAL_CUSTOM_LLM_BASE_URL_KEY = keys.customLlmBaseUrl
+  const LOCAL_CUSTOM_LLM_API_KEY_KEY = keys.customLlmApiKey
+  const LOCAL_CUSTOM_LLM_MODEL_KEY = keys.customLlmModel
+  const LOCAL_OPEN_PUBLIC_SUMMARY_TEMPLATE_KEY = keys.summaryTemplate
 
   // Aliyun key state
   const aliyunKeyInput = ref('')
@@ -66,27 +63,17 @@
 
   const loadStatus = () => {
     try {
-      const aliyunKey = (
-        window.localStorage.getItem(LOCAL_API_KEY_KEY) || ''
-      ).trim()
+      const aliyunKey = readValue(LOCAL_API_KEY_KEY)
       aliyunConfigured.value = aliyunKey.length > 0
       aliyunMaskedKey.value = aliyunKey ? maskKey(aliyunKey) : ''
 
-      const dsKey = (
-        window.localStorage.getItem(LOCAL_DEEPSEEK_API_KEY_KEY) || ''
-      ).trim()
+      const dsKey = readValue(LOCAL_DEEPSEEK_API_KEY_KEY)
       deepseekConfigured.value = dsKey.length > 0
       deepseekMaskedKey.value = dsKey ? maskKey(dsKey) : ''
 
-      const customBaseUrl = (
-        window.localStorage.getItem(LOCAL_CUSTOM_LLM_BASE_URL_KEY) || ''
-      ).trim()
-      const customApiKey = (
-        window.localStorage.getItem(LOCAL_CUSTOM_LLM_API_KEY_KEY) || ''
-      ).trim()
-      const customModel = (
-        window.localStorage.getItem(LOCAL_CUSTOM_LLM_MODEL_KEY) || ''
-      ).trim()
+      const customBaseUrl = readValue(LOCAL_CUSTOM_LLM_BASE_URL_KEY)
+      const customApiKey = readValue(LOCAL_CUSTOM_LLM_API_KEY_KEY)
+      const customModel = readValue(LOCAL_CUSTOM_LLM_MODEL_KEY)
       customLlmConfigured.value = Boolean(
         customBaseUrl && customApiKey && customModel
       )
@@ -96,13 +83,10 @@
       customLlmBaseUrlInput.value = customBaseUrl
       customLlmModelInput.value = customModel
 
-      const summaryTemplate = (
-        window.localStorage.getItem(LOCAL_OPEN_PUBLIC_SUMMARY_TEMPLATE_KEY) ||
-        ''
-      ).trim()
+      const summaryTemplate = readValue(LOCAL_OPEN_PUBLIC_SUMMARY_TEMPLATE_KEY)
       summaryTemplateConfigured.value = summaryTemplate.length > 0
       summaryTemplateInput.value =
-        summaryTemplate || props.summaryDefaultPromptTemplate
+        summaryTemplate || summaryDefaultPromptTemplate.value
     } catch {
       aliyunError.value = '读取本地存储失败'
     }
@@ -149,43 +133,10 @@
   }
 
   const getSavedCustomLlmApiKey = () => {
-    try {
-      return (
-        window.localStorage.getItem(LOCAL_CUSTOM_LLM_API_KEY_KEY) || ''
-      ).trim()
-    } catch {
-      return ''
-    }
+    return readValue(LOCAL_CUSTOM_LLM_API_KEY_KEY)
   }
 
-  const getSavedProviderApiKey = (storageKey) => {
-    try {
-      return (window.localStorage.getItem(storageKey) || '').trim()
-    } catch {
-      return ''
-    }
-  }
-
-  const parseApiResponse = async (resp) => {
-    const raw = await resp.text()
-    if (!raw) return null
-    try {
-      return JSON.parse(raw)
-    } catch {
-      throw new Error(`响应不是有效 JSON（HTTP ${resp.status}）`)
-    }
-  }
-
-  const assertSuccessfulTestResponse = (resp, data) => {
-    if (!resp.ok) {
-      const detail = data?.detail || data?.message || `HTTP ${resp.status}`
-      throw new Error(String(detail))
-    }
-    const content = data?.content
-    if (typeof content !== 'string' || !content.trim()) {
-      throw new Error('后端测试接口返回了空响应')
-    }
-  }
+  const getSavedProviderApiKey = (storageKey) => readValue(storageKey)
 
   const testProviderConnection = async ({
     provider,
@@ -212,18 +163,7 @@
     setSuccess('')
     setTesting(true)
     try {
-      const resp = await fetch('/api/open-public/api-key/test', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          provider,
-          api_key: apiKey
-        })
-      })
-      const data = await parseApiResponse(resp)
-      assertSuccessfulTestResponse(resp, data)
+      await openPublicApi.testProvider(provider, apiKey)
       setSuccess('测试连接成功。')
     } catch (err) {
       const message = err instanceof Error ? err.message : '测试连接失败'
@@ -247,9 +187,9 @@
     customLlmError.value = ''
     customLlmSuccess.value = ''
     try {
-      window.localStorage.setItem(LOCAL_CUSTOM_LLM_BASE_URL_KEY, baseUrl)
-      window.localStorage.setItem(LOCAL_CUSTOM_LLM_API_KEY_KEY, apiKey)
-      window.localStorage.setItem(LOCAL_CUSTOM_LLM_MODEL_KEY, model)
+      writeValue(LOCAL_CUSTOM_LLM_BASE_URL_KEY, baseUrl)
+      writeValue(LOCAL_CUSTOM_LLM_API_KEY_KEY, apiKey)
+      writeValue(LOCAL_CUSTOM_LLM_MODEL_KEY, model)
       customLlmConfigured.value = true
       customLlmMaskedKey.value = maskKey(apiKey)
       customLlmSavedBaseUrl.value = baseUrl
@@ -257,7 +197,7 @@
       customLlmApiKeyInput.value = ''
       customLlmSuccess.value =
         '自定义 LLM 已更新。后续总结、知识库问答和 Fancy HTML 将优先使用该模型。'
-      emit('apiKeyUpdated')
+      notifyCredentialsUpdated()
     } catch {
       customLlmError.value = '保存失败，请检查浏览器存储权限'
     }
@@ -267,9 +207,9 @@
     customLlmError.value = ''
     customLlmSuccess.value = ''
     try {
-      window.localStorage.removeItem(LOCAL_CUSTOM_LLM_BASE_URL_KEY)
-      window.localStorage.removeItem(LOCAL_CUSTOM_LLM_API_KEY_KEY)
-      window.localStorage.removeItem(LOCAL_CUSTOM_LLM_MODEL_KEY)
+      removeValue(LOCAL_CUSTOM_LLM_BASE_URL_KEY)
+      removeValue(LOCAL_CUSTOM_LLM_API_KEY_KEY)
+      removeValue(LOCAL_CUSTOM_LLM_MODEL_KEY)
       customLlmConfigured.value = false
       customLlmMaskedKey.value = ''
       customLlmSavedBaseUrl.value = ''
@@ -279,7 +219,7 @@
       customLlmModelInput.value = ''
       customLlmSuccess.value =
         '自定义 LLM 已清除。LLM 功能将回退使用 DeepSeek 或阿里云。'
-      emit('apiKeyUpdated')
+      notifyCredentialsUpdated()
     } catch {
       customLlmError.value = '清除失败，请检查浏览器存储权限'
     }
@@ -300,19 +240,11 @@
     customLlmSuccess.value = ''
     isTestingCustomLlm.value = true
     try {
-      const resp = await fetch('/api/open-public/custom-llm/test', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          base_url: baseUrl,
-          api_key: apiKey,
-          model
-        })
+      await openPublicApi.testCustomLlm({
+        baseUrl,
+        apiKey,
+        model
       })
-      const data = await parseApiResponse(resp)
-      assertSuccessfulTestResponse(resp, data)
       customLlmSuccess.value = '测试连接成功。'
     } catch (err) {
       const message = err instanceof Error ? err.message : '测试连接失败'
@@ -355,12 +287,12 @@
     aliyunError.value = ''
     aliyunSuccess.value = ''
     try {
-      window.localStorage.setItem(LOCAL_API_KEY_KEY, apiKey)
+      writeValue(LOCAL_API_KEY_KEY, apiKey)
       aliyunConfigured.value = true
       aliyunMaskedKey.value = maskKey(apiKey)
       aliyunKeyInput.value = ''
       aliyunSuccess.value = '阿里云 API Key 已更新。'
-      emit('apiKeyUpdated')
+      notifyCredentialsUpdated()
     } catch {
       aliyunError.value = '保存失败，请检查浏览器存储权限'
     }
@@ -387,11 +319,11 @@
     aliyunError.value = ''
     aliyunSuccess.value = ''
     try {
-      window.localStorage.removeItem(LOCAL_API_KEY_KEY)
+      removeValue(LOCAL_API_KEY_KEY)
       aliyunConfigured.value = false
       aliyunMaskedKey.value = ''
       aliyunSuccess.value = '阿里云 API Key 已清除。'
-      emit('apiKeyUpdated')
+      notifyCredentialsUpdated()
     } catch {
       aliyunError.value = '清除失败，请检查浏览器存储权限'
     }
@@ -413,13 +345,13 @@
     deepseekError.value = ''
     deepseekSuccess.value = ''
     try {
-      window.localStorage.setItem(LOCAL_DEEPSEEK_API_KEY_KEY, apiKey)
+      writeValue(LOCAL_DEEPSEEK_API_KEY_KEY, apiKey)
       deepseekConfigured.value = true
       deepseekMaskedKey.value = maskKey(apiKey)
       deepseekKeyInput.value = ''
       deepseekSuccess.value =
         'DeepSeek API Key 已更新。后续 LLM 总结、知识库问答和 Fancy HTML 将使用该 Key。'
-      emit('apiKeyUpdated')
+      notifyCredentialsUpdated()
     } catch {
       deepseekError.value = '保存失败，请检查浏览器存储权限'
     }
@@ -429,12 +361,12 @@
     deepseekError.value = ''
     deepseekSuccess.value = ''
     try {
-      window.localStorage.removeItem(LOCAL_DEEPSEEK_API_KEY_KEY)
+      removeValue(LOCAL_DEEPSEEK_API_KEY_KEY)
       deepseekConfigured.value = false
       deepseekMaskedKey.value = ''
       deepseekSuccess.value =
         'DeepSeek API Key 已清除。LLM 功能将回退使用阿里云。'
-      emit('apiKeyUpdated')
+      notifyCredentialsUpdated()
     } catch {
       deepseekError.value = '清除失败，请检查浏览器存储权限'
     }
@@ -451,10 +383,7 @@
     summaryTemplateError.value = ''
     summaryTemplateSuccess.value = ''
     try {
-      window.localStorage.setItem(
-        LOCAL_OPEN_PUBLIC_SUMMARY_TEMPLATE_KEY,
-        template.trim()
-      )
+      writeValue(LOCAL_OPEN_PUBLIC_SUMMARY_TEMPLATE_KEY, template.trim())
       summaryTemplateConfigured.value = true
       summaryTemplateSuccess.value = '自定义总结模板已保存。'
     } catch {
@@ -466,9 +395,9 @@
     summaryTemplateError.value = ''
     summaryTemplateSuccess.value = ''
     try {
-      window.localStorage.removeItem(LOCAL_OPEN_PUBLIC_SUMMARY_TEMPLATE_KEY)
+      removeValue(LOCAL_OPEN_PUBLIC_SUMMARY_TEMPLATE_KEY)
       summaryTemplateConfigured.value = false
-      summaryTemplateInput.value = props.summaryDefaultPromptTemplate || ''
+      summaryTemplateInput.value = summaryDefaultPromptTemplate.value || ''
       summaryTemplateSuccess.value = '自定义总结模板已清除。'
     } catch {
       summaryTemplateError.value = '清除失败，请检查浏览器存储权限'
@@ -478,11 +407,20 @@
   const resetSummaryTemplateToDefault = () => {
     summaryTemplateError.value = ''
     summaryTemplateSuccess.value = ''
-    summaryTemplateInput.value = props.summaryDefaultPromptTemplate || ''
+    summaryTemplateInput.value = summaryDefaultPromptTemplate.value || ''
   }
 
   onMounted(() => {
     loadStatus()
+  })
+
+  watch(summaryDefaultPromptTemplate, (template) => {
+    if (
+      !summaryTemplateConfigured.value &&
+      !summaryTemplateInput.value.trim()
+    ) {
+      summaryTemplateInput.value = template || ''
+    }
   })
 </script>
 

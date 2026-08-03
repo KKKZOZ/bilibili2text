@@ -13,7 +13,14 @@
     Trash2,
     Type
   } from 'lucide-vue-next'
+  import { artifactApi, historyApi, summaryApi } from '../api'
   import { useConversion } from '../composables/useConversion'
+  import {
+    CUSTOM_LLM_PROFILE_NAME,
+    usePublicCredentials
+  } from '../composables/usePublicCredentials'
+  import { useRuntimeFeatures } from '../composables/useRuntimeFeatures'
+  import { useSummaryConfig } from '../composables/useSummaryConfig'
   import { resolveFileType, buildArtifactDisplayName } from '../utils/fileUtils'
 
   const props = defineProps({
@@ -21,21 +28,9 @@
       type: Array,
       required: true
     },
-    summaryPresets: {
-      type: Array,
-      default: () => []
-    },
-    summaryDefaultPreset: {
-      type: String,
-      default: ''
-    },
     selectedSummaryPreset: {
       type: String,
       default: ''
-    },
-    summaryProfiles: {
-      type: Array,
-      default: () => []
     },
     selectedSummaryProfile: {
       type: String,
@@ -64,24 +59,34 @@
         'summary_table_pdf',
         'summary_timeline'
       ]
-    },
-    allowDelete: {
-      type: Boolean,
-      default: true
-    },
-    requiresApiKey: {
-      type: Boolean,
-      default: false
     }
   })
 
   const emit = defineEmits(['artifactDeleted', 'artifactGenerated'])
-  const LOCAL_API_KEY_KEY = 'b2t.public-api-key'
-  const LOCAL_DEEPSEEK_API_KEY_KEY = 'b2t.public-deepseek-api-key'
-  const LOCAL_CUSTOM_LLM_BASE_URL_KEY = 'b2t.public-custom-llm-base-url'
-  const LOCAL_CUSTOM_LLM_API_KEY_KEY = 'b2t.public-custom-llm-api-key'
-  const LOCAL_CUSTOM_LLM_MODEL_KEY = 'b2t.public-custom-llm-model'
-  const CUSTOM_LLM_PROFILE_NAME = 'open_public_custom_llm'
+  const { runtimeFeatures } = useRuntimeFeatures()
+  const allowDelete = computed(() => runtimeFeatures.value.allow_delete)
+  const requiresApiKey = computed(
+    () => runtimeFeatures.value.requires_user_api_key
+  )
+  const {
+    summaryPresets,
+    summaryDefaultPreset,
+    summaryProfiles,
+    selectedSummaryPreset: globalSelectedSummaryPreset,
+    selectedSummaryProfile: globalSelectedSummaryProfile
+  } = useSummaryConfig()
+  const {
+    getApiKey,
+    getDeepseekApiKey,
+    getCustomLlmConfig,
+    getCustomLlmPayload
+  } = usePublicCredentials()
+  const effectiveSelectedSummaryPreset = computed(
+    () => props.selectedSummaryPreset || globalSelectedSummaryPreset.value
+  )
+  const effectiveSelectedSummaryProfile = computed(
+    () => props.selectedSummaryProfile || globalSelectedSummaryProfile.value
+  )
 
   const { conversionError, convertAndDownload, isConverting, download } =
     useConversion()
@@ -124,38 +129,15 @@
   const getFormatLabel = (format) =>
     formatLabelMap[normalizeFormatKey(format)] || format || '文件'
 
-  const readLocalStorage = (key) => {
-    try {
-      return (window.localStorage.getItem(key) || '').trim()
-    } catch {
-      return ''
-    }
-  }
-
-  const getCustomLlmPayload = () => {
-    if (!props.requiresApiKey) {
-      return {
-        custom_llm_base_url: null,
-        custom_llm_api_key: null,
-        custom_llm_model: null
-      }
-    }
-    return {
-      custom_llm_base_url:
-        readLocalStorage(LOCAL_CUSTOM_LLM_BASE_URL_KEY) || null,
-      custom_llm_api_key:
-        readLocalStorage(LOCAL_CUSTOM_LLM_API_KEY_KEY) || null,
-      custom_llm_model: readLocalStorage(LOCAL_CUSTOM_LLM_MODEL_KEY) || null
-    }
-  }
-
   const resolveSummaryPresetLabel = (presetName) => {
     let effectiveName = (presetName || '').trim()
     if (!effectiveName || effectiveName === 'default') {
       effectiveName =
-        props.summaryDefaultPreset || props.selectedSummaryPreset || 'default'
+        summaryDefaultPreset.value ||
+        effectiveSelectedSummaryPreset.value ||
+        'default'
     }
-    const matched = props.summaryPresets.find(
+    const matched = summaryPresets.value.find(
       (item) => item.name === effectiveName
     )
     if (matched && typeof matched.label === 'string' && matched.label.trim()) {
@@ -201,7 +183,7 @@
     if (!effectiveName) {
       return ''
     }
-    const matched = props.summaryProfiles.find(
+    const matched = summaryProfiles.value.find(
       (item) => item.name === effectiveName
     )
     if (matched?.name === CUSTOM_LLM_PROFILE_NAME) {
@@ -211,7 +193,7 @@
       return matched.name.trim()
     }
     if (effectiveName === CUSTOM_LLM_PROFILE_NAME) {
-      const model = readLocalStorage(LOCAL_CUSTOM_LLM_MODEL_KEY)
+      const model = getCustomLlmConfig().model
       return model ? `custom(${model})` : 'custom'
     }
     return effectiveName
@@ -516,28 +498,12 @@
       noTableConvertKey(item.downloadId, targetFormat)
     )
 
-  const requestConvert = async (
-    downloadId,
-    targetFormat,
-    extraPayload = {}
-  ) => {
-    const resp = await fetch('/api/convert', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        download_id: downloadId,
-        target_format: targetFormat,
-        ...extraPayload
-      })
+  const requestConvert = async (downloadId, targetFormat, extraPayload = {}) =>
+    artifactApi.convert({
+      download_id: downloadId,
+      target_format: targetFormat,
+      ...extraPayload
     })
-    const data = await resp.json()
-    if (!resp.ok) {
-      throw new Error(data.detail || '转换失败')
-    }
-    return data
-  }
 
   const extractDownloadId = (downloadUrl) => {
     if (typeof downloadUrl !== 'string') {
@@ -610,8 +576,11 @@
   const previewRenderedHtml = (item) => {
     previewError.value = ''
     const sourceVariant =
-      item.kind === 'summary_no_table' ? '?source_variant=summary_no_table' : ''
-    const previewUrl = `/api/preview/html/${encodeURIComponent(item.downloadId)}${sourceVariant}`
+      item.kind === 'summary_no_table' ? 'summary_no_table' : ''
+    const previewUrl = artifactApi.renderedPreviewUrl(
+      item.downloadId,
+      sourceVariant
+    )
     const opened = window.open(previewUrl, '_blank')
     if (opened) {
       opened.opener = null
@@ -622,7 +591,7 @@
 
   const previewTimelineText = (item) => {
     previewError.value = ''
-    const previewUrl = `/api/preview/txt/${encodeURIComponent(item.downloadId)}`
+    const previewUrl = artifactApi.timelinePreviewUrl(item.downloadId)
     const opened = window.open(previewUrl, '_blank')
     if (opened) {
       opened.opener = null
@@ -641,30 +610,18 @@
     fancyGenerating.value.add(key)
     conversionError.value = ''
     try {
-      const resp = await fetch('/api/summary/fancy-html', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          download_id: item.downloadId,
-          history_run_id: props.historyRunId || null,
-          summary_preset: item.presetName || null,
-          summary_profile:
-            item.summaryProfile || props.selectedSummaryProfile || null,
-          api_key: props.requiresApiKey
-            ? readLocalStorage(LOCAL_API_KEY_KEY) || null
-            : null,
-          deepseek_api_key: props.requiresApiKey
-            ? readLocalStorage(LOCAL_DEEPSEEK_API_KEY_KEY) || null
-            : null,
-          ...getCustomLlmPayload()
-        })
+      const data = await summaryApi.generateFancyHtml({
+        download_id: item.downloadId,
+        history_run_id: props.historyRunId || null,
+        summary_preset: item.presetName || null,
+        summary_profile:
+          item.summaryProfile || effectiveSelectedSummaryProfile.value || null,
+        api_key: requiresApiKey.value ? getApiKey() || null : null,
+        deepseek_api_key: requiresApiKey.value
+          ? getDeepseekApiKey() || null
+          : null,
+        ...getCustomLlmPayload(requiresApiKey.value)
       })
-      const data = await resp.json()
-      if (!resp.ok) {
-        throw new Error(data.detail || '生成 Fancy HTML 失败')
-      }
       if (data.history_detail) {
         emit('artifactGenerated', data.history_detail)
       } else {
@@ -674,7 +631,7 @@
           filename: data.filename,
           summary_preset: item.presetName || '',
           summary_profile:
-            item.summaryProfile || props.selectedSummaryProfile || ''
+            item.summaryProfile || effectiveSelectedSummaryProfile.value || ''
         })
       }
       download(data.download_url, data.filename)
@@ -724,7 +681,7 @@
   }
 
   const canDeleteMarkdownArtifact = (item) => {
-    if (!props.allowDelete) {
+    if (!allowDelete.value) {
       return false
     }
     if (!props.historyRunId) {
@@ -831,16 +788,10 @@
     deleteError.value = ''
     deletingKeys.value.add(item.key)
     try {
-      const resp = await fetch(
-        `/api/history/${encodeURIComponent(props.historyRunId)}/artifacts/${encodeURIComponent(item.downloadId)}`,
-        {
-          method: 'DELETE'
-        }
+      const data = await historyApi.deleteArtifact(
+        props.historyRunId,
+        item.downloadId
       )
-      const data = await resp.json()
-      if (!resp.ok) {
-        throw new Error(data.detail || '删除文件失败')
-      }
       emit('artifactDeleted', data)
       deleteConfirmItem.value = null
     } catch (err) {

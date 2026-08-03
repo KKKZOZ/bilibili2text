@@ -1,6 +1,12 @@
 <script setup>
-  import { ref, computed, onMounted } from 'vue'
+  import { ref, computed } from 'vue'
+  import { ragApi, summaryApi } from '../api'
   import { useConversion } from '../composables/useConversion'
+  import {
+    CUSTOM_LLM_PROFILE_NAME,
+    usePublicCredentials
+  } from '../composables/usePublicCredentials'
+  import { useSummaryConfig } from '../composables/useSummaryConfig'
   import { resourceDisplayLabel, resourceUrl } from '../utils/fileUtils'
   import { renderMarkdown } from '../utils/markdown'
   import {
@@ -21,42 +27,12 @@
     Users
   } from 'lucide-vue-next'
 
-  const LOCAL_API_KEY_KEY = 'b2t.public-api-key'
-  const LOCAL_DEEPSEEK_API_KEY_KEY = 'b2t.public-deepseek-api-key'
-  const LOCAL_CUSTOM_LLM_BASE_URL_KEY = 'b2t.public-custom-llm-base-url'
-  const LOCAL_CUSTOM_LLM_API_KEY_KEY = 'b2t.public-custom-llm-api-key'
-  const LOCAL_CUSTOM_LLM_MODEL_KEY = 'b2t.public-custom-llm-model'
-  const CUSTOM_LLM_PROFILE_NAME = 'open_public_custom_llm'
-
-  const readLocalStorage = (key) => {
-    try {
-      return (window.localStorage.getItem(key) || '').trim()
-    } catch {
-      return ''
-    }
-  }
-
-  const getCustomLlmPayload = () => ({
-    custom_llm_base_url:
-      readLocalStorage(LOCAL_CUSTOM_LLM_BASE_URL_KEY) || null,
-    custom_llm_api_key: readLocalStorage(LOCAL_CUSTOM_LLM_API_KEY_KEY) || null,
-    custom_llm_model: readLocalStorage(LOCAL_CUSTOM_LLM_MODEL_KEY) || null
-  })
-
-  const getLocalCustomLlmProfile = () => {
-    const baseUrl = readLocalStorage(LOCAL_CUSTOM_LLM_BASE_URL_KEY)
-    const apiKey = readLocalStorage(LOCAL_CUSTOM_LLM_API_KEY_KEY)
-    const model = readLocalStorage(LOCAL_CUSTOM_LLM_MODEL_KEY)
-    if (!baseUrl || !apiKey || !model) {
-      return null
-    }
-    return {
-      name: CUSTOM_LLM_PROFILE_NAME,
-      provider: 'openai_compatible',
-      model,
-      api_base: baseUrl
-    }
-  }
+  const { getApiKey, getDeepseekApiKey, getCustomLlmPayload } =
+    usePublicCredentials()
+  const {
+    summaryProfiles: llmProfiles,
+    selectedSummaryProfile: selectedLlmProfile
+  } = useSummaryConfig()
 
   const formatLlmProfileLabel = (profile) => {
     if (!profile) return ''
@@ -87,19 +63,12 @@
     fancyHtmlGenerating.value = true
     fancyHtmlError.value = ''
     try {
-      const resp = await fetch('/api/summary/fancy-html', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          download_id: answerDownloadId.value,
-          api_key: readLocalStorage(LOCAL_API_KEY_KEY) || null,
-          deepseek_api_key:
-            readLocalStorage(LOCAL_DEEPSEEK_API_KEY_KEY) || null,
-          ...getCustomLlmPayload()
-        })
+      const data = await summaryApi.generateFancyHtml({
+        download_id: answerDownloadId.value,
+        api_key: getApiKey() || null,
+        deepseek_api_key: getDeepseekApiKey() || null,
+        ...getCustomLlmPayload()
       })
-      const data = await resp.json()
-      if (!resp.ok) throw new Error(data.detail || '生成 Fancy HTML 失败')
       download(data.download_url, data.filename)
     } catch (err) {
       fancyHtmlError.value =
@@ -107,35 +76,6 @@
     } finally {
       fancyHtmlGenerating.value = false
     }
-  }
-
-  // ─── LLM profile ──────────────────────────────────────────────────
-  const llmProfiles = ref([])
-  const selectedLlmProfile = ref('')
-
-  const loadLlmProfiles = async () => {
-    try {
-      const resp = await fetch('/api/summarize-profiles')
-      const data = await resp.json()
-      const profiles = Array.isArray(data.profiles) ? [...data.profiles] : []
-      const customProfile = getLocalCustomLlmProfile()
-      if (customProfile) {
-        const existingIndex = profiles.findIndex(
-          (profile) => profile.name === CUSTOM_LLM_PROFILE_NAME
-        )
-        if (existingIndex >= 0) {
-          profiles.splice(existingIndex, 1, customProfile)
-        } else {
-          profiles.push(customProfile)
-        }
-      }
-      llmProfiles.value = profiles
-      if (customProfile) {
-        selectedLlmProfile.value = CUSTOM_LLM_PROFILE_NAME
-      } else if (!selectedLlmProfile.value && data.selected_profile) {
-        selectedLlmProfile.value = data.selected_profile
-      }
-    } catch {}
   }
 
   // ─── Author filter ────────────────────────────────────────────────
@@ -153,8 +93,7 @@
   const loadAuthors = async () => {
     if (authorsLoaded.value) return
     try {
-      const resp = await fetch('/api/rag/authors')
-      const data = await resp.json()
+      const data = await ragApi.getAuthors()
       authorList.value = data.authors || []
       authorsLoaded.value = true
     } catch {}
@@ -217,34 +156,15 @@
     queryStageMessage.value = ''
 
     try {
-      const resp = await fetch('/api/rag/query-stream', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          question: q,
-          filter_authors: selectedAuthors.value,
-          llm_profile: selectedLlmProfile.value || null,
-          api_key: readLocalStorage(LOCAL_API_KEY_KEY) || null,
-          deepseek_api_key:
-            readLocalStorage(LOCAL_DEEPSEEK_API_KEY_KEY) || null,
-          ...getCustomLlmPayload()
-        })
+      const stream = await ragApi.queryStream({
+        question: q,
+        filter_authors: selectedAuthors.value,
+        llm_profile: selectedLlmProfile.value || null,
+        api_key: getApiKey() || null,
+        deepseek_api_key: getDeepseekApiKey() || null,
+        ...getCustomLlmPayload()
       })
-
-      if (!resp.ok || !resp.body) {
-        let message = `查询失败（HTTP ${resp.status}）`
-        try {
-          const data = await resp.json()
-          if (data?.detail) {
-            message = data.detail
-          }
-        } catch {}
-        throw new Error(message)
-      }
-
-      const reader = resp.body.getReader()
+      const reader = stream.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
 
@@ -300,11 +220,7 @@
     isLoadingStatus.value = true
     indexStatusError.value = ''
     try {
-      const resp = await fetch('/api/rag/status')
-      const data = await resp.json()
-      if (!resp.ok) {
-        throw new Error(data.detail || `请求失败（HTTP ${resp.status}）`)
-      }
+      const data = await ragApi.getStatus()
       indexStatus.value = data
     } catch (err) {
       indexStatus.value = null
@@ -321,15 +237,7 @@
     indexMessage.value = ''
     indexError.value = ''
     try {
-      const resp = await fetch('/api/rag/index-all', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ force })
-      })
-      const data = await resp.json()
-      if (!resp.ok) {
-        throw new Error(data.detail || `请求失败（HTTP ${resp.status}）`)
-      }
+      const data = await ragApi.indexAll(force)
       await loadIndexStatus()
       const pending = indexStatus.value?.pending_index_runs
       const pendingText = Number.isFinite(pending)
@@ -378,10 +286,6 @@
     if (kind === 'markdown') return '转录原文'
     return kind || '未知类型'
   }
-
-  onMounted(() => {
-    loadLlmProfiles()
-  })
 </script>
 
 <template>
