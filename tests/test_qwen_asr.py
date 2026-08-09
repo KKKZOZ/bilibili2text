@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+import pytest
+
 from b2t.config import STTConfig
 from b2t.stt.qwen_asr import QwenSTTProvider
 
@@ -161,3 +163,26 @@ def test_submit_task_uses_qwen_filetrans_api(monkeypatch) -> None:
     assert (
         provider._extract_transcription_url(response) == "https://example.com/qwen.json"
     )
+
+
+def test_submit_task_reports_dashscope_submission_error(monkeypatch) -> None:
+    provider = _provider("fun-asr")
+
+    def fake_async_call(**kwargs):
+        return SimpleNamespace(
+            status_code=400,
+            code="InvalidApiKey",
+            message="API key is invalid",
+            request_id="req-1",
+            output=None,
+        )
+
+    monkeypatch.setattr("b2t.stt.qwen_asr.Transcription.async_call", fake_async_call)
+
+    with pytest.raises(RuntimeError) as exc_info:
+        provider._submit_task("https://example.com/audio.wav")
+
+    message = str(exc_info.value)
+    assert "DashScope transcription task submission failed" in message
+    assert "code=InvalidApiKey" in message
+    assert "message=API key is invalid" in message
