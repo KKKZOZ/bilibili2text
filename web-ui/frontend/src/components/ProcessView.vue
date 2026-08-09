@@ -103,6 +103,9 @@
   const enableSummary = ref(true)
   const preferBilibiliSubtitle = ref(true)
   const autoGenerateFancyHtml = ref(false)
+  const includeComments = ref(true)
+  const commentLimit = ref(500)
+  const downloadAllComments = ref(false)
   const currentSkipSummary = ref(false)
   const isStarting = ref(false)
   const isPolling = ref(false)
@@ -253,6 +256,17 @@
       ? matched.prompt_template
       : ''
   }
+
+  const normalizedCommentLimit = computed(() => {
+    if (downloadAllComments.value) {
+      return null
+    }
+    const parsed = Number(commentLimit.value)
+    if (!Number.isFinite(parsed)) {
+      return 500
+    }
+    return Math.min(1000, Math.max(1, Math.floor(parsed)))
+  })
 
   const previewedSummaryPresetText = computed(() =>
     buildSummaryPresetPreviewText(
@@ -826,6 +840,9 @@
               ? false
               : autoGenerateFancyHtml.value,
             prefer_bilibili_subtitle: preferBilibiliSubtitle.value,
+            include_comments:
+              !skipSummary && includeComments.value && !isUploadMode.value,
+            comment_limit: normalizedCommentLimit.value,
             api_key: props.requiresApiKey ? getLocalApiKey() : null,
             deepseek_api_key: props.requiresApiKey
               ? getLocalDeepseekApiKey() || null
@@ -1020,6 +1037,53 @@
               </span>
               <span class="switch-label">优先使用 B 站字幕</span>
             </label>
+            <div
+              class="summary-preset process-summary-field process-summary-toggle comments-summary-field"
+            >
+              <label class="switch switch-compact" for="include-comments">
+                <input
+                  id="include-comments"
+                  v-model="includeComments"
+                  type="checkbox"
+                />
+                <span class="switch-track">
+                  <span class="switch-thumb"></span>
+                </span>
+                <span class="switch-label">总结精选评论</span>
+              </label>
+              <p class="preset-hint">
+                支持 B 站和小宇宙。默认按热门排序下载前 500
+                条主评论；每条主评论的全部子评论都会下载，UP主回复会加粗。打开“下载全部主评论”后不限制主评论数量。
+              </p>
+              <div v-if="includeComments" class="comments-options">
+                <label class="comment-limit-field" for="comment-limit">
+                  <span>主评论数量</span>
+                  <input
+                    id="comment-limit"
+                    v-model.number="commentLimit"
+                    type="number"
+                    min="1"
+                    max="1000"
+                    step="1"
+                    :disabled="downloadAllComments"
+                  />
+                </label>
+                <label
+                  class="switch switch-compact"
+                  for="download-all-comments"
+                >
+                  <input
+                    id="download-all-comments"
+                    v-model="downloadAllComments"
+                    type="checkbox"
+                  />
+                  <span class="switch-track">
+                    <span class="switch-thumb"></span>
+                  </span>
+                  <span class="switch-label">下载全部主评论</span>
+                </label>
+              </div>
+            </div>
           </template>
 
           <template v-else>
@@ -1746,6 +1810,41 @@
 
   .process-summary-toggle {
     grid-column: 1 / -1;
+  }
+
+  .comments-summary-field {
+    gap: 10px;
+  }
+
+  .comments-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    align-items: center;
+  }
+
+  .comment-limit-field {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    color: #334155;
+  }
+
+  .comment-limit-field input {
+    width: 96px;
+    min-height: 38px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 8px 10px;
+    background: rgba(255, 255, 255, 0.86);
+    color: #0f172a;
+    font-size: 0.92rem;
+    font-weight: 700;
+  }
+
+  .comment-limit-field input:disabled {
+    color: #94a3b8;
+    background: rgba(226, 232, 240, 0.55);
   }
 
   .process-summary-field label {

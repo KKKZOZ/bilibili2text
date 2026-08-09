@@ -234,6 +234,71 @@ def post_process_summary_markdown(
     return "\n".join(parts).rstrip() + "\n"
 
 
+def summarize_comment_viewpoints(
+    comments_markdown: str,
+    config: SummarizeConfig,
+    *,
+    profile: str | None = None,
+) -> str:
+    """Summarize selected platform comments into a Markdown section."""
+    content = comments_markdown.strip()
+    if not content:
+        return ""
+
+    selected_profile = (profile or config.profile).strip()
+    model_profile = resolve_summarize_model_profile(config, override=selected_profile)
+    if not model_profile.api_key:
+        raise ValueError(
+            f"summarize.profiles.{selected_profile}.api_key is empty, please set it in the config file"
+        )
+
+    prompt = (
+        "请基于下面的视频或播客精选评论，提炼观众讨论中的相关观点，"
+        "输出 Markdown 片段并以二级标题 `## 精选评论观点` 开头。\n"
+        "要求：\n"
+        "- 总结高频观点、争议点、补充信息和情绪倾向。\n"
+        "- 重点关注标记为 `UP主回复` 的内容。\n"
+        "- 涉及 UP 主回复的结论或原话必须使用 Markdown 加粗。\n"
+        "- 不要输出表格。\n"
+        "- 不要编造评论中不存在的观点。\n\n"
+        f"{content}"
+    )
+    stream = stream_summary_completion(
+        prompt=prompt,
+        summarize_config=config,
+        model_profile=model_profile,
+        include_usage=True,
+    )
+    _, summary = collect_stream_result(stream)
+    return summary.strip()
+
+
+def append_comment_summary_to_markdown(
+    summary_path: Path | str,
+    comments_markdown: str,
+    config: SummarizeConfig,
+    *,
+    profile: str | None = None,
+) -> bool:
+    """Append summarized comment viewpoints to an existing summary file."""
+    comment_summary = summarize_comment_viewpoints(
+        comments_markdown,
+        config,
+        profile=profile,
+    )
+    if not comment_summary:
+        return False
+
+    summary_path = Path(summary_path)
+    original = summary_path.read_text(encoding="utf-8").rstrip()
+    summary_path.write_text(
+        f"{original}\n\n{comment_summary}\n",
+        encoding="utf-8",
+    )
+    format_markdown_with_markdownlint(summary_path)
+    return True
+
+
 def summarize(
     md_path: Path | str,
     config: SummarizeConfig,

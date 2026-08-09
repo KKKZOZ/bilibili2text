@@ -234,6 +234,7 @@ def test_custom_summary_preset_does_not_resolve_to_default_preset() -> None:
     assert resolved_preset == "__user_custom__"
     assert resolved_profile == "qwen3-5-plus"
 
+
 def test_timeline_summary_detects_timestamp_requirement() -> None:
     config = _config()
     config.summary_presets.presets["financial_timeline_merge"] = SummaryPreset(
@@ -386,7 +387,7 @@ def test_summary_only_fetches_xiaoyuzhou_metadata_without_redownloading_audio(
     monkeypatch.setattr(services_module, "summarize", fake_summarize)
     monkeypatch.setattr(
         services_module,
-        "export_summary_table_markdown",
+        "export_summary_table_without_video_time",
         lambda *args, **kwargs: None,
     )
 

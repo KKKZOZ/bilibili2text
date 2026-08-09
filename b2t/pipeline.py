@@ -8,8 +8,16 @@ from collections.abc import Callable
 from pathlib import Path
 from uuid import uuid4
 
-from b2t.config import AppConfig
+from b2t.config import AppConfig, build_bilibili_cookie
 from b2t.converter.json_to_md import TIMELINE_SCHEMA_VERSION, convert_json_to_md
+from b2t.download.comments import (
+    DEFAULT_COMMENT_LIMIT,
+    count_comment_replies,
+    count_up_replies,
+    fetch_platform_comments,
+    write_comments_json,
+    write_comments_markdown,
+)
 from b2t.download.metadata import VideoMetadata, get_video_metadata
 from b2t.download.platform import Platform, build_filename_component
 from b2t.download.subtitle import fetch_bilibili_subtitle
@@ -27,7 +35,7 @@ from b2t.storage import (
     create_stt_storage_backend,
 )
 from b2t.stt import create_stt_provider
-from b2t.summarize.llm import summarize
+from b2t.summarize.llm import append_comment_summary_to_markdown, summarize
 from b2t.summarize.timeline import (
     export_summary_table_without_video_time,
     export_summary_timeline_text,
@@ -36,6 +44,23 @@ from b2t.summarize.timeline import (
 logger = logging.getLogger(__name__)
 
 _LONGEST_DERIVED_ARTIFACT_SUFFIX = "_summary_no_table.png"
+_XIAOYUZHOU_BVID_PREFIX = f"{Platform.XIAOYUZHOU.value}_"
+
+
+def _comment_platform_from_metadata(metadata: VideoMetadata) -> Platform | None:
+    if metadata.bvid.startswith("BV") and metadata.aid > 0:
+        return Platform.BILIBILI
+    if metadata.bvid.startswith(_XIAOYUZHOU_BVID_PREFIX):
+        return Platform.XIAOYUZHOU
+    return None
+
+
+def _comment_platform_label(platform: Platform) -> str:
+    if platform == Platform.BILIBILI:
+        return "B 站"
+    if platform == Platform.XIAOYUZHOU:
+        return "小宇宙"
+    return platform.value
 
 
 def _ensure_bvid_prefixed_name(
@@ -84,6 +109,8 @@ def run_pipeline(
     stt_storage_backend: "StorageBackend | None" = None,
     prefer_bilibili_subtitle: bool = True,
     bilibili_subtitle_used_callback: Callable[[], None] | None = None,
+    include_comments: bool = False,
+    comment_limit: int | None = DEFAULT_COMMENT_LIMIT,
 ) -> dict[str, StoredArtifact]:
     """Run the full transcription pipeline
 
@@ -102,6 +129,11 @@ def run_pipeline(
         progress_callback: Stage progress callback with (stage_key, stage_label, progress_percent)
         prefer_bilibili_subtitle: Try Bilibili native subtitles before downloading
             audio. Ignored for local uploads.
+        include_comments: Fetch platform comments and append summarized viewpoints
+            to the summary when available.
+        comment_limit: Top-level comment limit. None means fetch all top-level
+            comments; child replies under selected top-level comments are always
+            fetched completely.
 
     Returns:
         Storage info for output files from each stage:
@@ -249,6 +281,59 @@ def run_pipeline(
         )
         work_dir.mkdir(exist_ok=True)
 
+        comments_markdown_text = ""
+        comment_platform = (
+            _comment_platform_from_metadata(metadata)
+            if include_comments and not use_local_audio and metadata is not None
+            else None
+        )
+        if comment_platform is not None and metadata is not None:
+            try:
+                platform_label = _comment_platform_label(comment_platform)
+                emit_progress("downloading", f"获取{platform_label}评论", 20)
+                logger.info("=== 获取%s评论 ===", platform_label)
+                logger.info(
+                    "评论下载配置：热门主评论=%s，子评论=每条主评论全部下载",
+                    "全部" if comment_limit is None else f"{comment_limit} 条",
+                )
+                comments = fetch_platform_comments(
+                    platform=comment_platform,
+                    resource_id=metadata.bvid,
+                    aid=metadata.aid,
+                    up_uid=metadata.author_uid,
+                    limit=comment_limit,
+                    sort="hot",
+                    cookie=(
+                        build_bilibili_cookie(config)
+                        if comment_platform == Platform.BILIBILI
+                        else ""
+                    ),
+                )
+                comments_json_path = work_dir / f"{work_dir.name}_comments.json"
+                comments_md_path = work_dir / f"{work_dir.name}_comments.md"
+                write_comments_json(comments, comments_json_path)
+                write_comments_markdown(comments, comments_md_path)
+                comments_markdown_text = comments_md_path.read_text(encoding="utf-8")
+                local_results["comments_json"] = comments_json_path
+                local_results["comments_markdown"] = comments_md_path
+                logger.info(
+                    "评论下载完成：平台=%s，主评论=%s，子评论=%s，UP主回复=%s，排序=%s，来源=%s，资源=%s",
+                    platform_label,
+                    comments.fetched_count,
+                    count_comment_replies(comments),
+                    count_up_replies(comments),
+                    comments.sort,
+                    comments.source,
+                    metadata.bvid,
+                )
+            except Exception as exc:
+                logger.warning("Failed to fetch platform comments: %s", exc)
+        elif include_comments:
+            logger.info(
+                "评论下载未执行：当前资源不是支持评论获取的平台，"
+                "或缺少必要元信息（子评论规则：若执行则每条主评论全部下载）"
+            )
+
         if audio_file is None:
             if bilibili_subtitle_used_callback is not None:
                 bilibili_subtitle_used_callback()
@@ -327,6 +412,16 @@ def run_pipeline(
                 prompt_template_override=summary_prompt_template,
                 metadata=metadata,
             )
+            if comments_markdown_text:
+                try:
+                    append_comment_summary_to_markdown(
+                        summary_path,
+                        comments_markdown_text,
+                        config.summarize,
+                        profile=summary_profile,
+                    )
+                except Exception as exc:
+                    logger.warning("Failed to summarize platform comments: %s", exc)
             local_results["summary"] = summary_path
 
             # Extract summary table as a separate Markdown file

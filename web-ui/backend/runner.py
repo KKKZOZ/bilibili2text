@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from threading import get_ident
 
+from b2t.download.comments import DEFAULT_COMMENT_LIMIT
 from b2t.download.platform import Platform
 from b2t.download.url_detect import detect_platform, extract_platform_id
 from b2t.download.ximalaya import resolve_ximalaya_sound_url
@@ -83,6 +84,8 @@ def _run_job(
     summary_prompt_template: str | None,
     auto_generate_fancy_html: bool,
     prefer_bilibili_subtitle: bool = True,
+    include_comments: bool = True,
+    comment_limit: int | None = DEFAULT_COMMENT_LIMIT,
     ephemeral_upload: bool = False,
     api_key: str | None = None,
     deepseek_api_key: str | None = None,
@@ -163,6 +166,8 @@ def _run_job(
             summary_profile=summary_profile,
             summary_prompt_template=summary_prompt_template,
             auto_generate_fancy_html=auto_generate_fancy_html,
+            include_comments=include_comments,
+            comment_limit=comment_limit,
         )
     ):
         _cleanup_upload_temp_dir(upload_temp_dir)
@@ -220,6 +225,7 @@ def _run_job(
                     storage_backend=storage_backend,
                     stt_storage_backend=stt_storage_backend,
                     prefer_bilibili_subtitle=False,
+                    include_comments=False,
                     progress_callback=lambda stage, label, progress: _update_job(
                         job_id,
                         status="running",
@@ -243,6 +249,8 @@ def _run_job(
                     storage_backend=storage_backend,
                     stt_storage_backend=stt_storage_backend,
                     prefer_bilibili_subtitle=prefer_bilibili_subtitle,
+                    include_comments=include_comments,
+                    comment_limit=comment_limit,
                     progress_callback=lambda stage, label, progress: _update_job(
                         job_id,
                         status="running",

@@ -245,6 +245,8 @@ def process_video(payload: ProcessRequest) -> ProcessStartResponse:
         summary_prompt_template=summary_prompt_template,
         auto_generate_fancy_html=payload.auto_generate_fancy_html,
         prefer_bilibili_subtitle=payload.prefer_bilibili_subtitle,
+        include_comments=payload.include_comments,
+        comment_limit=payload.comment_limit,
         api_key=_clean_optional_text(payload.api_key),
         deepseek_api_key=_clean_optional_text(payload.deepseek_api_key),
         custom_llm_base_url=_clean_optional_text(payload.custom_llm_base_url),

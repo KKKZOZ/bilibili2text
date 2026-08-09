@@ -35,6 +35,16 @@ class ProcessRequest(BaseModel):
         default=True,
         description="是否优先使用 B 站原生字幕，失败后回退到音频 ASR",
     )
+    include_comments: bool = Field(
+        default=True,
+        description="是否下载并总结支持平台的热门评论",
+    )
+    comment_limit: int | None = Field(
+        default=500,
+        ge=1,
+        le=1000,
+        description="下载的主评论数量；每条主评论的子评论全部下载；为空表示下载全部主评论",
+    )
     api_key: str | None = Field(
         default=None,
         description="open-public 模式下用户自带的阿里云 DashScope API Key",

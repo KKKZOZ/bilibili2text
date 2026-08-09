@@ -22,9 +22,10 @@
   } from 'lucide-vue-next'
   import FileList from './FileList.vue'
   import {
-    bilibiliVideoLabel,
-    bilibiliVideoUrl,
-    formatTime
+    formatTime,
+    resourceAuthorLabel,
+    resourceDisplayLabel,
+    resourceUrl
   } from '../utils/fileUtils'
   import { extractRagReferenceItems, renderMarkdown } from '../utils/markdown'
 
@@ -732,20 +733,21 @@
               <h2 class="detail-title">{{ historyDetail.title }}</h2>
               <div class="detail-meta">
                 <a
+                  v-if="resourceUrl(historyDetail.bvid, historyDetail.page)"
                   class="detail-bvid"
-                  :href="
-                    bilibiliVideoUrl(historyDetail.bvid, historyDetail.page)
-                  "
+                  :href="resourceUrl(historyDetail.bvid, historyDetail.page)"
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  {{
-                    bilibiliVideoLabel(historyDetail.bvid, historyDetail.page)
-                  }}
+                  {{ resourceDisplayLabel(historyDetail.bvid, historyDetail.page) }}
                 </a>
+                <span v-else class="detail-bvid">
+                  {{ resourceDisplayLabel(historyDetail.bvid, historyDetail.page) }}
+                </span>
                 <span v-if="historyDetail.author" class="detail-author-tag">
                   <User :size="12" />
-                  UP主 {{ historyDetail.author }}
+                  {{ resourceAuthorLabel(historyDetail.bvid) }}
+                  {{ historyDetail.author }}
                 </span>
                 <span v-if="historyDetail.pubdate" class="detail-pubdate">
                   <CalendarDays :size="14" />
@@ -938,9 +940,9 @@
                 v-for="item in ragReferenceItems"
                 :id="`source-${item.index}`"
                 :key="`${item.index}-${item.bvid}-${item.title}`"
-                :href="item.bvid ? bilibiliVideoUrl(item.bvid) : undefined"
+                :href="item.bvid ? resourceUrl(item.bvid) : undefined"
                 class="rag-history-source-card"
-                :class="{ 'no-link': !item.bvid }"
+                :class="{ 'no-link': !resourceUrl(item.bvid) }"
                 target="_blank"
                 rel="noopener noreferrer"
               >
@@ -951,8 +953,8 @@
                       item.title || item.bvid || '未知视频'
                     }}</span>
                     <span v-if="item.bvid" class="rag-history-source-bvid">
-                      {{ item.bvid }}
-                      <ExternalLink :size="11" />
+                      {{ resourceDisplayLabel(item.bvid) }}
+                      <ExternalLink v-if="resourceUrl(item.bvid)" :size="11" />
                     </span>
                   </div>
                   <div class="rag-history-source-score">{{ item.score }}%</div>
@@ -1125,18 +1127,28 @@
               </span>
               <span class="history-title">{{ item.title || item.bvid }}</span>
               <a
-                v-if="item.record_type !== 'rag_query' && item.bvid"
+                v-if="
+                  item.record_type !== 'rag_query' &&
+                  item.bvid &&
+                  resourceUrl(item.bvid, item.page)
+                "
                 class="history-bvid"
-                :href="bilibiliVideoUrl(item.bvid, item.page)"
+                :href="resourceUrl(item.bvid, item.page)"
                 target="_blank"
                 rel="noopener noreferrer"
                 @click.stop
               >
-                {{ bilibiliVideoLabel(item.bvid, item.page) }}
+                {{ resourceDisplayLabel(item.bvid, item.page) }}
               </a>
+              <span
+                v-else-if="item.record_type !== 'rag_query' && item.bvid"
+                class="history-bvid"
+              >
+                {{ resourceDisplayLabel(item.bvid, item.page) }}
+              </span>
               <span v-if="item.author" class="history-author-tag">
                 <User :size="12" />
-                UP主 {{ item.author }}
+                {{ resourceAuthorLabel(item.bvid) }} {{ item.author }}
               </span>
             </div>
             <div class="history-item-meta">

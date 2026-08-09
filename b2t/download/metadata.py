@@ -25,6 +25,7 @@ class VideoMetadata:
     pubdate: str  # ISO date string (YYYY-MM-DD HH:MM:SS)
     pubdate_timestamp: int  # Unix timestamp
     description: str
+    aid: int = 0
 
     @classmethod
     def from_platform_metadata(cls, pm: PlatformMetadata) -> "VideoMetadata":
@@ -108,6 +109,7 @@ async def get_video_metadata_async(bvid: str) -> VideoMetadata:
             pubdate=pubdate_readable,
             pubdate_timestamp=pubdate_timestamp,
             description=video_data.get("desc", ""),
+            aid=int(video_data.get("aid", 0) or 0),
         )
 
         logger.info(

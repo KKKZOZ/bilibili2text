@@ -8,17 +8,28 @@ from uuid import uuid4
 
 from b2t.config import (
     AppConfig,
+    build_bilibili_cookie,
     resolve_summarize_model_profile,
     resolve_summary_preset_name,
 )
 from b2t.converter.md_remove_table import MarkdownRemoveTableConverter
 from b2t.converter.md_to_png import MarkdownToPngConverter
+from b2t.download.comments import (
+    DEFAULT_COMMENT_LIMIT,
+    count_comment_replies,
+    count_up_replies,
+    fetch_platform_comments,
+    write_comments_json,
+    write_comments_markdown,
+)
 from b2t.download.metadata import VideoMetadata
+from b2t.download.platform import Platform
 from b2t.history import HistoryArtifact, infer_run_id, record_pipeline_run
 from b2t.storage import StorageBackend, StoredArtifact
 from b2t.storage.base import classify_artifact_filename
 from b2t.summarize.fancy_html import generate_fancy_summary_html
 from b2t.summarize.llm import (
+    append_comment_summary_to_markdown,
     summarize,
 )
 from b2t.summarize.timeline import (
@@ -33,6 +44,22 @@ logger = logging.getLogger(__name__)
 CUSTOM_SUMMARY_PRESET_VALUE = "__user_custom__"
 _XIAOYUZHOU_BVID_PREFIX = "xiaoyuzhou_"
 _MISSING_METADATA_TEXT = {"", "unknown"}
+
+
+def _comment_platform_from_metadata(metadata: VideoMetadata) -> Platform | None:
+    if metadata.bvid.startswith("BV") and metadata.aid > 0:
+        return Platform.BILIBILI
+    if metadata.bvid.startswith(_XIAOYUZHOU_BVID_PREFIX):
+        return Platform.XIAOYUZHOU
+    return None
+
+
+def _comment_platform_label(platform: Platform) -> str:
+    if platform == Platform.BILIBILI:
+        return "B 站"
+    if platform == Platform.XIAOYUZHOU:
+        return "小宇宙"
+    return platform.value
 
 
 def _clean_metadata_text(value: object) -> str:
@@ -60,6 +87,15 @@ def _history_detail_for_existing_results(
 
 
 def _fetch_platform_metadata_for_bvid(bvid: str) -> VideoMetadata | None:
+    if bvid.startswith("BV"):
+        try:
+            from b2t.download.metadata import get_video_metadata
+
+            return get_video_metadata(bvid)
+        except Exception as exc:
+            logger.warning("补取 Bilibili 元信息失败（将继续使用历史字段）: %s", exc)
+            return None
+
     if not bvid.startswith(_XIAOYUZHOU_BVID_PREFIX):
         return None
 
@@ -86,12 +122,16 @@ def _resolve_existing_video_metadata(
     title: str = "",
     author: str = "",
     pubdate: str = "",
+    require_platform_metadata: bool = False,
 ) -> VideoMetadata | None:
     """Resolve metadata for reused transcriptions without redownloading audio."""
     resolved_title = _clean_metadata_text(title)
     resolved_author = _clean_metadata_text(author)
     resolved_pubdate = _clean_metadata_text(pubdate)
     pubdate_timestamp = 0
+    author_uid = 0
+    description = ""
+    aid = 0
 
     if not (resolved_title and resolved_author and resolved_pubdate):
         detail = _history_detail_for_existing_results(
@@ -110,7 +150,9 @@ def _resolve_existing_video_metadata(
             )
 
     platform_metadata = None
-    if not (resolved_title and resolved_author and resolved_pubdate):
+    if require_platform_metadata or not (
+        resolved_title and resolved_author and resolved_pubdate
+    ):
         platform_metadata = _fetch_platform_metadata_for_bvid(bvid)
         if platform_metadata is not None:
             resolved_title = resolved_title or _clean_metadata_text(
@@ -124,6 +166,9 @@ def _resolve_existing_video_metadata(
             )
             if resolved_pubdate == _clean_metadata_text(platform_metadata.pubdate):
                 pubdate_timestamp = platform_metadata.pubdate_timestamp
+            author_uid = platform_metadata.author_uid
+            description = platform_metadata.description
+            aid = platform_metadata.aid
 
     if not (resolved_title or resolved_author or resolved_pubdate):
         return None
@@ -132,10 +177,11 @@ def _resolve_existing_video_metadata(
         bvid=bvid,
         title=resolved_title,
         author=resolved_author,
-        author_uid=0,
+        author_uid=author_uid,
         pubdate=resolved_pubdate,
         pubdate_timestamp=pubdate_timestamp,
-        description="",
+        description=description,
+        aid=aid,
     )
 
 
@@ -303,6 +349,83 @@ def _collect_all_artifacts_for_bvid(
     if artifacts:
         return _merge_with_fallback(artifacts)
     return fallback_artifacts
+
+
+def _fetch_comments_for_existing_summary(
+    *,
+    bvid: str,
+    metadata: VideoMetadata | None,
+    work_dir: Path,
+    storage_backend: StorageBackend,
+    config: AppConfig,
+    run_prefix: str,
+    summary_profile: str | None,
+    comment_limit: int | None,
+    summary_path: Path,
+) -> dict[str, StoredArtifact]:
+    if metadata is None:
+        logger.warning("历史转录缺少平台元信息，已跳过评论下载")
+        return {}
+
+    comment_platform = _comment_platform_from_metadata(metadata)
+    if comment_platform is None:
+        logger.warning("历史转录平台暂不支持评论下载，已跳过: %s", bvid)
+        return {}
+
+    try:
+        platform_label = _comment_platform_label(comment_platform)
+        logger.info(
+            "历史评论补充配置：平台=%s，热门主评论=%s，子评论=每条主评论全部下载",
+            platform_label,
+            "全部" if comment_limit is None else f"{comment_limit} 条",
+        )
+        comments = fetch_platform_comments(
+            platform=comment_platform,
+            resource_id=metadata.bvid or bvid,
+            aid=metadata.aid,
+            up_uid=metadata.author_uid,
+            limit=comment_limit,
+            sort="hot",
+            cookie=(
+                build_bilibili_cookie(config)
+                if comment_platform == Platform.BILIBILI
+                else ""
+            ),
+        )
+        comments_json_path = work_dir / f"{work_dir.name}_comments.json"
+        comments_md_path = work_dir / f"{work_dir.name}_comments.md"
+        write_comments_json(comments, comments_json_path)
+        write_comments_markdown(comments, comments_md_path)
+        comments_markdown_text = comments_md_path.read_text(encoding="utf-8")
+        append_comment_summary_to_markdown(
+            summary_path,
+            comments_markdown_text,
+            config.summarize,
+            profile=summary_profile,
+        )
+        logger.info(
+            "历史评论补充完成：平台=%s，主评论=%s，子评论=%s，UP主回复=%s，排序=%s，来源=%s，资源=%s",
+            platform_label,
+            comments.fetched_count,
+            count_comment_replies(comments),
+            count_up_replies(comments),
+            comments.sort,
+            comments.source,
+            metadata.bvid or bvid,
+        )
+        return {
+            "comments_json": storage_backend.store_file(
+                comments_json_path,
+                object_key=f"{run_prefix}/{comments_json_path.name}",
+            ),
+            "comments_markdown": storage_backend.store_file(
+                comments_md_path,
+                object_key=f"{run_prefix}/{comments_md_path.name}",
+            ),
+        }
+    except Exception as exc:
+        logger.warning("历史转录评论补充失败，已跳过: %s", exc)
+        return {}
 
 
 def _materialize_artifact_to_file(
@@ -513,6 +636,8 @@ def _run_summary_only_from_existing(
     title: str = "",
     author: str = "",
     pubdate: str = "",
+    include_comments: bool = False,
+    comment_limit: int | None = DEFAULT_COMMENT_LIMIT,
 ) -> dict[str, object]:
     markdown_artifact = existing_results.get("markdown")
     if markdown_artifact is None:
@@ -524,6 +649,7 @@ def _run_summary_only_from_existing(
         title=title,
         author=author,
         pubdate=pubdate,
+        require_platform_metadata=include_comments,
     )
 
     run_prefix = f"{transcription_id or bvid}-{uuid4().hex[:8]}"
@@ -555,6 +681,20 @@ def _run_summary_only_from_existing(
             metadata=metadata,
         )
 
+        comment_results: dict[str, StoredArtifact] = {}
+        if include_comments:
+            comment_results = _fetch_comments_for_existing_summary(
+                bvid=bvid,
+                metadata=metadata,
+                work_dir=work_dir,
+                storage_backend=storage_backend,
+                config=config,
+                run_prefix=run_prefix,
+                summary_profile=summary_profile,
+                comment_limit=comment_limit,
+                summary_path=summary_path,
+            )
+
         summary_table_md: Path | None = None
         try:
             summary_table_md = export_summary_table_without_video_time(summary_path)
@@ -577,6 +717,7 @@ def _run_summary_only_from_existing(
                 summary_timeline,
                 object_key=f"{run_prefix}/{summary_timeline.name}",
             )
+        results.update(comment_results)
         if metadata is not None:
             results["_metadata"] = metadata
 
