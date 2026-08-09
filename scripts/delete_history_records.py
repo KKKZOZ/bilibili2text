@@ -246,6 +246,13 @@ def _delete_plan(plan: CleanupPlan, config) -> int:
         except Exception as exc:
             failures.append(f"history run {run_id}: {exc}")
 
+    deleted_stock_cache = 0
+    if plan.target_type == "bvid" and plan.bvid:
+        try:
+            deleted_stock_cache = history_db.delete_stock_status_cache(bvid=plan.bvid)
+        except Exception as exc:
+            failures.append(f"stock status cache {plan.bvid}: {exc}")
+
     deleted_rag_runs, rag_failures = _delete_rag_runs(config, plan.run_ids)
     failures.extend(f"rag {failure}" for failure in rag_failures)
 
@@ -254,7 +261,8 @@ def _delete_plan(plan: CleanupPlan, config) -> int:
         f"{deleted_runs} history runs, "
         f"{deleted_artifacts} storage artifacts, "
         f"{deleted_dirs} local directories, "
-        f"{deleted_rag_runs} RAG run indexes."
+        f"{deleted_rag_runs} RAG run indexes, "
+        f"{deleted_stock_cache} stock cache rows."
     )
     if failures:
         print("Failures:", file=sys.stderr)

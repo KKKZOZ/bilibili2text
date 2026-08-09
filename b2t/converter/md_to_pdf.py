@@ -1,13 +1,15 @@
 """Markdown to PDF conversion (via Pandoc + Playwright, avoids LaTeX)"""
 
 import logging
-from pathlib import Path
 import re
 import shutil
 import subprocess
+from pathlib import Path
 
-from b2t.stock_status import build_stock_table_cards_html, extract_stock_symbols
 from playwright.sync_api import sync_playwright
+
+from b2t.converter.chromium import chromium_launch_options
+from b2t.stock_status import build_stock_table_cards_html, extract_stock_symbols
 
 logger = logging.getLogger(__name__)
 
@@ -223,14 +225,20 @@ class MarkdownToPdfConverter:
         is_table = options.get("is_table", False)
         as_of_date = options.get("as_of_date")
         enhance_stock_tables = options.get("enhance_stock_tables", False)
+        stock_statuses = options.get("stock_statuses")
 
         body_html = (
-            self._run_table_cards(input_path, as_of_date=as_of_date)
+            self._run_table_cards(
+                input_path,
+                as_of_date=as_of_date,
+                stock_statuses=stock_statuses,
+            )
             if is_table
             else (
                 self._run_markdown_with_stock_table_cards(
                     input_path,
                     as_of_date=as_of_date,
+                    stock_statuses=stock_statuses,
                 )
                 if enhance_stock_tables
                 else self._run_pandoc(input_path)
@@ -271,19 +279,32 @@ class MarkdownToPdfConverter:
             detail = exc.stderr.strip() or exc.stdout.strip() or str(exc)
             raise RuntimeError(f"pandoc PDF conversion failed: {detail}") from exc
 
-    def _run_table_cards(self, md_path: Path, *, as_of_date=None) -> str:
+    def _run_table_cards(
+        self,
+        md_path: Path,
+        *,
+        as_of_date=None,
+        stock_statuses=None,
+    ) -> str:
         markdown_content = md_path.read_text(encoding="utf-8")
         normalized_content = self._normalize_markdown_for_tables(markdown_content)
+        status_options = {"as_of_date": as_of_date}
+        if stock_statuses is not None:
+            status_options["stock_statuses"] = stock_statuses
         cards_html = build_stock_table_cards_html(
             normalized_content,
-            as_of_date=as_of_date,
+            **status_options,
         )
         if cards_html:
             return cards_html
         return self._run_pandoc(md_path)
 
     def _run_markdown_with_stock_table_cards(
-        self, md_path: Path, *, as_of_date=None
+        self,
+        md_path: Path,
+        *,
+        as_of_date=None,
+        stock_statuses=None,
     ) -> str:
         markdown_content = md_path.read_text(encoding="utf-8")
         normalized_content = self._normalize_markdown_for_tables(markdown_content)
@@ -304,9 +325,12 @@ class MarkdownToPdfConverter:
                     end += 1
                 table_markdown = "\n".join(lines[index:end]).strip()
                 if table_markdown and extract_stock_symbols(table_markdown):
+                    status_options = {"as_of_date": as_of_date}
+                    if stock_statuses is not None:
+                        status_options["stock_statuses"] = stock_statuses
                     cards_html = build_stock_table_cards_html(
                         table_markdown,
-                        as_of_date=as_of_date,
+                        **status_options,
                     )
                     if cards_html:
                         if markdown_buffer:
@@ -379,20 +403,16 @@ class MarkdownToPdfConverter:
 
     def _split_markdown_table_cells(self, line: str) -> list[str]:
         stripped = line.strip()
-        if stripped.startswith("|"):
-            stripped = stripped[1:]
-        if stripped.endswith("|"):
-            stripped = stripped[:-1]
+        stripped = stripped.removeprefix("|")
+        stripped = stripped.removesuffix("|")
         return [cell.strip() for cell in stripped.split("|")]
 
     def _looks_like_table_delimiter_line(self, line: str) -> bool:
         text = line.strip()
         if "|" not in text:
             return False
-        if text.startswith("|"):
-            text = text[1:]
-        if text.endswith("|"):
-            text = text[:-1]
+        text = text.removeprefix("|")
+        text = text.removesuffix("|")
         cells = [
             cell.strip().translate(TABLE_DASH_TRANSLATION) for cell in text.split("|")
         ]
@@ -403,7 +423,7 @@ class MarkdownToPdfConverter:
     def _render_html_to_pdf(self, *, html_content: str, output_path: Path) -> None:
         try:
             with sync_playwright() as p:
-                browser = p.chromium.launch()
+                browser = p.chromium.launch(**chromium_launch_options())
                 page = browser.new_page()
                 page.set_content(html_content, wait_until="networkidle")
                 page.pdf(

@@ -4,9 +4,9 @@ import os
 
 os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "true")
 
-import litellm  # noqa: E402
+import litellm
 
-from b2t.config import RagEmbeddingConfig  # noqa: E402
+from b2t.config import RagEmbeddingConfig
 
 
 def _prefix_model(config: RagEmbeddingConfig) -> str:

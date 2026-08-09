@@ -23,6 +23,7 @@ export function resolveFileType(filename, kind) {
     summary_png: 'PNG',
     summary_no_table_png: 'PNG',
     summary_text: 'TXT',
+    summary_timeline: 'TXT',
     summary_fancy_html: 'HTML',
     summary_table_md: 'Markdown',
     summary_table_png: 'PNG',
@@ -82,6 +83,9 @@ export function buildArtifactDisplayName(artifact, options = {}) {
   ) {
     return `${bvid}_总结`
   }
+  if (artifact.kind === 'summary_timeline') {
+    return `${bvid}_时间线`
+  }
   if (
     artifact.kind === 'summary_no_table' ||
     artifact.kind === 'summary_no_table_png'
@@ -140,9 +144,115 @@ export function formatTime(isoString) {
   })
 }
 
-export function bilibiliVideoUrl(bvid) {
+export function bilibiliVideoUrl(bvid, page = null) {
   if (typeof bvid !== 'string' || bvid.trim() === '') {
     return 'https://www.bilibili.com/'
   }
-  return `https://www.bilibili.com/video/${encodeURIComponent(bvid.trim())}`
+  const baseUrl = `https://www.bilibili.com/video/${encodeURIComponent(bvid.trim())}`
+  const pageNumber = Number(page)
+  return Number.isInteger(pageNumber) && pageNumber > 1
+    ? `${baseUrl}?p=${pageNumber}`
+    : baseUrl
+}
+
+export function bilibiliVideoLabel(bvid, page = null) {
+  const pageNumber = Number(page)
+  return Number.isInteger(pageNumber) && pageNumber > 1
+    ? `${bvid} · P${pageNumber}`
+    : bvid
+}
+
+const PLATFORM_RESOURCE_PREFIXES = {
+  xiaoyuzhou: {
+    name: '小宇宙',
+    authorLabel: '主播',
+    url: (id) =>
+      `https://www.xiaoyuzhoufm.com/episode/${encodeURIComponent(id)}`
+  },
+  ximalaya: {
+    name: '喜马拉雅',
+    authorLabel: '主播',
+    url: (id) => `https://www.ximalaya.com/sound/${encodeURIComponent(id)}`
+  }
+}
+
+export function resourcePlatformInfo(resourceId) {
+  const raw = typeof resourceId === 'string' ? resourceId.trim() : ''
+  if (!raw) {
+    return {
+      key: 'unknown',
+      name: '资源',
+      id: '',
+      authorLabel: '作者',
+      url: null
+    }
+  }
+
+  for (const [key, config] of Object.entries(PLATFORM_RESOURCE_PREFIXES)) {
+    const prefix = `${key}_`
+    if (raw.toLowerCase().startsWith(prefix)) {
+      const id = raw.slice(prefix.length)
+      return {
+        key,
+        name: config.name,
+        id,
+        authorLabel: config.authorLabel,
+        url: id ? config.url(id) : null
+      }
+    }
+  }
+
+  if (/^BV[0-9A-Za-z]+$/i.test(raw)) {
+    return {
+      key: 'bilibili',
+      name: 'Bilibili',
+      id: raw,
+      authorLabel: 'UP主',
+      url: bilibiliVideoUrl(raw)
+    }
+  }
+
+  if (/^upload-/i.test(raw)) {
+    return {
+      key: 'upload',
+      name: '上传',
+      id: raw.replace(/^upload-/i, ''),
+      authorLabel: '作者',
+      url: null
+    }
+  }
+
+  return {
+    key: 'unknown',
+    name: '资源',
+    id: raw,
+    authorLabel: '作者',
+    url: null
+  }
+}
+
+export function resourceUrl(resourceId, page = null) {
+  const info = resourcePlatformInfo(resourceId)
+  if (info.key === 'bilibili') {
+    return bilibiliVideoUrl(info.id, page)
+  }
+  return info.url
+}
+
+export function resourceDisplayLabel(resourceId, page = null) {
+  const info = resourcePlatformInfo(resourceId)
+  if (!info.id) {
+    return info.name
+  }
+  if (info.key === 'bilibili') {
+    return bilibiliVideoLabel(info.id, page)
+  }
+  if (info.key === 'unknown') {
+    return info.id
+  }
+  return `${info.name} ${info.id}`
+}
+
+export function resourceAuthorLabel(resourceId) {
+  return resourcePlatformInfo(resourceId).authorLabel
 }

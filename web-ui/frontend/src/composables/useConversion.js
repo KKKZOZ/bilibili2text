@@ -14,7 +14,8 @@ export function useConversion() {
     extraPayload = {}
   ) => {
     const renderMode = extraPayload?.render_mode || ''
-    const key = `${downloadId}-${targetFormat}-${renderMode}`
+    const sourceVariant = extraPayload?.source_variant || ''
+    const key = `${downloadId}-${targetFormat}-${renderMode}-${sourceVariant}`
     if (convertingItems.value.has(key)) {
       return
     }
@@ -51,8 +52,9 @@ export function useConversion() {
 
   const isConverting = (downloadId, targetFormat, extraPayload = {}) => {
     const renderMode = extraPayload?.render_mode || ''
+    const sourceVariant = extraPayload?.source_variant || ''
     return convertingItems.value.has(
-      `${downloadId}-${targetFormat}-${renderMode}`
+      `${downloadId}-${targetFormat}-${renderMode}-${sourceVariant}`
     )
   }
 

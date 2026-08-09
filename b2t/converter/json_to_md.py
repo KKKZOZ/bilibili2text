@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+TIMELINE_SCHEMA_VERSION = 1
 
 
 def ms_to_mmss(milliseconds: int) -> str:
@@ -16,11 +17,11 @@ def ms_to_mmss(milliseconds: int) -> str:
     return f"{minutes:02d}:{seconds:02d}"
 
 
-def _extract_timed_sentences(data: dict) -> list[tuple[int, str]]:
-    """Extract (millisecond timestamp, text) list from different STT provider JSON formats."""
-    timed_sentences: list[tuple[int, str]] = []
+def _extract_timed_sentences(data: dict) -> list[tuple[int, str, str]]:
+    """Extract (millisecond timestamp, speaker_id, text) list from different STT provider JSON formats."""
+    timed_sentences: list[tuple[int, str, str]] = []
 
-    # Qwen format: transcripts[].sentences[]
+    # Qwen / fun-asr format: transcripts[].sentences[]
     transcripts = data.get("transcripts", [])
     if isinstance(transcripts, list) and transcripts:
         for transcript in transcripts:
@@ -35,11 +36,15 @@ def _extract_timed_sentences(data: dict) -> list[tuple[int, str]]:
                     continue
                 begin_time = int(sentence.get("begin_time", 0))
                 text = str(sentence.get("text", "")).strip()
+                raw_speaker_id = sentence.get("speaker_id")
+                speaker_id = (
+                    "" if raw_speaker_id is None else str(raw_speaker_id).strip()
+                )
                 if text:
-                    timed_sentences.append((begin_time, text))
+                    timed_sentences.append((begin_time, speaker_id, text))
         return timed_sentences
 
-    # Groq format: segments[]
+    # Groq format: segments[] — no speaker_id
     segments = data.get("segments", [])
     if isinstance(segments, list) and segments:
         for segment in segments:
@@ -48,10 +53,10 @@ def _extract_timed_sentences(data: dict) -> list[tuple[int, str]]:
             start_seconds = float(segment.get("start", 0))
             text = str(segment.get("text", "")).strip()
             if text:
-                timed_sentences.append((int(start_seconds * 1000), text))
+                timed_sentences.append((int(start_seconds * 1000), "", text))
         return timed_sentences
 
-    # Volc format: result.utterances[]
+    # Volc format: result.utterances[] — no speaker_id
     result = data.get("result")
     if isinstance(result, dict):
         utterances = result.get("utterances", [])
@@ -62,7 +67,7 @@ def _extract_timed_sentences(data: dict) -> list[tuple[int, str]]:
                 start_time = int(utterance.get("start_time", 0))
                 text = str(utterance.get("text", "")).strip()
                 if text:
-                    timed_sentences.append((start_time, text))
+                    timed_sentences.append((start_time, "", text))
             return timed_sentences
 
     # Fallback: full text
@@ -70,9 +75,33 @@ def _extract_timed_sentences(data: dict) -> list[tuple[int, str]]:
     if not text and isinstance(result, dict):
         text = str(result.get("text", "")).strip()
     if text:
-        timed_sentences.append((0, text))
+        timed_sentences.append((0, "", text))
 
     return timed_sentences
+
+
+def _has_explicit_timeline(data: dict) -> bool:
+    """Return whether the provider payload contains real sentence/segment timing."""
+    transcripts = data.get("transcripts")
+    if isinstance(transcripts, list):
+        for transcript in transcripts:
+            if (
+                isinstance(transcript, dict)
+                and isinstance(transcript.get("sentences"), list)
+                and transcript["sentences"]
+            ):
+                return True
+
+    segments = data.get("segments")
+    if isinstance(segments, list) and segments:
+        return True
+
+    result = data.get("result")
+    return (
+        isinstance(result, dict)
+        and isinstance(result.get("utterances"), list)
+        and bool(result["utterances"])
+    )
 
 
 def _join_paragraph_texts(parts: list[str]) -> str:
@@ -110,8 +139,8 @@ def convert_json_to_md(
     """Convert JSON transcription result to Markdown format
 
     Segmentation strategy:
-    - By default, split by sentence
-    - If sentence length is <= min_length, merge it with the next sentence
+    - Preserve every sentence/cue when the provider supplies an explicit timeline
+    - For untimed fallback text, merge short sentences using ``min_length``
 
     Args:
         json_path: JSON file path
@@ -147,9 +176,26 @@ def convert_json_to_md(
     # Process transcription content (compatible with Qwen and Groq)
     timed_sentences = _extract_timed_sentences(data)
 
+    # Keep provider sentence boundaries whenever real timing exists. This covers
+    # Bilibili timeline subtitles, DashScope/FunASR, Groq, and Volc payloads, and lets
+    # downstream summaries cite the actual mention time instead of a merged paragraph.
+    if _has_explicit_timeline(data):
+        for start_time, speaker_id, text in timed_sentences:
+            if not text:
+                continue
+            time_str = ms_to_mmss(start_time)
+            speaker_label = f"[spk_{speaker_id}] " if speaker_id else ""
+            lines.append(f"Speaker {time_str}")
+            lines.append(f"{speaker_label}{text}")
+            lines.append("")
+
+        output_path.write_text("\n".join(lines), encoding="utf-8")
+        logger.info("Markdown file generated: %s", output_path)
+        return output_path
+
     i = 0
     while i < len(timed_sentences):
-        start_time, text = timed_sentences[i]
+        start_time, _, text = timed_sentences[i]
         if not text:
             i += 1
             continue
@@ -158,7 +204,7 @@ def convert_json_to_md(
 
         while len(text) <= min_length and i + 1 < len(timed_sentences):
             i += 1
-            _, next_text = timed_sentences[i]
+            _, _, next_text = timed_sentences[i]
             if next_text:
                 paragraph_texts.append(next_text)
                 text = next_text

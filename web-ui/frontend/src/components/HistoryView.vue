@@ -7,16 +7,26 @@
     ArrowLeft,
     Brain,
     CalendarDays,
+    ChevronLeft,
+    ChevronRight,
+    ChevronsLeft,
+    ChevronsRight,
     Clock,
     FileText,
     LoaderCircle,
+    RefreshCw,
     Search,
     Trash2,
     User,
     XCircle
   } from 'lucide-vue-next'
   import FileList from './FileList.vue'
-  import { bilibiliVideoUrl, formatTime } from '../utils/fileUtils'
+  import {
+    formatTime,
+    resourceAuthorLabel,
+    resourceDisplayLabel,
+    resourceUrl
+  } from '../utils/fileUtils'
   import { extractRagReferenceItems, renderMarkdown } from '../utils/markdown'
 
   const route = useRoute()
@@ -58,6 +68,7 @@
   const historyPage = ref(1)
   const historyPageSize = ref(20)
   const historyHasMore = ref(false)
+  const historyJumpPage = ref('')
   const historySearch = ref('')
   const historyRecordType = ref('') // '' | 'transcription' | 'rag_query'
   const historyLoading = ref(false)
@@ -70,6 +81,7 @@
   const regenerateLoading = ref(false)
   const regenerateError = ref('')
   const regenerateSuccess = ref('')
+  const regenerateOverwriteConfirm = ref(false)
   const selectedHistorySummaryPreset = ref('')
   const selectedHistorySummaryProfile = ref('')
   const ragAnswerMarkdown = ref('')
@@ -83,9 +95,13 @@
   const ACTIVE_JOB_IDS_KEY = 'b2t.active-job-ids'
   const LOCAL_API_KEY_KEY = 'b2t.public-api-key'
   const LOCAL_DEEPSEEK_API_KEY_KEY = 'b2t.public-deepseek-api-key'
+  const LOCAL_CUSTOM_LLM_BASE_URL_KEY = 'b2t.public-custom-llm-base-url'
+  const LOCAL_CUSTOM_LLM_API_KEY_KEY = 'b2t.public-custom-llm-api-key'
+  const LOCAL_CUSTOM_LLM_MODEL_KEY = 'b2t.public-custom-llm-model'
   const LOCAL_OPEN_PUBLIC_SUMMARY_TEMPLATE_KEY =
     'b2t.open-public-summary-template'
   const CUSTOM_SUMMARY_PRESET_VALUE = '__user_custom__'
+  const CUSTOM_LLM_PROFILE_NAME = 'open_public_custom_llm'
   const activeJobs = ref([])
   let activeJobsPollTimer = null
 
@@ -184,10 +200,7 @@
   )
 
   const selectedRegeneratePresetName = computed(() => {
-    if (
-      !selectedHistorySummaryPreset.value ||
-      selectedHistorySummaryPreset.value === CUSTOM_SUMMARY_PRESET_VALUE
-    ) {
+    if (!selectedHistorySummaryPreset.value) {
       return props.summaryDefaultPreset || ''
     }
     return selectedHistorySummaryPreset.value
@@ -216,9 +229,7 @@
     )
   })
 
-  const regenerateDisabled = computed(
-    () => regenerateLoading.value || isSelectedSummaryAlreadyGenerated.value
-  )
+  const regenerateDisabled = computed(() => regenerateLoading.value)
 
   const getLocalApiKey = () => {
     try {
@@ -236,6 +247,46 @@
     } catch {
       return ''
     }
+  }
+
+  const getCustomLlmPayload = () => {
+    if (!props.requiresApiKey) {
+      return {
+        custom_llm_base_url: null,
+        custom_llm_api_key: null,
+        custom_llm_model: null
+      }
+    }
+    try {
+      return {
+        custom_llm_base_url:
+          (
+            window.localStorage.getItem(LOCAL_CUSTOM_LLM_BASE_URL_KEY) || ''
+          ).trim() || null,
+        custom_llm_api_key:
+          (
+            window.localStorage.getItem(LOCAL_CUSTOM_LLM_API_KEY_KEY) || ''
+          ).trim() || null,
+        custom_llm_model:
+          (
+            window.localStorage.getItem(LOCAL_CUSTOM_LLM_MODEL_KEY) || ''
+          ).trim() || null
+      }
+    } catch {
+      return {
+        custom_llm_base_url: null,
+        custom_llm_api_key: null,
+        custom_llm_model: null
+      }
+    }
+  }
+
+  const formatSummaryProfileLabel = (profile) => {
+    if (!profile) return ''
+    if (profile.name === CUSTOM_LLM_PROFILE_NAME) {
+      return `custom(${profile.model || 'model'})`
+    }
+    return `${profile.name} (${profile.model})`
   }
 
   const historyPresetOptions = computed(() => {
@@ -293,6 +344,7 @@
     ragFancyHtmlError.value = ''
     regenerateError.value = ''
     regenerateSuccess.value = ''
+    regenerateOverwriteConfirm.value = false
     selectedHistorySummaryPreset.value =
       props.selectedSummaryPreset || props.summaryDefaultPreset || ''
     selectedHistorySummaryProfile.value = props.selectedSummaryProfile || ''
@@ -386,7 +438,8 @@
           api_key: props.requiresApiKey ? getLocalApiKey() || null : null,
           deepseek_api_key: props.requiresApiKey
             ? getLocalDeepseekApiKey() || null
-            : null
+            : null,
+          ...getCustomLlmPayload()
         })
       })
       const data = await resp.json()
@@ -432,14 +485,9 @@
     }
   }
 
-  const regenerateSummary = async () => {
+  const regenerateSummary = async (overwriteExisting = false) => {
     const runId = historyDetail.value?.run_id
     if (!runId) {
-      return
-    }
-    if (isSelectedSummaryAlreadyGenerated.value) {
-      regenerateError.value =
-        '该模型配置与总结模板已经生成过，请选择不同配置后再重新生成。'
       return
     }
     let customTemplate = null
@@ -461,7 +509,14 @@
         return
       }
     }
+    if (isSelectedSummaryAlreadyGenerated.value && !overwriteExisting) {
+      regenerateError.value = ''
+      regenerateSuccess.value = ''
+      regenerateOverwriteConfirm.value = true
+      return
+    }
 
+    regenerateOverwriteConfirm.value = false
     regenerateLoading.value = true
     regenerateError.value = ''
     regenerateSuccess.value = ''
@@ -477,10 +532,12 @@
             summary_preset: selectedRegeneratePresetName.value || null,
             summary_profile: selectedRegenerateProfileName.value || null,
             summary_prompt_template: customTemplate || null,
+            overwrite_existing: overwriteExisting,
             api_key: props.requiresApiKey ? getLocalApiKey() : null,
             deepseek_api_key: props.requiresApiKey
               ? getLocalDeepseekApiKey() || null
-              : null
+              : null,
+            ...getCustomLlmPayload()
           })
         }
       )
@@ -490,13 +547,21 @@
       }
 
       historyDetail.value = data
-      regenerateSuccess.value = '总结重新生成完成，文件已持久化到存储后端。'
+      regenerateSuccess.value = overwriteExisting
+        ? '总结重新生成完成，原有同配置结果已覆盖。'
+        : '总结重新生成完成，文件已持久化到存储后端。'
       await loadHistory()
     } catch (err) {
       regenerateError.value =
         err instanceof Error ? err.message : '重新生成总结失败'
     } finally {
       regenerateLoading.value = false
+    }
+  }
+
+  const cancelRegenerateOverwrite = () => {
+    if (!regenerateLoading.value) {
+      regenerateOverwriteConfirm.value = false
     }
   }
 
@@ -515,17 +580,31 @@
   }
 
   const historyPrevPage = () => {
-    if (historyPage.value > 1) {
-      historyPage.value--
-      loadHistory()
-    }
+    goToHistoryPage(historyPage.value - 1)
   }
 
   const historyNextPage = () => {
-    if (historyHasMore.value) {
-      historyPage.value++
-      loadHistory()
+    goToHistoryPage(historyPage.value + 1)
+  }
+
+  const goToHistoryPage = (page) => {
+    const parsedPage = Number.parseInt(String(page), 10)
+    if (!Number.isFinite(parsedPage)) {
+      historyJumpPage.value = ''
+      return
     }
+    const targetPage = Math.min(
+      historyTotalPages.value,
+      Math.max(1, parsedPage)
+    )
+    historyJumpPage.value = ''
+    if (targetPage === historyPage.value || historyLoading.value) return
+    historyPage.value = targetPage
+    loadHistory()
+  }
+
+  const submitHistoryPageJump = () => {
+    goToHistoryPage(historyJumpPage.value)
   }
 
   const confirmDelete = (runId) => {
@@ -615,6 +694,7 @@
     ragFancyHtmlError.value = ''
     regenerateError.value = ''
     regenerateSuccess.value = ''
+    regenerateOverwriteConfirm.value = false
     stopRagFancyHtmlPolling()
   })
 
@@ -653,16 +733,21 @@
               <h2 class="detail-title">{{ historyDetail.title }}</h2>
               <div class="detail-meta">
                 <a
+                  v-if="resourceUrl(historyDetail.bvid, historyDetail.page)"
                   class="detail-bvid"
-                  :href="bilibiliVideoUrl(historyDetail.bvid)"
+                  :href="resourceUrl(historyDetail.bvid, historyDetail.page)"
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  {{ historyDetail.bvid }}
+                  {{ resourceDisplayLabel(historyDetail.bvid, historyDetail.page) }}
                 </a>
+                <span v-else class="detail-bvid">
+                  {{ resourceDisplayLabel(historyDetail.bvid, historyDetail.page) }}
+                </span>
                 <span v-if="historyDetail.author" class="detail-author-tag">
                   <User :size="12" />
-                  UP主 {{ historyDetail.author }}
+                  {{ resourceAuthorLabel(historyDetail.bvid) }}
+                  {{ historyDetail.author }}
                 </span>
                 <span v-if="historyDetail.pubdate" class="detail-pubdate">
                   <CalendarDays :size="14" />
@@ -722,7 +807,7 @@
                   :key="profile.name"
                   :value="profile.name"
                 >
-                  {{ profile.name }} ({{ profile.model }})
+                  {{ formatSummaryProfileLabel(profile) }}
                 </option>
               </select>
             </div>
@@ -748,15 +833,6 @@
                   {{ preset.label }}
                 </option>
               </select>
-              <p
-                v-if="
-                  requiresApiKey &&
-                  selectedHistorySummaryPreset === CUSTOM_SUMMARY_PRESET_VALUE
-                "
-                class="preset-hint"
-              >
-                当前将使用你在 API Key 页面保存的自定义模板。
-              </p>
             </div>
           </div>
 
@@ -764,7 +840,7 @@
             class="submit history-regenerate-button"
             type="button"
             :disabled="regenerateDisabled"
-            @click="regenerateSummary"
+            @click="regenerateSummary(false)"
           >
             <LoaderCircle v-if="regenerateLoading" :size="16" class="spin" />
             <span>{{
@@ -775,7 +851,7 @@
             v-if="isSelectedSummaryAlreadyGenerated"
             class="preset-hint duplicate-summary-hint"
           >
-            该模型配置与总结模板已经生成过，请选择不同配置后再重新生成。
+            该模型配置与总结模板已经生成过；重新生成前将要求确认并覆盖原结果。
           </p>
           <p v-if="regenerateError" class="inline-error">
             <AlertCircle :size="16" />
@@ -864,9 +940,9 @@
                 v-for="item in ragReferenceItems"
                 :id="`source-${item.index}`"
                 :key="`${item.index}-${item.bvid}-${item.title}`"
-                :href="item.bvid ? bilibiliVideoUrl(item.bvid) : undefined"
+                :href="item.bvid ? resourceUrl(item.bvid) : undefined"
                 class="rag-history-source-card"
-                :class="{ 'no-link': !item.bvid }"
+                :class="{ 'no-link': !resourceUrl(item.bvid) }"
                 target="_blank"
                 rel="noopener noreferrer"
               >
@@ -877,8 +953,8 @@
                       item.title || item.bvid || '未知视频'
                     }}</span>
                     <span v-if="item.bvid" class="rag-history-source-bvid">
-                      {{ item.bvid }}
-                      <ExternalLink :size="11" />
+                      {{ resourceDisplayLabel(item.bvid) }}
+                      <ExternalLink v-if="resourceUrl(item.bvid)" :size="11" />
                     </span>
                   </div>
                   <div class="rag-history-source-score">{{ item.score }}%</div>
@@ -912,6 +988,7 @@
                   'summary_fancy_html',
                   'summary_table_md',
                   'summary_table_pdf',
+                  'summary_timeline',
                   'text',
                   'json',
                   'audio'
@@ -1050,18 +1127,28 @@
               </span>
               <span class="history-title">{{ item.title || item.bvid }}</span>
               <a
-                v-if="item.record_type !== 'rag_query' && item.bvid"
+                v-if="
+                  item.record_type !== 'rag_query' &&
+                  item.bvid &&
+                  resourceUrl(item.bvid, item.page)
+                "
                 class="history-bvid"
-                :href="bilibiliVideoUrl(item.bvid)"
+                :href="resourceUrl(item.bvid, item.page)"
                 target="_blank"
                 rel="noopener noreferrer"
                 @click.stop
               >
-                {{ item.bvid }}
+                {{ resourceDisplayLabel(item.bvid, item.page) }}
               </a>
+              <span
+                v-else-if="item.record_type !== 'rag_query' && item.bvid"
+                class="history-bvid"
+              >
+                {{ resourceDisplayLabel(item.bvid, item.page) }}
+              </span>
               <span v-if="item.author" class="history-author-tag">
                 <User :size="12" />
-                UP主 {{ item.author }}
+                {{ resourceAuthorLabel(item.bvid) }} {{ item.author }}
               </span>
             </div>
             <div class="history-item-meta">
@@ -1096,15 +1183,95 @@
 
       <!-- Pagination -->
       <div v-if="historyTotal > historyPageSize" class="history-pagination">
-        <button :disabled="historyPage <= 1" @click="historyPrevPage">
-          上一页
+        <button
+          class="pagination-icon-button"
+          :disabled="historyPage <= 1 || historyLoading"
+          title="第一页"
+          aria-label="跳转到第一页"
+          @click="goToHistoryPage(1)"
+        >
+          <ChevronsLeft :size="16" />
         </button>
-        <span>第 {{ historyPage }} 页 / 共 {{ historyTotalPages }} 页</span>
-        <button :disabled="!historyHasMore" @click="historyNextPage">
-          下一页
+        <button
+          class="pagination-icon-button"
+          :disabled="historyPage <= 1 || historyLoading"
+          title="上一页"
+          aria-label="跳转到上一页"
+          @click="historyPrevPage"
+        >
+          <ChevronLeft :size="16" />
+        </button>
+        <span class="pagination-status">
+          第 {{ historyPage }} 页 / 共 {{ historyTotalPages }} 页
+        </span>
+        <form class="pagination-jump" @submit.prevent="submitHistoryPageJump">
+          <input
+            v-model="historyJumpPage"
+            type="number"
+            inputmode="numeric"
+            min="1"
+            :max="historyTotalPages"
+            placeholder="页码"
+            aria-label="输入要跳转的页码"
+            :disabled="historyLoading"
+          />
+          <button type="submit" :disabled="historyLoading || !historyJumpPage">
+            跳转
+          </button>
+        </form>
+        <button
+          class="pagination-icon-button"
+          :disabled="!historyHasMore || historyLoading"
+          title="下一页"
+          aria-label="跳转到下一页"
+          @click="historyNextPage"
+        >
+          <ChevronRight :size="16" />
+        </button>
+        <button
+          class="pagination-icon-button"
+          :disabled="!historyHasMore || historyLoading"
+          title="最后一页"
+          aria-label="跳转到最后一页"
+          @click="goToHistoryPage(historyTotalPages)"
+        >
+          <ChevronsRight :size="16" />
         </button>
       </div>
     </article>
+
+    <div
+      v-if="regenerateOverwriteConfirm"
+      class="modal-overlay"
+      @click="cancelRegenerateOverwrite"
+    >
+      <div
+        class="modal-content"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="regenerate-overwrite-title"
+        @click.stop
+      >
+        <h3 id="regenerate-overwrite-title">确认覆盖总结</h3>
+        <p>
+          当前模型配置“{{ selectedRegenerateProfileName }}”与总结模板“{{
+            selectedRegeneratePresetName
+          }}”已经生成过。继续后将重新生成总结，并替换原总结及其表格、时间线和导出文件。
+        </p>
+        <div class="modal-actions">
+          <button class="cancel-button" @click="cancelRegenerateOverwrite">
+            取消
+          </button>
+          <button
+            class="confirm-delete-button"
+            @click="regenerateSummary(true)"
+          >
+            <RefreshCw :size="16" />
+            <span>确认覆盖并生成</span>
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- Delete Confirmation Modal -->
     <div
@@ -1508,7 +1675,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 14px;
+    gap: 8px;
+    flex-wrap: wrap;
   }
 
   .history-pagination button {
@@ -1518,7 +1686,7 @@
     min-height: 34px;
     padding: 0 14px;
     border: 1px solid var(--line);
-    border-radius: 10px;
+    border-radius: 6px;
     background: rgba(255, 255, 255, 0.9);
     color: var(--text-soft);
     font-size: 0.84rem;
@@ -1543,6 +1711,42 @@
     font-size: 0.82rem;
     color: var(--text-muted);
     font-variant-numeric: tabular-nums;
+  }
+
+  .history-pagination .pagination-icon-button {
+    width: 34px;
+    min-width: 34px;
+    padding: 0;
+  }
+
+  .pagination-status {
+    min-width: 132px;
+    text-align: center;
+  }
+
+  .pagination-jump {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .pagination-jump input {
+    width: 70px;
+    height: 34px;
+    padding: 0 8px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.9);
+    color: var(--text);
+    font: inherit;
+    font-size: 0.84rem;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .pagination-jump input:focus {
+    outline: 2px solid rgba(20, 184, 166, 0.2);
+    border-color: #14b8a6;
   }
 
   /* ─── Detail header ──────────────────────────────────────────── */

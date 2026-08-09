@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from pathlib import Path
 import shutil
+import stat
 import subprocess
+from pathlib import Path
 
 import b2t.converter.md_to_pdf as md_to_pdf_module
 from b2t.converter.md_to_pdf import MarkdownToPdfConverter
@@ -25,6 +26,7 @@ def test_convert_uses_pandoc_html_then_playwright_pdf(
     calls: list[tuple[list[str], dict[str, object]]] = []
     pdf_calls: list[dict[str, object]] = []
     content_calls: list[dict[str, object]] = []
+    pdf_bytes = b"%PDF-1.4\n%%EOF\n"
 
     def fake_run(*args, **kwargs):
         cmd = args[0]
@@ -37,6 +39,7 @@ def test_convert_uses_pandoc_html_then_playwright_pdf(
 
         def pdf(self, **kwargs) -> None:
             pdf_calls.append(kwargs)
+            Path(kwargs["path"]).write_bytes(pdf_bytes)
 
     class FakeBrowser:
         def __init__(self) -> None:
@@ -69,6 +72,8 @@ def test_convert_uses_pandoc_html_then_playwright_pdf(
     result = MarkdownToPdfConverter().convert(md_path, output_path)
 
     assert result == output_path
+    assert output_path.exists()
+    assert output_path.read_bytes() == pdf_bytes
     assert len(calls) == 1
     pandoc_cmd, run_kwargs = calls[0]
     assert pandoc_cmd == [
@@ -241,3 +246,52 @@ def test_convert_summary_table_pdf_uses_stock_cards(
     assert output_path.exists()
     assert captured["as_of_date"] == "2026-02-05 21:00:00"
     assert 'class="stock-table-cards"' in content_calls[0]["html"]
+
+
+def test_pdf_renderer_uses_configured_chromium_executable(
+    tmp_path: Path, monkeypatch
+) -> None:
+    executable_path = tmp_path / "chrome"
+    executable_path.write_bytes(b"chrome")
+    executable_path.chmod(executable_path.stat().st_mode | stat.S_IXUSR)
+    output_path = tmp_path / "output.pdf"
+    launch_options: list[dict[str, object]] = []
+
+    class FakePage:
+        def set_content(self, html: str, **kwargs) -> None:
+            return None
+
+        def pdf(self, **kwargs) -> None:
+            output_path.write_bytes(b"pdf")
+
+    class FakeBrowser:
+        def new_page(self) -> FakePage:
+            return FakePage()
+
+        def close(self) -> None:
+            return None
+
+    class FakePlaywright:
+        def __init__(self) -> None:
+            self.chromium = self
+
+        def launch(self, **kwargs) -> FakeBrowser:
+            launch_options.append(kwargs)
+            return FakeBrowser()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    monkeypatch.setenv("B2T_CHROMIUM_EXECUTABLE_PATH", str(executable_path))
+    monkeypatch.setattr(md_to_pdf_module, "sync_playwright", lambda: FakePlaywright())
+
+    MarkdownToPdfConverter()._render_html_to_pdf(
+        html_content="<p>content</p>",
+        output_path=output_path,
+    )
+
+    assert output_path.exists()
+    assert launch_options == [{"executable_path": str(executable_path.resolve())}]

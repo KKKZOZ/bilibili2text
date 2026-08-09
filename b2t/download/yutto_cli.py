@@ -4,6 +4,7 @@ import logging
 import re
 import subprocess
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 import requests
 
@@ -12,6 +13,9 @@ from b2t.download.metadata import VideoMetadata, get_video_metadata
 logger = logging.getLogger(__name__)
 
 _BVID_PATTERN = re.compile(r"(BV[0-9A-Za-z]{10})", re.IGNORECASE)
+_TARGET_ID_PAGE_PATTERN = re.compile(
+    r"BV[0-9A-Za-z]{10}_p([1-9][0-9]*)(?:[-_/]|$)", re.IGNORECASE
+)
 _B23_SHORT_URL_PATTERN = re.compile(r"b23\.tv/", re.IGNORECASE)
 _HTTP_URL_PATTERN = re.compile(r"https?://\S+")
 
@@ -23,6 +27,37 @@ def extract_bvid(raw: str) -> str | None:
         return None
     bvid = match.group(1)
     return "BV" + bvid[2:]
+
+
+def extract_bilibili_page(raw: str) -> int | None:
+    """Extract a positive Bilibili multipart page number from a URL."""
+    url_match = _HTTP_URL_PATTERN.search(raw.strip())
+    target = url_match.group(0) if url_match else raw.strip()
+    try:
+        values = parse_qs(urlsplit(target).query).get("p", [])
+    except ValueError:
+        return None
+    if not values or not values[0].isdigit():
+        return None
+    page = int(values[0])
+    return page if page > 0 else None
+
+
+def extract_bilibili_target_id(raw: str) -> str | None:
+    """Build the storage identity for a video, separating multipart pages."""
+    bvid = extract_bvid(raw)
+    if bvid is None:
+        return None
+    page = extract_bilibili_page(raw)
+    if page is None or page == 1:
+        return bvid
+    return f"{bvid}_p{page}"
+
+
+def extract_bilibili_page_from_target_id(raw: str) -> int | None:
+    """Extract a multipart page from an internal transcription or run ID."""
+    match = _TARGET_ID_PAGE_PATTERN.search(raw.strip())
+    return int(match.group(1)) if match else None
 
 
 def _resolve_b23_short_url(url: str, timeout: float = 5.0) -> str:
@@ -63,7 +98,11 @@ def normalize_bilibili_target(raw: str) -> str:
     if bvid is None:
         return target
 
-    return f"https://www.bilibili.com/video/{bvid}"
+    normalized = f"https://www.bilibili.com/video/{bvid}"
+    page = extract_bilibili_page(target)
+    if page is not None:
+        return f"{normalized}?p={page}"
+    return normalized
 
 
 def download_audio(

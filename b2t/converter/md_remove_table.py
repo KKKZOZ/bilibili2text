@@ -15,10 +15,8 @@ def _parse_table_cells(line: str) -> list[str]:
     if "|" not in text:
         return []
 
-    if text.startswith("|"):
-        text = text[1:]
-    if text.endswith("|"):
-        text = text[:-1]
+    text = text.removeprefix("|")
+    text = text.removesuffix("|")
 
     cells = [cell.strip() for cell in text.split("|")]
     return cells if cells else []

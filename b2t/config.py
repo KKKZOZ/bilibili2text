@@ -13,12 +13,19 @@ DEFAULT_BILIBILI_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
-_SUPPORTED_SUMMARIZE_PROVIDERS = ("bailian", "openrouter", "groq", "deepseek")
+_SUPPORTED_SUMMARIZE_PROVIDERS = (
+    "bailian",
+    "openrouter",
+    "groq",
+    "deepseek",
+    "openai_compatible",
+)
 _SUMMARIZE_PROVIDER_DEFAULT_API_BASE: dict[str, str] = {
     "bailian": "https://dashscope.aliyuncs.com/compatible-mode/v1",
     "openrouter": "https://openrouter.ai/api/v1",
     "groq": "https://api.groq.com/openai/v1",
     "deepseek": "https://api.deepseek.com",
+    "openai_compatible": "https://api.openai.com/v1",
 }
 
 
@@ -50,6 +57,7 @@ class AlicloudStorageConfig:
     access_key_secret: str = ""
     base_prefix: str = "b2t"
     temporary_prefix: str = "temp-audio"
+    temporary_url_expire_seconds: int = 7200
     public_base_url: str = ""
     auto_create_bucket: bool = False
 
@@ -88,6 +96,10 @@ class STTProfile:
     volc_show_utterances: bool = True
     volc_poll_interval_seconds: int = 5
     volc_timeout_seconds: int = 1800
+
+    # Speaker diarization (supported by fun-asr model via Transcription.async_call)
+    diarization_enabled: bool = False
+    speaker_count: int = 2
 
 
 def _default_stt_profiles() -> dict[str, "STTProfile"]:
@@ -158,6 +170,10 @@ class STTConfig:
     volc_show_utterances: bool = True
     volc_poll_interval_seconds: int = 5
     volc_timeout_seconds: int = 1800
+
+    # Speaker diarization (supported by fun-asr model via Transcription.async_call)
+    diarization_enabled: bool = False
+    speaker_count: int = 2
 
 
 @dataclass(frozen=True)
@@ -789,6 +805,14 @@ def _load_stt_profile(
         raise ValueError(f"{section_name}.volc_poll_interval_seconds 必须是整数")
     if not isinstance(merged["volc_timeout_seconds"], int):
         raise ValueError(f"{section_name}.volc_timeout_seconds 必须是整数")
+    if not isinstance(merged["diarization_enabled"], bool):
+        raise ValueError(f"{section_name}.diarization_enabled 必须是布尔值")
+    if (
+        isinstance(merged["speaker_count"], bool)
+        or not isinstance(merged["speaker_count"], int)
+        or merged["speaker_count"] < 1
+    ):
+        raise ValueError(f"{section_name}.speaker_count 必须是正整数")
 
     provider = str(merged["provider"]).strip().lower()
     if provider not in {"qwen", "groq", "volc"}:
@@ -870,6 +894,8 @@ def _load_stt_config(raw_stt: dict) -> STTConfig:
         volc_show_utterances=selected_profile.volc_show_utterances,
         volc_poll_interval_seconds=selected_profile.volc_poll_interval_seconds,
         volc_timeout_seconds=selected_profile.volc_timeout_seconds,
+        diarization_enabled=selected_profile.diarization_enabled,
+        speaker_count=selected_profile.speaker_count,
     )
 
 
@@ -956,6 +982,12 @@ def _load_storage_config(raw_storage: dict) -> StorageConfig:
     alicloud = AlicloudStorageConfig(**alicloud_source)
     if not isinstance(alicloud.auto_create_bucket, bool):
         raise ValueError("storage.alicloud.auto_create_bucket 必须是布尔值")
+    if isinstance(alicloud.temporary_url_expire_seconds, bool) or not isinstance(
+        alicloud.temporary_url_expire_seconds, int
+    ):
+        raise ValueError("storage.alicloud.temporary_url_expire_seconds 必须是整数秒")
+    if alicloud.temporary_url_expire_seconds <= 0:
+        raise ValueError("storage.alicloud.temporary_url_expire_seconds 必须大于 0")
 
     alicloud_string_fields = {
         "storage.alicloud.region": alicloud.region,
@@ -1632,6 +1664,8 @@ def create_app_config(
             volc_show_utterances=stt_profile.volc_show_utterances,
             volc_poll_interval_seconds=stt_profile.volc_poll_interval_seconds,
             volc_timeout_seconds=stt_profile.volc_timeout_seconds,
+            diarization_enabled=stt_profile.diarization_enabled,
+            speaker_count=stt_profile.speaker_count,
         )
 
     stt_profiles[profile_key] = stt_profile
@@ -1660,6 +1694,8 @@ def create_app_config(
         volc_show_utterances=stt_profile.volc_show_utterances,
         volc_poll_interval_seconds=stt_profile.volc_poll_interval_seconds,
         volc_timeout_seconds=stt_profile.volc_timeout_seconds,
+        diarization_enabled=stt_profile.diarization_enabled,
+        speaker_count=stt_profile.speaker_count,
     )
 
     # Build summarization config

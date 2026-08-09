@@ -6,7 +6,11 @@ from pydantic import BaseModel, Field
 
 
 class ProcessRequest(BaseModel):
-    url: str = Field(..., min_length=1, description="Bilibili 视频 URL")
+    url: str = Field(
+        ...,
+        min_length=1,
+        description="视频或播客 URL（支持 Bilibili、小宇宙、喜马拉雅）",
+    )
     skip_summary: bool = Field(
         default=False,
         description="是否跳过总结步骤",
@@ -27,6 +31,20 @@ class ProcessRequest(BaseModel):
         default=False,
         description="总结完成后是否自动异步生成 fancy HTML",
     )
+    prefer_bilibili_subtitle: bool = Field(
+        default=True,
+        description="是否优先使用 B 站原生字幕，失败后回退到音频 ASR",
+    )
+    include_comments: bool = Field(
+        default=True,
+        description="是否下载并总结支持平台的热门评论",
+    )
+    comment_limit: int | None = Field(
+        default=500,
+        ge=1,
+        le=1000,
+        description="下载的主评论数量；每条主评论的子评论全部下载；为空表示下载全部主评论",
+    )
     api_key: str | None = Field(
         default=None,
         description="open-public 模式下用户自带的阿里云 DashScope API Key",
@@ -34,6 +52,18 @@ class ProcessRequest(BaseModel):
     deepseek_api_key: str | None = Field(
         default=None,
         description="open-public 模式下用户自带的 DeepSeek API Key（可选，用于 LLM/RAG/Fancy HTML）",
+    )
+    custom_llm_base_url: str | None = Field(
+        default=None,
+        description="open-public 模式下用户自定义 OpenAI-compatible LLM base_url",
+    )
+    custom_llm_api_key: str | None = Field(
+        default=None,
+        description="open-public 模式下用户自定义 OpenAI-compatible LLM API Key",
+    )
+    custom_llm_model: str | None = Field(
+        default=None,
+        description="open-public 模式下用户自定义 OpenAI-compatible LLM model",
     )
 
 
@@ -89,6 +119,7 @@ class ProcessStatusResponse(BaseModel):
         "idle"
     )
     fancy_html_error: str | None = None
+    used_bilibili_subtitle: bool = False
     already_transcribed: bool = False
     notice: str | None = None
     all_downloads: list[DownloadItemResponse] = Field(default_factory=list)
@@ -101,6 +132,9 @@ class ProcessStatusResponse(BaseModel):
     pubdate: str | None = None
     bvid: str | None = None
     title: str | None = None
+    history_run_id: str | None = None
+    is_ephemeral_upload: bool = False
+    expires_at: str | None = None
 
 
 class SummaryPresetItemResponse(BaseModel):
@@ -153,9 +187,34 @@ class OpenPublicApiKeyUpdateRequest(BaseModel):
     )
 
 
+class OpenPublicApiKeyTestRequest(BaseModel):
+    api_key: str = Field(..., min_length=1, description="API Key")
+    provider: Literal["alibaba", "deepseek"] = Field(
+        default="alibaba",
+        description="API Key 对应的服务商",
+    )
+
+
+class OpenPublicApiKeyTestResponse(BaseModel):
+    ok: bool
+    content: str = ""
+
+
+class OpenPublicCustomLlmTestRequest(BaseModel):
+    base_url: str = Field(..., min_length=1, description="OpenAI-compatible base_url")
+    api_key: str = Field(..., min_length=1, description="API Key")
+    model: str = Field(..., min_length=1, description="模型名称")
+
+
+class OpenPublicCustomLlmTestResponse(BaseModel):
+    ok: bool
+    content: str = ""
+
+
 class HistoryItemResponse(BaseModel):
     run_id: str
     bvid: str
+    page: int | None = None
     title: str
     author: str
     pubdate: str
@@ -184,6 +243,7 @@ class HistoryDetailArtifactResponse(BaseModel):
 class HistoryDetailResponse(BaseModel):
     run_id: str
     bvid: str
+    page: int | None = None
     title: str
     author: str
     pubdate: str
@@ -210,6 +270,10 @@ class HistoryRegenerateSummaryRequest(BaseModel):
         default=None,
         description="本次重生成使用的自定义总结模板，必须包含 {content} 占位符",
     )
+    overwrite_existing: bool = Field(
+        default=False,
+        description="确认覆盖相同模型配置与总结模板生成的已有结果",
+    )
     api_key: str | None = Field(
         default=None,
         description="open-public 模式下用户自带的阿里云 DashScope API Key",
@@ -217,6 +281,18 @@ class HistoryRegenerateSummaryRequest(BaseModel):
     deepseek_api_key: str | None = Field(
         default=None,
         description="open-public 模式下用户自带的 DeepSeek API Key（可选，用于 LLM/Fancy HTML）",
+    )
+    custom_llm_base_url: str | None = Field(
+        default=None,
+        description="open-public 模式下用户自定义 OpenAI-compatible LLM base_url",
+    )
+    custom_llm_api_key: str | None = Field(
+        default=None,
+        description="open-public 模式下用户自定义 OpenAI-compatible LLM API Key",
+    )
+    custom_llm_model: str | None = Field(
+        default=None,
+        description="open-public 模式下用户自定义 OpenAI-compatible LLM model",
     )
 
 
@@ -242,6 +318,18 @@ class GenerateFancyHtmlRequest(BaseModel):
         default=None,
         description="open-public 模式下用户自带的 DeepSeek API Key（可选，用于 Fancy HTML）",
     )
+    custom_llm_base_url: str | None = Field(
+        default=None,
+        description="open-public 模式下用户自定义 OpenAI-compatible LLM base_url",
+    )
+    custom_llm_api_key: str | None = Field(
+        default=None,
+        description="open-public 模式下用户自定义 OpenAI-compatible LLM API Key",
+    )
+    custom_llm_model: str | None = Field(
+        default=None,
+        description="open-public 模式下用户自定义 OpenAI-compatible LLM model",
+    )
 
 
 class GenerateFancyHtmlResponse(BaseModel):
@@ -257,7 +345,7 @@ class ConvertRequest(BaseModel):
     target_format: str = Field(..., description="目标格式：txt, pdf, png, html")
     render_mode: Literal["desktop", "mobile"] | None = Field(
         default=None,
-        description="可选渲染模式，仅用于 HTML -> PNG",
+        description="可选 PNG 渲染模式",
     )
     source_variant: Literal["summary_no_table"] | None = Field(
         default=None,

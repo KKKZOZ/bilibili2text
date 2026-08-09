@@ -6,24 +6,37 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Query
 
 from b2t.config import resolve_summarize_model_profile, resolve_summary_preset_name
+from b2t.download.metadata import VideoMetadata
+from b2t.download.yutto_cli import extract_bilibili_page_from_target_id
 from b2t.history import build_history_artifacts
 from b2t.storage import StoredArtifact
 from b2t.summarize.llm import validate_summary_prompt_template
-
-from backend.download_registry import download_registry
 from backend.dependencies import get_history_db, get_storage_backend
-from backend.services import _run_summary_only_from_existing
+from backend.download_registry import download_registry
 from backend.schemas import (
-    HistoryRegenerateSummaryRequest,
     HistoryDetailArtifactResponse,
     HistoryDetailResponse,
     HistoryItemResponse,
     HistoryListResponse,
+    HistoryRegenerateSummaryRequest,
 )
+from backend.services import _run_summary_only_from_existing
 from backend.settings import get_runtime_app_config, is_delete_enabled
 
 router = APIRouter()
+CUSTOM_SUMMARY_PRESET_VALUE = "__user_custom__"
 logger = logging.getLogger(__name__)
+SUMMARY_ARTIFACT_KINDS = {
+    "summary",
+    "summary_text",
+    "summary_fancy_html",
+    "summary_png",
+    "summary_no_table_png",
+    "summary_table_md",
+    "summary_table_png",
+    "summary_table_pdf",
+    "summary_timeline",
+}
 
 
 def _storage_parent_key(storage_key: str) -> str:
@@ -38,25 +51,18 @@ def _summary_family_storage_keys(detail, summary_artifact) -> set[str]:
     expected_filenames = {
         summary_artifact.filename,
         f"{summary_stem}.txt",
+        f"{summary_stem}.png",
         f"{summary_stem}_fancy.html",
         f"{summary_stem}_table.md",
+        f"{summary_stem}_table.png",
         f"{summary_stem}_table.pdf",
+        f"{summary_stem}_no_table.png",
+        f"{summary_stem}_timeline.txt",
     }
     parent_key = _storage_parent_key(summary_artifact.storage_key)
-    summary_kinds = {
-        "summary",
-        "summary_text",
-        "summary_fancy_html",
-        "summary_png",
-        "summary_no_table_png",
-        "summary_table_md",
-        "summary_table_png",
-        "summary_table_pdf",
-    }
-
     related: set[str] = set()
     for artifact in detail.artifacts:
-        if artifact.kind not in summary_kinds:
+        if artifact.kind not in SUMMARY_ARTIFACT_KINDS:
             continue
         if artifact.storage_key == summary_artifact.storage_key:
             related.add(artifact.storage_key)
@@ -68,16 +74,32 @@ def _summary_family_storage_keys(detail, summary_artifact) -> set[str]:
     return related
 
 
-def _has_summary_with_config(detail, summary_preset: str, summary_profile: str) -> bool:
-    for artifact in detail.artifacts:
-        if artifact.kind != "summary":
-            continue
-        if (
-            artifact.summary_preset.strip() == summary_preset
-            and artifact.summary_profile.strip() == summary_profile
-        ):
-            return True
-    return False
+def _summary_config_storage_keys(
+    detail,
+    summary_preset: str,
+    summary_profile: str,
+) -> set[str]:
+    """Return every artifact belonging to a generated summary configuration."""
+    matching_summaries = [
+        artifact
+        for artifact in detail.artifacts
+        if artifact.kind == "summary"
+        and artifact.summary_preset.strip() == summary_preset
+        and artifact.summary_profile.strip() == summary_profile
+    ]
+    if not matching_summaries:
+        return set()
+
+    storage_keys = {
+        artifact.storage_key
+        for artifact in detail.artifacts
+        if artifact.kind in SUMMARY_ARTIFACT_KINDS
+        and artifact.summary_preset.strip() == summary_preset
+        and artifact.summary_profile.strip() == summary_profile
+    }
+    for summary_artifact in matching_summaries:
+        storage_keys.update(_summary_family_storage_keys(detail, summary_artifact))
+    return storage_keys
 
 
 def _to_history_detail_response(
@@ -104,6 +126,7 @@ def _to_history_detail_response(
     return HistoryDetailResponse(
         run_id=detail.run_id,
         bvid=detail.bvid,
+        page=extract_bilibili_page_from_target_id(detail.run_id),
         title=detail.title,
         author=detail.author,
         pubdate=detail.pubdate,
@@ -113,6 +136,23 @@ def _to_history_detail_response(
         record_type=getattr(detail, "record_type", "transcription") or "transcription",
         fancy_html_status=getattr(detail, "fancy_html_status", "idle") or "idle",
         fancy_html_error=(getattr(detail, "fancy_html_error", "") or ""),
+    )
+
+
+def _resolve_regenerate_summary_preset(
+    *,
+    config,
+    summary_preset: str | None,
+    summary_prompt_template: str | None,
+) -> str:
+    if summary_preset == CUSTOM_SUMMARY_PRESET_VALUE:
+        if not summary_prompt_template:
+            raise ValueError("用户自定义总结模板不能为空")
+        return CUSTOM_SUMMARY_PRESET_VALUE
+    return resolve_summary_preset_name(
+        summarize=config.summarize,
+        summary_presets=config.summary_presets,
+        override=summary_preset,
     )
 
 
@@ -139,6 +179,7 @@ def list_history(
             HistoryItemResponse(
                 run_id=item.run_id,
                 bvid=item.bvid,
+                page=extract_bilibili_page_from_target_id(item.run_id),
                 title=item.title,
                 author=item.author,
                 pubdate=item.pubdate,
@@ -198,6 +239,9 @@ def regenerate_history_summary(
             require_public_api_key=True,
             api_key=(payload.api_key or "").strip() or None,
             deepseek_api_key=(payload.deepseek_api_key or "").strip() or None,
+            custom_llm_base_url=(payload.custom_llm_base_url or "").strip() or None,
+            custom_llm_api_key=(payload.custom_llm_api_key or "").strip() or None,
+            custom_llm_model=(payload.custom_llm_model or "").strip() or None,
         )
         storage_backend = get_storage_backend()
     except FileNotFoundError as exc:
@@ -221,10 +265,10 @@ def regenerate_history_summary(
             summary_prompt_template = validate_summary_prompt_template(
                 summary_prompt_template
             )
-        resolved_preset = resolve_summary_preset_name(
-            summarize=config.summarize,
-            summary_presets=config.summary_presets,
-            override=summary_preset,
+        resolved_preset = _resolve_regenerate_summary_preset(
+            config=config,
+            summary_preset=summary_preset,
+            summary_prompt_template=summary_prompt_template,
         )
         resolved_profile = summary_profile or config.summarize.profile.strip()
         model_profile = resolve_summarize_model_profile(
@@ -241,13 +285,22 @@ def regenerate_history_summary(
                 f"模型 {resolved_profile}（{provider_label}）需要 API Key，"
                 "但你未提供。请在「API Key」页面配置对应的 Key 后再试。"
             )
-        if _has_summary_with_config(detail, resolved_preset, resolved_profile):
-            raise ValueError(
-                f"已存在使用模型配置 {resolved_profile} 与总结模板 {resolved_preset} "
-                "生成的总结，请选择不同配置后再重新生成。"
-            )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    replaced_storage_keys = _summary_config_storage_keys(
+        detail,
+        resolved_preset,
+        resolved_profile,
+    )
+    if replaced_storage_keys and not payload.overwrite_existing:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"已存在使用模型配置 {resolved_profile} 与总结模板 {resolved_preset} "
+                "生成的总结。覆盖前需要用户确认。"
+            ),
+        )
 
     existing_results: dict[str, StoredArtifact] = {}
     for artifact in detail.artifacts:
@@ -285,11 +338,19 @@ def regenerate_history_summary(
         ) from exc
 
     appended = build_history_artifacts(
-        new_summary_artifacts,
+        {
+            key: artifact
+            for key, artifact in new_summary_artifacts.items()
+            if not key.startswith("_")
+        },
         summary_preset=resolved_preset,
         summary_profile=resolved_profile,
     )
-    merged_artifacts = list(detail.artifacts)
+    merged_artifacts = [
+        artifact
+        for artifact in detail.artifacts
+        if artifact.storage_key not in replaced_storage_keys
+    ]
     merged_artifacts.extend(appended)
 
     deduped_artifacts = []
@@ -300,16 +361,39 @@ def regenerate_history_summary(
         seen_storage_keys.add(artifact.storage_key)
         deduped_artifacts.append(artifact)
 
+    metadata = new_summary_artifacts.get("_metadata")
+    author = detail.author
+    pubdate = detail.pubdate
+    if isinstance(metadata, VideoMetadata):
+        if not author.strip() or author.strip().lower() == "unknown":
+            author = metadata.author
+        if not pubdate.strip() or pubdate.strip().lower() == "unknown":
+            pubdate = metadata.pubdate
+
     db.record_run(
         run_id=detail.run_id,
         bvid=detail.bvid,
         title=detail.title,
-        author=detail.author,
-        pubdate=detail.pubdate,
+        author=author,
+        pubdate=pubdate,
         created_at=detail.created_at,
         has_summary=True,
         artifacts=deduped_artifacts,
     )
+
+    if replaced_storage_keys:
+        download_registry.remove_artifacts_by_storage_keys(replaced_storage_keys)
+        for artifact in detail.artifacts:
+            if artifact.storage_key not in replaced_storage_keys:
+                continue
+            try:
+                storage_backend.delete_file(artifact.storage_key)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "清理被覆盖的总结文件 %s 失败: %s",
+                    artifact.filename,
+                    exc,
+                )
 
     updated = db.get_run_detail(run_id)
     if updated is None:
@@ -391,18 +475,7 @@ def delete_history_artifact(run_id: str, download_id: str) -> HistoryDetailRespo
         if item.storage_key not in storage_keys_to_delete
     ]
     has_summary = any(
-        item.kind
-        in {
-            "summary",
-            "summary_text",
-            "summary_fancy_html",
-            "summary_png",
-            "summary_no_table_png",
-            "summary_table_md",
-            "summary_table_png",
-            "summary_table_pdf",
-        }
-        for item in remained_artifacts
+        item.kind in SUMMARY_ARTIFACT_KINDS for item in remained_artifacts
     )
     db.record_run(
         run_id=detail.run_id,

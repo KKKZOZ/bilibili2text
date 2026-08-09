@@ -1,3 +1,6 @@
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 from b2t.stock_status import (
     _baostock_row_to_status,
     _fetch_status_for_symbol,
@@ -11,8 +14,6 @@ from b2t.stock_status import (
     extract_stock_symbols,
     fetch_stock_daily_status,
 )
-from datetime import datetime
-from zoneinfo import ZoneInfo
 
 
 def test_extract_stock_symbols_from_markdown_tables_only() -> None:
@@ -175,19 +176,35 @@ def test_parse_as_of_date_accepts_video_pubdate_string() -> None:
 
 def test_fetch_stock_daily_status_uses_as_of_date(monkeypatch) -> None:
     captured = {}
+    status = _baostock_row_to_status(
+        "600000.SH",
+        {
+            "date": "2026-02-05",
+            "close": "9.1800",
+            "preclose": "9.2700",
+            "pctChg": "-0.970900",
+            "peTTM": "6.080899",
+        },
+        {"code_name": "浦发银行"},
+        {"totalShare": "33305838300.00"},
+    )
 
     def fake_fetch(symbol, as_of_date):
         captured["symbol"] = symbol
         captured["as_of_date"] = as_of_date
-        return None
+        return status
 
     monkeypatch.setattr(
-        "b2t.stock_status._fetch_yfinance_status_for_symbol", fake_fetch
+        "b2t.stock_status._fetch_baostock_status_for_symbol", fake_fetch
+    )
+    monkeypatch.setattr(
+        "b2t.stock_status._fetch_yfinance_status_for_symbol",
+        lambda symbol, as_of_date: None,
     )
 
-    assert (
-        fetch_stock_daily_status(["600000.SH"], as_of_date="2026-02-05 21:00:00") == []
-    )
+    assert fetch_stock_daily_status(
+        ["600000.SH"], as_of_date="2026-02-05 21:00:00"
+    ) == [status]
     assert captured["symbol"] == "600000.SH"
     assert str(captured["as_of_date"]) == "2026-02-05"
 
@@ -209,7 +226,7 @@ def test_fetch_stock_daily_status_hides_stale_a_share_after_market_close(
     )
 
     monkeypatch.setattr(
-        "b2t.stock_status._fetch_yfinance_status_for_symbol",
+        "b2t.stock_status._fetch_baostock_status_for_symbol",
         lambda symbol, as_of_date: status,
     )
 
@@ -235,7 +252,7 @@ def test_fetch_stock_daily_status_keeps_previous_trade_day_before_market_close(
     )
 
     monkeypatch.setattr(
-        "b2t.stock_status._fetch_yfinance_status_for_symbol",
+        "b2t.stock_status._fetch_baostock_status_for_symbol",
         lambda symbol, as_of_date: status,
     )
 
@@ -262,7 +279,7 @@ def test_fetch_stock_daily_status_keeps_previous_trade_day_on_weekend(
     )
 
     monkeypatch.setattr(
-        "b2t.stock_status._fetch_yfinance_status_for_symbol",
+        "b2t.stock_status._fetch_baostock_status_for_symbol",
         lambda symbol, as_of_date: status,
     )
 
@@ -272,9 +289,12 @@ def test_fetch_stock_daily_status_keeps_previous_trade_day_on_weekend(
     ) == [status]
 
 
-def test_fetch_status_uses_yfinance_for_all_markets(monkeypatch) -> None:
-    calls = []
-    status = _tickflow_row_to_status(
+def test_fetch_status_prefers_baostock_for_a_shares_and_yfinance_for_hk(
+    monkeypatch,
+) -> None:
+    yfinance_calls = []
+    baostock_calls = []
+    hk_status = _tickflow_row_to_status(
         "00700.HK",
         {
             "date": "2026-05-06",
@@ -285,26 +305,46 @@ def test_fetch_status_uses_yfinance_for_all_markets(monkeypatch) -> None:
         },
         {"name": "腾讯控股", "ext": {"total_shares": 9500000000}},
     )
+    a_share_status = _baostock_row_to_status(
+        "600000.SH",
+        {
+            "date": "2026-05-06",
+            "close": "9.1800",
+            "preclose": "9.2700",
+            "pctChg": "-0.970900",
+            "peTTM": "6.080899",
+        },
+        {"code_name": "浦发银行"},
+        {"totalShare": "33305838300.00"},
+    )
 
     def fake_yfinance(symbol, as_of_date):
-        calls.append((symbol, str(as_of_date)))
-        return status
+        yfinance_calls.append((symbol, str(as_of_date)))
+        return hk_status
+
+    def fake_baostock(symbol, as_of_date):
+        baostock_calls.append((symbol, str(as_of_date)))
+        return a_share_status
 
     monkeypatch.setattr(
         "b2t.stock_status._fetch_yfinance_status_for_symbol",
         fake_yfinance,
     )
+    monkeypatch.setattr(
+        "b2t.stock_status._fetch_baostock_status_for_symbol",
+        fake_baostock,
+    )
 
     assert (
-        _fetch_status_for_symbol("00700.HK", _parse_as_of_date("2026-05-06")) == status
+        _fetch_status_for_symbol("00700.HK", _parse_as_of_date("2026-05-06"))
+        == hk_status
     )
     assert (
-        _fetch_status_for_symbol("600000.SH", _parse_as_of_date("2026-05-06")) == status
+        _fetch_status_for_symbol("600000.SH", _parse_as_of_date("2026-05-06"))
+        == a_share_status
     )
-    assert calls == [
-        ("00700.HK", "2026-05-06"),
-        ("600000.SH", "2026-05-06"),
-    ]
+    assert yfinance_calls == [("00700.HK", "2026-05-06")]
+    assert baostock_calls == [("600000.SH", "2026-05-06")]
 
 
 def test_tickflow_daily_row_uses_latest_row_before_as_of_date() -> None:
@@ -400,6 +440,24 @@ def test_build_stock_table_cards_html_merges_table_content_and_status(
     assert "银行估值修复" in html
     assert "3057.48亿" in html
     assert "-0.97%" in html
+
+
+def test_build_stock_table_cards_html_renders_clickable_video_times() -> None:
+    markdown = """| 股票代码 | 股票名称 | 视频时间 | 投资逻辑 |
+| --- | --- | --- | --- |
+| 300502.SZ | 新易盛 | 01:08<br>02:03 | <核心逻辑> |
+"""
+
+    rendered = build_stock_table_cards_html(
+        markdown,
+        stock_statuses={},
+        bvid="BV1gm3v67EEf",
+    )
+
+    assert rendered.count('class="stock-table-time-link"') == 2
+    assert "https://www.bilibili.com/video/BV1gm3v67EEf?t=68" in rendered
+    assert "https://www.bilibili.com/video/BV1gm3v67EEf?t=123" in rendered
+    assert "&lt;核心逻辑&gt;" in rendered
 
 
 def test_build_stock_table_cards_html_cleans_inline_markdown_for_name_match(

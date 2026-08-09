@@ -1,10 +1,11 @@
 """Storage backend abstract definition."""
 
 from abc import ABC, abstractmethod
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import BinaryIO, Iterator
+from typing import BinaryIO
 
 
 def classify_artifact_filename(filename: str) -> str | None:
@@ -25,12 +26,18 @@ def classify_artifact_filename(filename: str) -> str | None:
         return "summary_table_md"
     if lowered.endswith("_summary_no_table.png"):
         return "summary_no_table_png"
+    if lowered.endswith("_summary_timeline.txt"):
+        return "summary_timeline"
     if lowered.endswith("_summary.png"):
         return "summary_png"
     if lowered.endswith("_summary.txt"):
         return "summary_text"
     if lowered.endswith("_summary.md"):
         return "summary"
+    if lowered.endswith("_comments.json"):
+        return "comments_json"
+    if lowered.endswith("_comments.md"):
+        return "comments_markdown"
     if lowered.endswith("_transcription.json"):
         return "json"
     if lowered.endswith(".txt"):

@@ -39,8 +39,13 @@
 
   const LOCAL_API_KEY_KEY = 'b2t.public-api-key'
   const LOCAL_DEEPSEEK_API_KEY_KEY = 'b2t.public-deepseek-api-key'
+  const LOCAL_CUSTOM_LLM_BASE_URL_KEY = 'b2t.public-custom-llm-base-url'
+  const LOCAL_CUSTOM_LLM_API_KEY_KEY = 'b2t.public-custom-llm-api-key'
+  const LOCAL_CUSTOM_LLM_MODEL_KEY = 'b2t.public-custom-llm-model'
+  const CUSTOM_LLM_PROFILE_NAME = 'open_public_custom_llm'
   const localApiKeyConfigured = ref(true)
   const localDeepseekApiKeyConfigured = ref(false)
+  const localCustomLlmConfigured = ref(false)
 
   const refreshLocalApiKeyStatus = () => {
     try {
@@ -50,9 +55,47 @@
         window.localStorage.getItem(LOCAL_DEEPSEEK_API_KEY_KEY) || ''
       ).trim()
       localDeepseekApiKeyConfigured.value = dsKey.length > 0
+      const customBaseUrl = (
+        window.localStorage.getItem(LOCAL_CUSTOM_LLM_BASE_URL_KEY) || ''
+      ).trim()
+      const customApiKey = (
+        window.localStorage.getItem(LOCAL_CUSTOM_LLM_API_KEY_KEY) || ''
+      ).trim()
+      const customModel = (
+        window.localStorage.getItem(LOCAL_CUSTOM_LLM_MODEL_KEY) || ''
+      ).trim()
+      localCustomLlmConfigured.value = Boolean(
+        customBaseUrl && customApiKey && customModel
+      )
     } catch {
       localApiKeyConfigured.value = false
       localDeepseekApiKeyConfigured.value = false
+      localCustomLlmConfigured.value = false
+    }
+  }
+
+  const getLocalCustomLlmProfile = () => {
+    try {
+      const baseUrl = (
+        window.localStorage.getItem(LOCAL_CUSTOM_LLM_BASE_URL_KEY) || ''
+      ).trim()
+      const apiKey = (
+        window.localStorage.getItem(LOCAL_CUSTOM_LLM_API_KEY_KEY) || ''
+      ).trim()
+      const model = (
+        window.localStorage.getItem(LOCAL_CUSTOM_LLM_MODEL_KEY) || ''
+      ).trim()
+      if (!baseUrl || !apiKey || !model) {
+        return null
+      }
+      return {
+        name: CUSTOM_LLM_PROFILE_NAME,
+        provider: 'openai_compatible',
+        model,
+        api_base: baseUrl
+      }
+    } catch {
+      return null
     }
   }
 
@@ -191,7 +234,20 @@
         throw new Error('获取总结模型配置失败（服务返回空响应）')
       }
 
-      const profiles = Array.isArray(data.profiles) ? data.profiles : []
+      const profiles = Array.isArray(data.profiles) ? [...data.profiles] : []
+      const customProfile = isOpenPublic.value
+        ? getLocalCustomLlmProfile()
+        : null
+      if (customProfile) {
+        const existingIndex = profiles.findIndex(
+          (profile) => profile.name === CUSTOM_LLM_PROFILE_NAME
+        )
+        if (existingIndex >= 0) {
+          profiles.splice(existingIndex, 1, customProfile)
+        } else {
+          profiles.push(customProfile)
+        }
+      }
       summaryProfiles.value = profiles
       if (profiles.length === 0) {
         selectedSummaryProfile.value = ''
@@ -199,8 +255,9 @@
       }
 
       const fallback = profiles[0].name
-      selectedSummaryProfile.value =
-        data.selected_profile || data.default_profile || fallback
+      selectedSummaryProfile.value = customProfile
+        ? CUSTOM_LLM_PROFILE_NAME
+        : data.selected_profile || data.default_profile || fallback
     } catch (err) {
       console.error(err)
       summaryProfiles.value = []
@@ -346,6 +403,7 @@
         :requires-api-key="runtimeFeatures.requires_user_api_key"
         :api-key-configured="localApiKeyConfigured"
         :deepseek-api-key-configured="localDeepseekApiKeyConfigured"
+        :custom-llm-configured="localCustomLlmConfigured"
         :allow-delete="runtimeFeatures.allow_delete"
         @update:selected-summary-preset="selectedSummaryPreset = $event"
         @update:selected-summary-profile="selectedSummaryProfile = $event"

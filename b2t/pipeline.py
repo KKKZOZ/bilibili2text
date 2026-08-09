@@ -1,56 +1,96 @@
 """Main pipeline orchestration"""
 
+import json
 import logging
 import shutil
-from pathlib import Path
 import tempfile
-from typing import Callable
+from collections.abc import Callable
+from pathlib import Path
 from uuid import uuid4
 
-from b2t.config import AppConfig
-from b2t.converter.json_to_md import convert_json_to_md
-from b2t.download.yutto_cli import extract_bvid, normalize_bilibili_target
+from b2t.config import AppConfig, build_bilibili_cookie
+from b2t.converter.json_to_md import TIMELINE_SCHEMA_VERSION, convert_json_to_md
+from b2t.download.comments import (
+    DEFAULT_COMMENT_LIMIT,
+    count_comment_replies,
+    count_up_replies,
+    fetch_platform_comments,
+    write_comments_json,
+    write_comments_markdown,
+)
+from b2t.download.metadata import VideoMetadata, get_video_metadata
+from b2t.download.platform import Platform, build_filename_component
+from b2t.download.subtitle import fetch_bilibili_subtitle
+from b2t.download.url_detect import detect_platform
 from b2t.download.yutto import download_audio
+from b2t.download.yutto_cli import (
+    extract_bilibili_target_id,
+    extract_bvid,
+    normalize_bilibili_target,
+)
 from b2t.storage import (
     StorageBackend,
     StoredArtifact,
     create_storage_backend,
     create_stt_storage_backend,
 )
-from b2t.summarize.llm import extract_markdown_table_block, summarize
 from b2t.stt import create_stt_provider
+from b2t.summarize.llm import append_comment_summary_to_markdown, summarize
+from b2t.summarize.timeline import (
+    export_summary_table_without_video_time,
+    export_summary_timeline_text,
+)
 
 logger = logging.getLogger(__name__)
 
-
-def _extract_summary_table(summary_path: Path) -> Path | None:
-    """Extract the last table from summary Markdown and save it as a separate file.
-
-    Args:
-        summary_path: Summary Markdown file path
-
-    Returns:
-        Table file path, or None if no table was found
-    """
-    content = summary_path.read_text(encoding="utf-8")
-    table_content = extract_markdown_table_block(content, which="last")
-    if table_content is None:
-        logger.info("总结中没有找到表格")
-        return None
-
-    # Save table file
-    table_path = summary_path.with_stem(f"{summary_path.stem}_table")
-    table_path.write_text(table_content, encoding="utf-8")
-    logger.info("Saved table to: %s", table_path)
-    return table_path
+_LONGEST_DERIVED_ARTIFACT_SUFFIX = "_summary_no_table.png"
+_XIAOYUZHOU_BVID_PREFIX = f"{Platform.XIAOYUZHOU.value}_"
 
 
-def _ensure_bvid_prefixed_name(name: str, bvid: str) -> str:
-    lowered = name.lower()
+def _comment_platform_from_metadata(metadata: VideoMetadata) -> Platform | None:
+    if metadata.bvid.startswith("BV") and metadata.aid > 0:
+        return Platform.BILIBILI
+    if metadata.bvid.startswith(_XIAOYUZHOU_BVID_PREFIX):
+        return Platform.XIAOYUZHOU
+    return None
+
+
+def _comment_platform_label(platform: Platform) -> str:
+    if platform == Platform.BILIBILI:
+        return "B 站"
+    if platform == Platform.XIAOYUZHOU:
+        return "小宇宙"
+    return platform.value
+
+
+def _ensure_bvid_prefixed_name(
+    name: str,
+    bvid: str,
+    *,
+    preserve_extension: bool = False,
+) -> str:
+    suffix = Path(name).suffix if preserve_extension else ""
+    stem = name[: -len(suffix)] if suffix else name
+    lowered = stem.lower()
     bvid_lower = bvid.lower()
     if lowered.startswith(bvid_lower):
-        return name
-    return f"{bvid}_{name}"
+        prefix = stem[: len(bvid)]
+        remainder = stem[len(bvid) :]
+    else:
+        prefix = f"{bvid}_"
+        remainder = stem
+    return build_filename_component(
+        remainder,
+        prefix=prefix,
+        suffix=suffix,
+        reserved_suffix=_LONGEST_DERIVED_ARTIFACT_SUFFIX,
+    )
+
+
+def _safe_path_name(name: str) -> str:
+    cleaned = "".join("_" if char in '<>:"/\\|?*' else char for char in name)
+    cleaned = cleaned.strip(" .")
+    return cleaned or "untitled"
 
 
 def run_pipeline(
@@ -67,10 +107,14 @@ def run_pipeline(
     progress_callback: Callable[[str, str, int], None] | None = None,
     storage_backend: "StorageBackend | None" = None,
     stt_storage_backend: "StorageBackend | None" = None,
+    prefer_bilibili_subtitle: bool = True,
+    bilibili_subtitle_used_callback: Callable[[], None] | None = None,
+    include_comments: bool = False,
+    comment_limit: int | None = DEFAULT_COMMENT_LIMIT,
 ) -> dict[str, StoredArtifact]:
     """Run the full transcription pipeline
 
-    Pipeline: obtain audio (download or local upload) -> transcribe -> summarize
+    Pipeline: obtain transcript (Bilibili subtitle or ASR) -> Markdown -> summarize
 
     Args:
         url: Bilibili video URL (required when audio_path is None)
@@ -83,10 +127,17 @@ def run_pipeline(
         summary_prompt_template: Optional request-scoped prompt template override
         output_dir: Output root directory, uses config download.output_dir when None
         progress_callback: Stage progress callback with (stage_key, stage_label, progress_percent)
+        prefer_bilibili_subtitle: Try Bilibili native subtitles before downloading
+            audio. Ignored for local uploads.
+        include_comments: Fetch platform comments and append summarized viewpoints
+            to the summary when available.
+        comment_limit: Top-level comment limit. None means fetch all top-level
+            comments; child replies under selected top-level comments are always
+            fetched completely.
 
     Returns:
         Storage info for output files from each stage:
-        - "audio": Audio file
+        - "audio": Audio file (only when ASR path is used)
         - "json": Transcription JSON
         - "markdown": Original Markdown
         - "summary": Summary Markdown (excluded when skip_summary is True)
@@ -117,6 +168,7 @@ def run_pipeline(
             Path(audio_path).expanduser().resolve() if audio_path is not None else None
         )
         use_local_audio = normalized_audio_path is not None
+        subtitle = None
         if use_local_audio:
             if not normalized_audio_path.is_file():
                 raise FileNotFoundError(f"上传音频文件不存在: {normalized_audio_path}")
@@ -125,55 +177,219 @@ def run_pipeline(
             audio_file = normalized_audio_path
             metadata = None
             bvid = input_bvid or extract_bvid(audio_file.name)
+            transcription_id = bvid
         else:
             if not url.strip():
                 raise ValueError("URL 不能为空")
-            emit_progress("downloading", "下载视频音频", 10)
-            logger.info("=== 下载音频 ===")
-            audio_file, metadata = download_audio(
-                url, temp_download_dir, config.download.audio_quality
-            )
-            normalized_url = normalize_bilibili_target(url)
-            bvid = (
-                input_bvid
-                or extract_bvid(normalized_url)
-                or extract_bvid(audio_file.name)
-            )
+
+            platform = detect_platform(url)
+            if platform is None and extract_bvid(url) is not None:
+                platform = Platform.BILIBILI
+            if platform is None:
+                raise ValueError("不支持的 URL，请使用 Bilibili、小宇宙或喜马拉雅链接")
+            metadata = None
+            audio_file = None
+            subtitle = None
+
+            if platform == Platform.BILIBILI:
+                normalized_url = normalize_bilibili_target(url)
+                bvid = input_bvid or extract_bvid(normalized_url)
+                transcription_id = extract_bilibili_target_id(normalized_url) or bvid
+                if bvid:
+                    try:
+                        metadata = get_video_metadata(bvid)
+                    except Exception as e:
+                        logger.warning("Failed to fetch video metadata: %s", e)
+
+                if prefer_bilibili_subtitle:
+                    emit_progress("downloading", "获取 B 站字幕", 10)
+                    logger.info("=== 获取 B 站字幕 ===")
+                    subtitle = fetch_bilibili_subtitle(normalized_url)
+                else:
+                    subtitle = None
+
+                if subtitle is None:
+                    emit_progress("downloading", "下载视频音频", 10)
+                    logger.info("=== 下载音频 ===")
+                    audio_file, downloaded_metadata = download_audio(
+                        normalized_url,
+                        temp_download_dir,
+                        config.download.audio_quality,
+                        fetch_metadata=metadata is None,
+                    )
+                    if metadata is None:
+                        metadata = downloaded_metadata
+                    bvid = bvid or extract_bvid(audio_file.name)
+                else:
+                    audio_file = None
+            elif platform == Platform.XIAOYUZHOU:
+                emit_progress("downloading", "下载音频", 10)
+                logger.info("=== 下载小宇宙音频 ===")
+                from b2t.download.xiaoyuzhou import XiaoyuzhouDownloader
+
+                downloader = XiaoyuzhouDownloader()
+                audio_file, platform_metadata = downloader.download_audio(
+                    url, temp_download_dir
+                )
+                metadata = VideoMetadata.from_platform_metadata(platform_metadata)
+                bvid = input_bvid or metadata.bvid
+                transcription_id = bvid
+            elif platform == Platform.XIMALAYA:
+                emit_progress("downloading", "下载音频", 10)
+                logger.info("=== 下载喜马拉雅音频 ===")
+                from b2t.download.ximalaya import XimalayaDownloader
+
+                downloader = XimalayaDownloader()
+                audio_file, platform_metadata = downloader.download_audio(
+                    url, temp_download_dir
+                )
+                metadata = VideoMetadata.from_platform_metadata(platform_metadata)
+                bvid = input_bvid or metadata.bvid
+                transcription_id = bvid
+            else:
+                raise ValueError(f"不支持的平台: {platform}")
 
         if bvid is None:
             raise ValueError(
-                "无法提取 BV 号。请使用包含 BV 号的 URL，"
+                "无法提取资源 ID。请使用包含有效 ID 的 URL，"
                 "或上传形如 `BV号_视频标题.xxx` 的音频文件。"
             )
+        if transcription_id is None:
+            transcription_id = bvid
 
         # Record metadata
         if metadata:
             logger.info(
-                "Video author: %s, publish date: %s", metadata.author, metadata.pubdate
+                "Author: %s, publish date: %s, title: %s",
+                metadata.author,
+                metadata.pubdate,
+                metadata.title,
             )
             results["_metadata"] = metadata  # Temporarily store metadata for later use
 
         # Create workflow directory
-        work_dir = transcribe_root / _ensure_bvid_prefixed_name(audio_file.stem, bvid)
+        if audio_file is None:
+            work_dir_name = (
+                f"{transcription_id}_{_safe_path_name(metadata.title)}"
+                if metadata and metadata.title
+                else transcription_id
+            )
+        else:
+            work_dir_name = audio_file.stem
+        work_dir = transcribe_root / _ensure_bvid_prefixed_name(
+            work_dir_name, transcription_id
+        )
         work_dir.mkdir(exist_ok=True)
 
-        # Move audio to work directory
-        audio_filename = _ensure_bvid_prefixed_name(audio_file.name, bvid)
-        new_audio_path = work_dir / audio_filename
-        if use_local_audio:
-            shutil.copy2(str(audio_file), new_audio_path)
-        else:
-            shutil.move(str(audio_file), new_audio_path)
-        local_results["audio"] = new_audio_path
-        logger.info("Work directory: %s", work_dir)
-
-        # 2. Transcribe (each provider handles its own details, e.g. Qwen's OSS upload)
-        stt_provider = create_stt_provider(config, stt_storage_backend)
-        json_path = stt_provider.transcribe(
-            new_audio_path,
-            work_dir,
-            progress_callback=emit_progress,
+        comments_markdown_text = ""
+        comment_platform = (
+            _comment_platform_from_metadata(metadata)
+            if include_comments and not use_local_audio and metadata is not None
+            else None
         )
+        if comment_platform is not None and metadata is not None:
+            try:
+                platform_label = _comment_platform_label(comment_platform)
+                emit_progress("downloading", f"获取{platform_label}评论", 20)
+                logger.info("=== 获取%s评论 ===", platform_label)
+                logger.info(
+                    "评论下载配置：热门主评论=%s，子评论=每条主评论全部下载",
+                    "全部" if comment_limit is None else f"{comment_limit} 条",
+                )
+                comments = fetch_platform_comments(
+                    platform=comment_platform,
+                    resource_id=metadata.bvid,
+                    aid=metadata.aid,
+                    up_uid=metadata.author_uid,
+                    limit=comment_limit,
+                    sort="hot",
+                    cookie=(
+                        build_bilibili_cookie(config)
+                        if comment_platform == Platform.BILIBILI
+                        else ""
+                    ),
+                )
+                comments_json_path = work_dir / f"{work_dir.name}_comments.json"
+                comments_md_path = work_dir / f"{work_dir.name}_comments.md"
+                write_comments_json(comments, comments_json_path)
+                write_comments_markdown(comments, comments_md_path)
+                comments_markdown_text = comments_md_path.read_text(encoding="utf-8")
+                local_results["comments_json"] = comments_json_path
+                local_results["comments_markdown"] = comments_md_path
+                logger.info(
+                    "评论下载完成：平台=%s，主评论=%s，子评论=%s，UP主回复=%s，排序=%s，来源=%s，资源=%s",
+                    platform_label,
+                    comments.fetched_count,
+                    count_comment_replies(comments),
+                    count_up_replies(comments),
+                    comments.sort,
+                    comments.source,
+                    metadata.bvid,
+                )
+            except Exception as exc:
+                logger.warning("Failed to fetch platform comments: %s", exc)
+        elif include_comments:
+            logger.info(
+                "评论下载未执行：当前资源不是支持评论获取的平台，"
+                "或缺少必要元信息（子评论规则：若执行则每条主评论全部下载）"
+            )
+
+        if audio_file is None:
+            if bilibili_subtitle_used_callback is not None:
+                bilibili_subtitle_used_callback()
+            emit_progress("converting", "Generating Markdown", 80)
+            logger.info("Work directory: %s", work_dir)
+            logger.info("Using Bilibili native subtitle")
+            json_path = work_dir / f"{work_dir.name}_transcription.json"
+            subtitle_payload: dict[str, object] = {
+                "text": subtitle.text,
+                "source": "bilibili_subtitle",
+                "bvid": bvid,
+                "timeline_schema_version": TIMELINE_SCHEMA_VERSION,
+            }
+            if subtitle.items:
+                subtitle_payload["segments"] = [
+                    {
+                        "start": item.start_ms / 1000,
+                        "end": item.end_ms / 1000,
+                        "text": item.text,
+                    }
+                    for item in subtitle.items
+                ]
+            json_path.write_text(
+                json.dumps(subtitle_payload, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        else:
+            # Move audio to work directory
+            audio_filename = _ensure_bvid_prefixed_name(
+                audio_file.name,
+                transcription_id,
+                preserve_extension=True,
+            )
+            new_audio_path = work_dir / audio_filename
+            if use_local_audio:
+                shutil.copy2(str(audio_file), new_audio_path)
+            else:
+                shutil.move(str(audio_file), new_audio_path)
+            local_results["audio"] = new_audio_path
+            logger.info("Work directory: %s", work_dir)
+
+            # 2. Transcribe (each provider handles its own details, e.g. Qwen's OSS upload)
+            stt_provider = create_stt_provider(config, stt_storage_backend)
+            json_path = stt_provider.transcribe(
+                new_audio_path,
+                work_dir,
+                progress_callback=emit_progress,
+            )
+            transcription_payload = json.loads(json_path.read_text(encoding="utf-8"))
+            if not isinstance(transcription_payload, dict):
+                raise ValueError("转录结果 JSON 顶层必须是对象")
+            transcription_payload["timeline_schema_version"] = TIMELINE_SCHEMA_VERSION
+            json_path.write_text(
+                json.dumps(transcription_payload, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
         local_results["json"] = json_path
 
         # 3. JSON -> Markdown
@@ -196,14 +412,29 @@ def run_pipeline(
                 prompt_template_override=summary_prompt_template,
                 metadata=metadata,
             )
+            if comments_markdown_text:
+                try:
+                    append_comment_summary_to_markdown(
+                        summary_path,
+                        comments_markdown_text,
+                        config.summarize,
+                        profile=summary_profile,
+                    )
+                except Exception as exc:
+                    logger.warning("Failed to summarize platform comments: %s", exc)
             local_results["summary"] = summary_path
 
             # Extract summary table as a separate Markdown file
-            summary_table_md_path = _extract_summary_table(summary_path)
+            summary_table_md_path = export_summary_table_without_video_time(
+                summary_path
+            )
             if summary_table_md_path is not None:
                 local_results["summary_table_md"] = summary_table_md_path
+            summary_timeline_path = export_summary_timeline_text(summary_path)
+            if summary_timeline_path is not None:
+                local_results["summary_timeline"] = summary_timeline_path
 
-        storage_prefix = f"{bvid}-{uuid4().hex[:8]}"
+        storage_prefix = f"{transcription_id}-{uuid4().hex[:8]}"
         for artifact_key, artifact_path in local_results.items():
             object_key = f"{storage_prefix}/{artifact_path.name}"
             results[artifact_key] = storage_backend.store_file(

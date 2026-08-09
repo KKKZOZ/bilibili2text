@@ -39,10 +39,8 @@ def _display_width(text: str) -> int:
 
 def _split_table_row(line: str) -> list[str]:
     line = line.strip()
-    if line.startswith("|"):
-        line = line[1:]
-    if line.endswith("|"):
-        line = line[:-1]
+    line = line.removeprefix("|")
+    line = line.removesuffix("|")
     cells = [cell.strip() for cell in line.split("|")]
     return cells
 

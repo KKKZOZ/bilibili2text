@@ -1,8 +1,8 @@
 """STT Provider abstract definition"""
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 ProgressCallback = Callable[[str, str, int], None]
 

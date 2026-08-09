@@ -6,17 +6,26 @@ from urllib.parse import quote
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, StreamingResponse
 
 from b2t.converter.converter import ConversionFormat, convert_file
+from b2t.converter.md_remove_table import MarkdownRemoveTableConverter
+from b2t.converter.md_to_png import MarkdownToPngConverter
 from b2t.storage import StoredArtifact
 from b2t.storage.base import classify_artifact_filename
-
+from backend.dependencies import get_history_db, get_storage_backend
 from backend.download_registry import download_registry, media_type_for_filename
 from backend.schemas import ConvertRequest, ConvertResponse
-from backend.dependencies import get_history_db, get_storage_backend
+from backend.stock_cache import get_cached_stock_statuses
 
 router = APIRouter()
+
+PNG_PAD_VIEWPORT_WIDTH = 834
+PNG_PAD_VIEWPORT_HEIGHT = 1112
+PNG_DESKTOP_DPR = 2
+PNG_MOBILE_VIEWPORT_WIDTH = 430
+PNG_MOBILE_VIEWPORT_HEIGHT = 932
+PNG_MOBILE_DPR = 3
 
 
 def _sibling_storage_key(source_storage_key: str, filename: str) -> str:
@@ -31,9 +40,12 @@ def _precomputed_convert_filename(
     source_kind: str,
     target_format: ConversionFormat,
     source_variant: str | None,
+    render_mode: str | None,
 ) -> str:
     path = Path(filename)
     if target_format == ConversionFormat.PNG:
+        if render_mode not in (None, "", "mobile"):
+            return ""
         if source_kind == "summary":
             if source_variant == "summary_no_table":
                 return f"{path.stem}_no_table.png"
@@ -50,6 +62,7 @@ def _find_precomputed_conversion(
     artifact: StoredArtifact,
     target_format: ConversionFormat,
     source_variant: str | None,
+    render_mode: str | None = None,
 ) -> StoredArtifact | None:
     source_kind = classify_artifact_filename(artifact.filename) or ""
     filename = _precomputed_convert_filename(
@@ -57,6 +70,7 @@ def _find_precomputed_conversion(
         source_kind,
         target_format,
         source_variant,
+        render_mode,
     )
     if not filename or filename == artifact.filename:
         return None
@@ -83,13 +97,79 @@ def _convert_response_for_artifact(artifact: StoredArtifact) -> ConvertResponse:
     )
 
 
-def _lookup_artifact_pubdate(storage_key: str) -> str:
+def _uses_summary_render_html(
+    source_kind: str,
+    target_format: ConversionFormat,
+    source_variant: str | None,
+) -> bool:
+    if target_format != ConversionFormat.HTML:
+        return False
+    return (
+        source_kind == "summary"
+        or source_kind == "summary_table_md"
+        or source_kind == "summary_fancy_html"
+        or source_variant == "summary_no_table"
+    )
+
+
+def _summary_render_html_options(
+    *,
+    artifact: StoredArtifact,
+    source_kind: str,
+    source_variant: str | None,
+) -> dict:
+    options = {"inline_css": True}
+    if source_kind == "summary_table_md":
+        options["is_table"] = True
+    if source_kind == "summary" and source_variant != "summary_no_table":
+        options["enhance_stock_tables"] = True
+        bvid, _ = _lookup_artifact_run_context(artifact.storage_key)
+        if bvid:
+            options["bvid"] = bvid
+    if source_kind in {"summary", "summary_table_md"}:
+        pubdate = _lookup_artifact_pubdate(artifact.storage_key)
+        if pubdate:
+            options["as_of_date"] = pubdate
+    return options
+
+
+def _summary_preview_filename(filename: str, source_variant: str | None) -> str:
+    path = Path(filename)
+    if source_variant == "summary_no_table":
+        return f"{path.stem}_no_table.html"
+    return f"{path.stem}.html"
+
+
+def _build_summary_render_html(
+    *,
+    artifact: StoredArtifact,
+    source_path: Path,
+    source_kind: str,
+    source_variant: str | None,
+    stock_statuses=None,
+) -> str:
+    html_options = _summary_render_html_options(
+        artifact=artifact,
+        source_kind=source_kind,
+        source_variant=source_variant,
+    )
+    is_table = bool(html_options.pop("is_table", False))
+    if stock_statuses is not None:
+        html_options["stock_statuses"] = stock_statuses
+    return MarkdownToPngConverter().build_render_html(
+        source_path,
+        is_table=is_table,
+        **html_options,
+    )
+
+
+def _lookup_artifact_run_context(storage_key: str) -> tuple[str, str]:
     try:
         db = get_history_db()
         with db._connect() as conn:
             row = conn.execute(
                 """
-                SELECT r.pubdate
+                SELECT r.bvid, r.pubdate
                 FROM transcription_artifacts a
                 JOIN transcription_runs r ON r.run_id = a.run_id
                 WHERE a.storage_key = ?
@@ -98,10 +178,35 @@ def _lookup_artifact_pubdate(storage_key: str) -> str:
                 (storage_key,),
             ).fetchone()
     except Exception:
-        return ""
+        return "", ""
     if row is None:
-        return ""
-    return str(row["pubdate"] or "").strip()
+        return "", ""
+    return str(row["bvid"] or "").strip(), str(row["pubdate"] or "").strip()
+
+
+def _lookup_artifact_pubdate(storage_key: str) -> str:
+    return _lookup_artifact_run_context(storage_key)[1]
+
+
+def _load_stock_statuses_for_render(
+    *,
+    artifact: StoredArtifact,
+    source_path: Path,
+) -> dict:
+    bvid, pubdate = _lookup_artifact_run_context(artifact.storage_key)
+    if not bvid:
+        return {}
+    try:
+        # Rendering must remain available when market-data providers are slow or
+        # unreachable. Only use data already populated in the local history DB.
+        return get_cached_stock_statuses(
+            db=get_history_db(),
+            bvid=bvid,
+            as_of_date=pubdate,
+            markdown_paths=[source_path],
+        )
+    except Exception:
+        return {}
 
 
 @router.get("/api/download/{download_id}")
@@ -156,6 +261,146 @@ def download_markdown(download_id: str) -> StreamingResponse:
     )
 
 
+@router.get("/api/preview/txt/{download_id}")
+def preview_timeline_text(download_id: str) -> PlainTextResponse:
+    artifact = download_registry.get_artifact(download_id)
+    if artifact is None:
+        raise HTTPException(status_code=404, detail="下载链接不存在或已过期")
+    if classify_artifact_filename(artifact.filename) != "summary_timeline":
+        raise HTTPException(status_code=400, detail="此文件不支持 TXT 预览")
+
+    try:
+        with get_storage_backend().open_stream(artifact.storage_key) as stream:
+            timeline_text = stream.read().decode("utf-8")
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=410,
+            detail="源文件不存在，请重新生成",
+        ) from None
+    except UnicodeDecodeError as exc:
+        raise HTTPException(status_code=500, detail="时间线文件编码无效") from exc
+
+    quoted_filename = quote(artifact.filename)
+    return PlainTextResponse(
+        timeline_text,
+        headers={"Content-Disposition": f"inline; filename*=UTF-8''{quoted_filename}"},
+    )
+
+
+@router.get("/api/preview/html/{download_id}")
+def preview_rendered_html(
+    download_id: str,
+    source_variant: str | None = None,
+) -> HTMLResponse:
+    artifact = download_registry.get_artifact(download_id)
+    if artifact is None:
+        raise HTTPException(status_code=404, detail="下载链接不存在或已过期")
+
+    source_kind = classify_artifact_filename(artifact.filename) or ""
+    if not _uses_summary_render_html(
+        source_kind,
+        ConversionFormat.HTML,
+        source_variant,
+    ):
+        raise HTTPException(status_code=400, detail="此文件不支持 HTML 预览")
+
+    storage_backend = get_storage_backend()
+    source_suffix = Path(artifact.filename).suffix.lower().lstrip(".")
+    if source_kind == "summary_fancy_html":
+        if source_suffix != "html":
+            raise HTTPException(
+                status_code=400,
+                detail=f"不支持预览此文件类型: {source_suffix}",
+            )
+        try:
+            with storage_backend.open_stream(artifact.storage_key) as stream:
+                html = stream.read().decode("utf-8")
+        except FileNotFoundError:
+            raise HTTPException(
+                status_code=410,
+                detail="源文件不存在，请重新生成",
+            ) from None
+        except UnicodeDecodeError as exc:
+            raise HTTPException(status_code=500, detail="HTML 文件编码无效") from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"读取源文件失败: {exc}",
+            ) from exc
+        quoted_filename = quote(artifact.filename)
+        return HTMLResponse(
+            html,
+            headers={
+                "Content-Disposition": f"inline; filename*=UTF-8''{quoted_filename}"
+            },
+        )
+
+    if source_suffix not in ("md", "markdown"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"不支持预览此文件类型: {source_suffix}",
+        )
+
+    with tempfile.TemporaryDirectory(prefix="b2t-preview-") as temp_dir:
+        temp_dir_path = Path(temp_dir)
+        source_path = temp_dir_path / artifact.filename
+        try:
+            with (
+                storage_backend.open_stream(artifact.storage_key) as stream,
+                source_path.open("wb") as output,
+            ):
+                while True:
+                    chunk = stream.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    output.write(chunk)
+        except FileNotFoundError:
+            raise HTTPException(
+                status_code=410,
+                detail="源文件不存在，请重新生成",
+            ) from None
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"读取源文件失败: {exc}",
+            ) from exc
+
+        preview_source_path = source_path
+        if source_variant == "summary_no_table":
+            preview_source_path = source_path.with_stem(f"{source_path.stem}_no_table")
+            MarkdownRemoveTableConverter().convert(source_path, preview_source_path)
+
+        stock_statuses = None
+        if source_variant != "summary_no_table" and source_kind in {
+            "summary",
+            "summary_table_md",
+        }:
+            stock_statuses = _load_stock_statuses_for_render(
+                artifact=artifact,
+                source_path=preview_source_path,
+            )
+        try:
+            html = _build_summary_render_html(
+                artifact=artifact,
+                source_path=preview_source_path,
+                source_kind=source_kind,
+                source_variant=source_variant,
+                stock_statuses=stock_statuses,
+            )
+        except RuntimeError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"预览失败: {exc}") from exc
+
+    quoted_filename = quote(
+        _summary_preview_filename(artifact.filename, source_variant)
+    )
+    return HTMLResponse(
+        html,
+        headers={"Content-Disposition": f"inline; filename*=UTF-8''{quoted_filename}"},
+    )
+
+
 @router.post("/api/convert", response_model=ConvertResponse)
 def convert_artifact(payload: ConvertRequest) -> ConvertResponse:
     """
@@ -199,6 +444,7 @@ def convert_artifact(payload: ConvertRequest) -> ConvertResponse:
         artifact=artifact,
         target_format=target_format,
         source_variant=payload.source_variant,
+        render_mode=payload.render_mode,
     )
     if precomputed is not None:
         return _convert_response_for_artifact(precomputed)
@@ -209,13 +455,15 @@ def convert_artifact(payload: ConvertRequest) -> ConvertResponse:
         source_path = temp_dir_path / artifact.filename
 
         try:
-            with storage_backend.open_stream(artifact.storage_key) as stream:
-                with source_path.open("wb") as output:
-                    while True:
-                        chunk = stream.read(1024 * 1024)
-                        if not chunk:
-                            break
-                        output.write(chunk)
+            with (
+                storage_backend.open_stream(artifact.storage_key) as stream,
+                source_path.open("wb") as output,
+            ):
+                while True:
+                    chunk = stream.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    output.write(chunk)
         except FileNotFoundError:
             raise HTTPException(
                 status_code=410,
@@ -230,6 +478,17 @@ def convert_artifact(payload: ConvertRequest) -> ConvertResponse:
         # Execute conversion
         try:
             source_kind = classify_artifact_filename(artifact.filename) or ""
+            render_source_path = source_path
+            explicit_output_path = None
+            if (
+                source_kind == "summary"
+                and payload.source_variant == "summary_no_table"
+            ):
+                render_source_path = source_path.with_stem(
+                    f"{source_path.stem}_no_table"
+                )
+                MarkdownRemoveTableConverter().convert(source_path, render_source_path)
+
             png_is_table = (
                 target_format == ConversionFormat.PNG
                 and source_kind == "summary_table_md"
@@ -239,15 +498,42 @@ def convert_artifact(payload: ConvertRequest) -> ConvertResponse:
                 and source_kind == "summary_table_md"
             )
             convert_options = {}
+            if target_format == ConversionFormat.PNG and source_suffix in _md_suffixes:
+                if payload.render_mode == "desktop":
+                    convert_options.update(
+                        width=PNG_PAD_VIEWPORT_WIDTH,
+                        height=PNG_PAD_VIEWPORT_HEIGHT,
+                        dpr=PNG_DESKTOP_DPR,
+                    )
+                    explicit_output_path = render_source_path.with_name(
+                        f"{render_source_path.stem}_desktop.png"
+                    )
+                elif source_kind == "summary":
+                    convert_options["dpr"] = 4
+                    explicit_output_path = render_source_path.with_suffix(".png")
             if target_format == ConversionFormat.PNG and source_kind == "summary":
-                convert_options["dpr"] = 4
+                convert_options["enhance_stock_tables"] = (
+                    payload.source_variant != "summary_no_table"
+                )
             if target_format == ConversionFormat.PDF and source_kind == "summary":
-                convert_options["enhance_stock_tables"] = True
-            if png_is_table or pdf_is_table:
+                convert_options["enhance_stock_tables"] = (
+                    payload.source_variant != "summary_no_table"
+                )
+            if (
+                source_kind in {"summary", "summary_table_md"}
+                and payload.source_variant != "summary_no_table"
+            ):
+                stock_statuses = _load_stock_statuses_for_render(
+                    artifact=artifact,
+                    source_path=render_source_path,
+                )
+                # Pass an empty mapping too, so the converters never fall back
+                # to a synchronous market-data query during a download.
+                convert_options["stock_statuses"] = stock_statuses
+            if source_kind in {"summary", "summary_table_md"}:
                 pubdate = _lookup_artifact_pubdate(artifact.storage_key)
                 if pubdate:
                     convert_options["as_of_date"] = pubdate
-            explicit_output_path = None
             if (
                 source_suffix in _html_suffixes
                 and target_format == ConversionFormat.PNG
@@ -255,31 +541,48 @@ def convert_artifact(payload: ConvertRequest) -> ConvertResponse:
                 render_mode = payload.render_mode or "desktop"
                 if render_mode == "mobile":
                     convert_options.update(
-                        width=430,
-                        height=932,
-                        dpr=3,
+                        width=PNG_MOBILE_VIEWPORT_WIDTH,
+                        height=PNG_MOBILE_VIEWPORT_HEIGHT,
+                        dpr=PNG_MOBILE_DPR,
                         is_mobile=True,
                     )
-                    explicit_output_path = source_path.with_name(
-                        f"{source_path.stem}_mobile.png"
+                    explicit_output_path = render_source_path.with_name(
+                        f"{render_source_path.stem}_mobile.png"
                     )
                 else:
                     convert_options.update(
-                        width=1440,
-                        height=1080,
-                        dpr=2,
+                        width=PNG_PAD_VIEWPORT_WIDTH,
+                        height=PNG_PAD_VIEWPORT_HEIGHT,
+                        dpr=PNG_DESKTOP_DPR,
                         is_mobile=False,
                     )
-                    explicit_output_path = source_path.with_name(
-                        f"{source_path.stem}_desktop.png"
+                    explicit_output_path = render_source_path.with_name(
+                        f"{render_source_path.stem}_desktop.png"
                     )
-            output_path = convert_file(
-                source_path,
+            if _uses_summary_render_html(
+                source_kind,
                 target_format,
-                output_path=explicit_output_path,
-                is_table=(png_is_table or pdf_is_table),
-                **convert_options,
-            )
+                payload.source_variant,
+            ):
+                output_path = source_path.with_suffix(".html")
+                output_path.write_text(
+                    _build_summary_render_html(
+                        artifact=artifact,
+                        source_path=render_source_path,
+                        source_kind=source_kind,
+                        source_variant=payload.source_variant,
+                        stock_statuses=convert_options.get("stock_statuses"),
+                    ),
+                    encoding="utf-8",
+                )
+            else:
+                output_path = convert_file(
+                    render_source_path,
+                    target_format,
+                    output_path=explicit_output_path,
+                    is_table=(png_is_table or pdf_is_table),
+                    **convert_options,
+                )
         except RuntimeError as exc:
             raise HTTPException(
                 status_code=500,

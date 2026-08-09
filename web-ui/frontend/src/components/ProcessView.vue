@@ -14,6 +14,7 @@
     CheckCircle2,
     ChevronDown,
     FileAudio2,
+    FileVideo2,
     Link2,
     LoaderCircle
   } from 'lucide-vue-next'
@@ -80,6 +81,10 @@
     deepseekApiKeyConfigured: {
       type: Boolean,
       default: false
+    },
+    customLlmConfigured: {
+      type: Boolean,
+      default: false
     }
   })
 
@@ -96,7 +101,11 @@
   const uploadedAudioFile = ref(null)
   const uploadFileInput = ref(null)
   const enableSummary = ref(true)
+  const preferBilibiliSubtitle = ref(true)
   const autoGenerateFancyHtml = ref(false)
+  const includeComments = ref(true)
+  const commentLimit = ref(500)
+  const downloadAllComments = ref(false)
   const currentSkipSummary = ref(false)
   const isStarting = ref(false)
   const isPolling = ref(false)
@@ -123,6 +132,7 @@
     auto_generate_fancy_html: false,
     fancy_html_status: 'idle',
     fancy_html_error: '',
+    used_bilibili_subtitle: false,
     already_transcribed: false,
     notice: '',
     all_downloads: [],
@@ -133,20 +143,31 @@
     updated_at: '',
     author: '',
     pubdate: '',
-    bvid: ''
+    bvid: '',
+    history_run_id: '',
+    is_ephemeral_upload: false,
+    expires_at: ''
   })
 
   let pollTimer = null
+  let lastRenderedJobSignature = ''
   const maxPollErrors = 3
   const ACTIVE_JOB_IDS_KEY = 'b2t.active-job-ids'
   const LOCAL_API_KEY_KEY = 'b2t.public-api-key'
   const LOCAL_DEEPSEEK_API_KEY_KEY = 'b2t.public-deepseek-api-key'
+  const LOCAL_CUSTOM_LLM_BASE_URL_KEY = 'b2t.public-custom-llm-base-url'
+  const LOCAL_CUSTOM_LLM_API_KEY_KEY = 'b2t.public-custom-llm-api-key'
+  const LOCAL_CUSTOM_LLM_MODEL_KEY = 'b2t.public-custom-llm-model'
   const LOCAL_OPEN_PUBLIC_SUMMARY_TEMPLATE_KEY =
     'b2t.open-public-summary-template'
   const CUSTOM_SUMMARY_PRESET_VALUE = '__user_custom__'
-  const uploadAccept = '.aac,.flac,.m4a,.mp3,.ogg,.opus,.wav,.webm'
+  const CUSTOM_LLM_PROFILE_NAME = 'open_public_custom_llm'
+  const uploadAccept =
+    '.aac,.flac,.m4a,.mp3,.ogg,.opus,.wav,.webm,.avi,.m4v,.mkv,.mov,.mp4'
   const uploadFilenamePattern =
     /^(BV[0-9A-Za-z]{10})_.+\.(aac|flac|m4a|mp3|ogg|opus|wav|webm)$/i
+  const openPublicUploadPattern =
+    /\.(aac|flac|m4a|mp3|ogg|opus|wav|webm|avi|m4v|mkv|mov|mp4)$/i
   const userSummaryPromptTemplate = ref('')
   const summaryPresetDropdownRef = ref(null)
   const isSummaryPresetMenuOpen = ref(false)
@@ -236,6 +257,17 @@
       : ''
   }
 
+  const normalizedCommentLimit = computed(() => {
+    if (downloadAllComments.value) {
+      return null
+    }
+    const parsed = Number(commentLimit.value)
+    if (!Number.isFinite(parsed)) {
+      return 500
+    }
+    return Math.min(1000, Math.max(1, Math.floor(parsed)))
+  })
+
   const previewedSummaryPresetText = computed(() =>
     buildSummaryPresetPreviewText(
       getSummaryPresetPromptTemplate(
@@ -324,6 +356,58 @@
     }
   }
 
+  const getLocalCustomLlmConfig = () => {
+    try {
+      return {
+        baseUrl: (
+          window.localStorage.getItem(LOCAL_CUSTOM_LLM_BASE_URL_KEY) || ''
+        ).trim(),
+        apiKey: (
+          window.localStorage.getItem(LOCAL_CUSTOM_LLM_API_KEY_KEY) || ''
+        ).trim(),
+        model: (
+          window.localStorage.getItem(LOCAL_CUSTOM_LLM_MODEL_KEY) || ''
+        ).trim()
+      }
+    } catch {
+      return { baseUrl: '', apiKey: '', model: '' }
+    }
+  }
+
+  const formatSummaryProfileLabel = (profile) => {
+    if (!profile) return ''
+    if (profile.name === CUSTOM_LLM_PROFILE_NAME) {
+      return `custom(${profile.model || 'model'})`
+    }
+    return `${profile.name} (${profile.model})`
+  }
+
+  const appendCustomLlmFormData = (formData) => {
+    if (!props.requiresApiKey) return
+    const customLlm = getLocalCustomLlmConfig()
+    if (customLlm.baseUrl && customLlm.apiKey && customLlm.model) {
+      formData.append('custom_llm_base_url', customLlm.baseUrl)
+      formData.append('custom_llm_api_key', customLlm.apiKey)
+      formData.append('custom_llm_model', customLlm.model)
+    }
+  }
+
+  const getCustomLlmPayload = () => {
+    if (!props.requiresApiKey) {
+      return {
+        custom_llm_base_url: null,
+        custom_llm_api_key: null,
+        custom_llm_model: null
+      }
+    }
+    const customLlm = getLocalCustomLlmConfig()
+    return {
+      custom_llm_base_url: customLlm.baseUrl || null,
+      custom_llm_api_key: customLlm.apiKey || null,
+      custom_llm_model: customLlm.model || null
+    }
+  }
+
   const loadLocalSummaryPromptTemplate = () => {
     if (!isOpenPublic.value) {
       userSummaryPromptTemplate.value = ''
@@ -399,6 +483,66 @@
     }
   }
 
+  const getLogSignature = (logs) => {
+    if (!Array.isArray(logs) || logs.length === 0) {
+      return '0::'
+    }
+    return `${logs.length}:${logs.at(-1) || ''}`
+  }
+
+  const getDownloadSignature = (downloads) => {
+    if (!Array.isArray(downloads) || downloads.length === 0) {
+      return ''
+    }
+    return downloads
+      .map((item) =>
+        [
+          item.kind || '',
+          item.url || '',
+          item.filename || '',
+          item.download_url || ''
+        ].join(':')
+      )
+      .join('|')
+  }
+
+  const getJobRenderSignature = (payload) =>
+    [
+      payload.status || '',
+      payload.skip_summary ? '1' : '0',
+      payload.stage || '',
+      payload.stage_label || '',
+      payload.progress ?? '',
+      payload.download_url || '',
+      payload.filename || '',
+      payload.txt_download_url || '',
+      payload.txt_filename || '',
+      payload.summary_download_url || '',
+      payload.summary_filename || '',
+      payload.summary_txt_download_url || '',
+      payload.summary_txt_filename || '',
+      payload.summary_table_pdf_download_url || '',
+      payload.summary_table_pdf_filename || '',
+      payload.summary_preset || '',
+      payload.summary_profile || '',
+      payload.auto_generate_fancy_html ? '1' : '0',
+      payload.fancy_html_status || '',
+      payload.fancy_html_error || '',
+      payload.used_bilibili_subtitle ? '1' : '0',
+      payload.already_transcribed ? '1' : '0',
+      payload.notice || '',
+      payload.error || '',
+      getDownloadSignature(payload.all_downloads),
+      getLogSignature(payload.logs),
+      payload.author || '',
+      payload.pubdate || '',
+      payload.bvid || '',
+      payload.title || '',
+      payload.history_run_id || '',
+      payload.is_ephemeral_upload ? '1' : '0',
+      payload.expires_at || ''
+    ].join('\u001f')
+
   const syncLogScroll = () => {
     if (logsViewport.value === null) {
       return
@@ -407,6 +551,7 @@
   }
 
   const resetJob = () => {
+    lastRenderedJobSignature = ''
     job.value = {
       status: 'idle',
       skip_summary: false,
@@ -428,6 +573,7 @@
       auto_generate_fancy_html: false,
       fancy_html_status: 'idle',
       fancy_html_error: '',
+      used_bilibili_subtitle: false,
       already_transcribed: false,
       notice: '',
       all_downloads: [],
@@ -438,7 +584,10 @@
       updated_at: '',
       author: '',
       pubdate: '',
-      bvid: ''
+      bvid: '',
+      history_run_id: '',
+      is_ephemeral_upload: false,
+      expires_at: ''
     }
   }
 
@@ -461,9 +610,15 @@
 
   const validateUploadedAudio = (file) => {
     if (!file) {
-      return '请先选择音频文件'
+      return '请先选择音频或视频文件'
     }
     const normalizedName = String(file.name || '').trim()
+    if (isOpenPublic.value) {
+      if (!openPublicUploadPattern.test(normalizedName)) {
+        return '仅支持常见音频或视频格式：aac、flac、m4a、mp3、ogg、opus、wav、webm、avi、m4v、mkv、mov、mp4'
+      }
+      return ''
+    }
     if (!uploadFilenamePattern.test(normalizedName)) {
       return '上传文件名必须符合 `BV号_视频标题.xxx`，例如 `BV1R9i4BoE7H_视频标题.m4a`'
     }
@@ -534,19 +689,24 @@
       const previousLogCount = Array.isArray(job.value.logs)
         ? job.value.logs.length
         : 0
-      job.value = data
-      currentSkipSummary.value = Boolean(data.skip_summary)
-      if (
-        isOpenPublic.value &&
-        typeof data.summary_prompt_template === 'string' &&
-        data.summary_prompt_template.trim()
-      ) {
-        userSummaryPromptTemplate.value = data.summary_prompt_template
+      const nextRenderSignature = getJobRenderSignature(data)
+      const shouldRenderJob = nextRenderSignature !== lastRenderedJobSignature
+      if (shouldRenderJob) {
+        job.value = data
+        lastRenderedJobSignature = nextRenderSignature
+        currentSkipSummary.value = Boolean(data.skip_summary)
+        if (
+          isOpenPublic.value &&
+          typeof data.summary_prompt_template === 'string' &&
+          data.summary_prompt_template.trim()
+        ) {
+          userSummaryPromptTemplate.value = data.summary_prompt_template
+        }
       }
       pollErrorCount.value = 0
       error.value = ''
       const currentLogCount = Array.isArray(data.logs) ? data.logs.length : 0
-      if (currentLogCount !== previousLogCount) {
+      if (shouldRenderJob && currentLogCount !== previousLogCount) {
         nextTick(syncLogScroll)
       }
 
@@ -610,7 +770,7 @@
       let resp
       if (isUploadMode.value) {
         if (!props.allowUpload) {
-          throw new Error('当前模式不允许上传音频，请改为输入视频 URL 或 BV 号')
+          throw new Error('当前模式不允许上传音频，请改为输入播客/视频链接')
         }
         const validationMessage = validateUploadedAudio(uploadedAudioFile.value)
         if (validationMessage) {
@@ -622,16 +782,10 @@
         if (
           !skipSummary &&
           props.selectedSummaryPreset &&
-          props.selectedSummaryPreset !== CUSTOM_SUMMARY_PRESET_VALUE
+          (props.selectedSummaryPreset !== CUSTOM_SUMMARY_PRESET_VALUE ||
+            effectiveSummaryPromptTemplate.value)
         ) {
           formData.append('summary_preset', props.selectedSummaryPreset)
-        }
-        if (
-          !skipSummary &&
-          props.selectedSummaryPreset === CUSTOM_SUMMARY_PRESET_VALUE &&
-          props.summaryDefaultPreset
-        ) {
-          formData.append('summary_preset', props.summaryDefaultPreset)
         }
         if (!skipSummary && props.selectedSummaryProfile) {
           formData.append('summary_profile', props.selectedSummaryProfile)
@@ -652,6 +806,7 @@
           formData.append('api_key', getLocalApiKey())
           const dsKey = getLocalDeepseekApiKey()
           if (dsKey) formData.append('deepseek_api_key', dsKey)
+          appendCustomLlmFormData(formData)
         }
         resp = await fetch('/api/process/upload', {
           method: 'POST',
@@ -659,7 +814,7 @@
         })
       } else {
         if (!url.value.trim()) {
-          throw new Error('请输入 bilibili 视频 URL 或 BV 号')
+          throw new Error('请输入播客链接或视频 URL')
         }
         resp = await fetch('/api/process', {
           method: 'POST',
@@ -670,16 +825,9 @@
             url: url.value.trim(),
             skip_summary: skipSummary,
             summary_preset:
-              skipSummary ||
-              !props.selectedSummaryPreset ||
-              props.selectedSummaryPreset === CUSTOM_SUMMARY_PRESET_VALUE
+              skipSummary || !props.selectedSummaryPreset
                 ? null
                 : props.selectedSummaryPreset,
-            ...(skipSummary ||
-            props.selectedSummaryPreset !== CUSTOM_SUMMARY_PRESET_VALUE ||
-            !props.summaryDefaultPreset
-              ? {}
-              : { summary_preset: props.summaryDefaultPreset }),
             summary_profile:
               skipSummary || !props.selectedSummaryProfile
                 ? null
@@ -691,10 +839,15 @@
             auto_generate_fancy_html: skipSummary
               ? false
               : autoGenerateFancyHtml.value,
+            prefer_bilibili_subtitle: preferBilibiliSubtitle.value,
+            include_comments:
+              !skipSummary && includeComments.value && !isUploadMode.value,
+            comment_limit: normalizedCommentLimit.value,
             api_key: props.requiresApiKey ? getLocalApiKey() : null,
             deepseek_api_key: props.requiresApiKey
               ? getLocalDeepseekApiKey() || null
-              : null
+              : null,
+            ...getCustomLlmPayload()
           })
         })
       }
@@ -791,7 +944,9 @@
           <p>
             {{
               allowUpload
-                ? '输入 B 站视频链接，或上传符合命名规范的音频文件，自动生成转录内容和大模型总结。'
+                ? isOpenPublic
+                  ? '输入 B 站视频链接，或上传音频/视频生成临时转录和大模型总结。'
+                  : '输入 B 站视频链接，或上传符合命名规范的音频文件，自动生成转录内容和大模型总结。'
                 : '输入 B 站视频链接，自动生成转录内容和大模型总结。'
             }}
           </p>
@@ -804,6 +959,12 @@
             </span>
             <span v-if="enableSummary" class="hero-pill hero-pill-soft">
               Fancy HTML{{ autoGenerateFancyHtml ? '自动生成' : '手动生成' }}
+            </span>
+            <span
+              v-if="job.is_ephemeral_upload"
+              class="hero-pill hero-pill-soft"
+            >
+              临时结果 2 小时后删除
             </span>
           </div>
         </header>
@@ -828,20 +989,21 @@
               :disabled="isStarting || isRunning"
               @click="setInputMode('upload')"
             >
-              <FileAudio2 :size="15" />
-              <span>上传音频</span>
+              <FileVideo2 v-if="isOpenPublic" :size="15" />
+              <FileAudio2 v-else :size="15" />
+              <span>{{ isOpenPublic ? '上传音频 / 视频' : '上传音频' }}</span>
             </button>
           </div>
 
           <template v-if="!isUploadMode">
-            <label for="video-url">视频 URL 或 BV 号</label>
+            <label for="video-url">视频/播客 URL</label>
             <div class="input-row">
               <Link2 :size="18" />
               <input
                 id="video-url"
                 v-model="url"
                 type="text"
-                placeholder="https://www.bilibili.com/video/BV... 或 b23.tv/..."
+                placeholder="支持 Bilibili、小宇宙 FM、喜马拉雅播客链接..."
               />
             </div>
             <div class="input-example">
@@ -854,21 +1016,84 @@
                 https://www.bilibili.com/video/BV1R9i4BoE7H
               </a>
               <a
-                href="https://b23.tv/2cvz6sn"
+                href="https://www.xiaoyuzhoufm.com/episode/6a0a7365e1eb34a93997ffa2"
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                https://b23.tv/2cvz6sn
+                https://www.xiaoyuzhoufm.com/episode/6a0a7365e1eb34a93997ffa2
               </a>
               <span
-                >【第1173日投资记录：稍微回血，伊利业绩大放异彩，基本确定把蒙牛卖飞了……-哔哩哔哩】
-                https://b23.tv/2cvz6sn</span
+                >支持 Bilibili / 小宇宙 / 喜马拉雅链接，自动下载音频并转录</span
               >
+            </div>
+            <label class="switch" for="prefer-bilibili-subtitle">
+              <input
+                id="prefer-bilibili-subtitle"
+                v-model="preferBilibiliSubtitle"
+                type="checkbox"
+              />
+              <span class="switch-track">
+                <span class="switch-thumb"></span>
+              </span>
+              <span class="switch-label">优先使用 B 站字幕</span>
+            </label>
+            <div
+              class="summary-preset process-summary-field process-summary-toggle comments-summary-field"
+            >
+              <label class="switch switch-compact" for="include-comments">
+                <input
+                  id="include-comments"
+                  v-model="includeComments"
+                  type="checkbox"
+                />
+                <span class="switch-track">
+                  <span class="switch-thumb"></span>
+                </span>
+                <span class="switch-label">总结精选评论</span>
+              </label>
+              <p class="preset-hint">
+                支持 B 站和小宇宙。默认按热门排序下载前 500
+                条主评论；每条主评论的全部子评论都会下载，UP主回复会加粗。打开“下载全部主评论”后不限制主评论数量。
+              </p>
+              <div v-if="includeComments" class="comments-options">
+                <label class="comment-limit-field" for="comment-limit">
+                  <span>主评论数量</span>
+                  <input
+                    id="comment-limit"
+                    v-model.number="commentLimit"
+                    type="number"
+                    min="1"
+                    max="1000"
+                    step="1"
+                    :disabled="downloadAllComments"
+                  />
+                </label>
+                <label
+                  class="switch switch-compact"
+                  for="download-all-comments"
+                >
+                  <input
+                    id="download-all-comments"
+                    v-model="downloadAllComments"
+                    type="checkbox"
+                  />
+                  <span class="switch-track">
+                    <span class="switch-thumb"></span>
+                  </span>
+                  <span class="switch-label">下载全部主评论</span>
+                </label>
+              </div>
             </div>
           </template>
 
           <template v-else>
-            <label for="audio-file">音频文件（必需包含 BV 号）</label>
+            <label for="audio-file">
+              {{
+                isOpenPublic
+                  ? '音频或视频文件'
+                  : '音频文件（文件名必须包含 BV 号）'
+              }}
+            </label>
             <div class="upload-row">
               <input
                 id="audio-file"
@@ -878,7 +1103,11 @@
                 @change="onUploadFileChange"
               />
             </div>
-            <p class="input-example">
+            <p v-if="isOpenPublic" class="input-example">
+              上传结果不会进入历史记录，仅能通过当前任务链接访问，并会在完成后 2
+              小时自动删除。支持常见音频和视频格式。
+            </p>
+            <p v-else class="input-example">
               文件名必须符合
               <code>BV号_视频标题.xxx</code>
               ，例如
@@ -961,7 +1190,7 @@
                       :key="profile.name"
                       :value="profile.name"
                     >
-                      {{ profile.name }} ({{ profile.model }})
+                      {{ formatSummaryProfileLabel(profile) }}
                     </option>
                   </select>
                   <ChevronDown
@@ -1085,15 +1314,6 @@
                 <p v-else-if="presetOptions.length === 0" class="preset-hint">
                   暂未连接到后端模板接口，提交时会使用服务端默认模板。
                 </p>
-                <p
-                  v-else-if="
-                    isOpenPublic &&
-                    selectedSummaryPreset === CUSTOM_SUMMARY_PRESET_VALUE
-                  "
-                  class="preset-hint"
-                >
-                  当前将使用你在 API Key 页面保存的自定义模板。
-                </p>
               </div>
             </div>
           </div>
@@ -1154,10 +1374,10 @@
             <h3>视频信息</h3>
             <div class="metadata-items">
               <span v-if="job.bvid" class="metadata-item">
-                <strong>BV 号:</strong> {{ job.bvid }}
+                <strong>资源 ID:</strong> {{ job.bvid }}
               </span>
               <span v-if="job.author" class="metadata-item">
-                <strong>UP主:</strong> {{ job.author }}
+                <strong>UP主 / 主播:</strong> {{ job.author }}
               </span>
               <span v-if="job.pubdate" class="metadata-item">
                 <strong>发布时间:</strong> {{ job.pubdate }}
@@ -1191,6 +1411,8 @@
               :selected-summary-preset="selectedSummaryPreset"
               :summary-profiles="summaryProfiles"
               :selected-summary-profile="selectedSummaryProfile"
+              :history-run-id="job.history_run_id || ''"
+              :requires-api-key="requiresApiKey"
             />
           </template>
           <p v-else class="download-placeholder">
@@ -1588,6 +1810,41 @@
 
   .process-summary-toggle {
     grid-column: 1 / -1;
+  }
+
+  .comments-summary-field {
+    gap: 10px;
+  }
+
+  .comments-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    align-items: center;
+  }
+
+  .comment-limit-field {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    color: #334155;
+  }
+
+  .comment-limit-field input {
+    width: 96px;
+    min-height: 38px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 8px 10px;
+    background: rgba(255, 255, 255, 0.86);
+    color: #0f172a;
+    font-size: 0.92rem;
+    font-weight: 700;
+  }
+
+  .comment-limit-field input:disabled {
+    color: #94a3b8;
+    background: rgba(226, 232, 240, 0.55);
   }
 
   .process-summary-field label {

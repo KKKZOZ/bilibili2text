@@ -1,14 +1,13 @@
 """Summary-specific generation endpoints."""
 
-from concurrent.futures import ThreadPoolExecutor
 import re
+from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import APIRouter, HTTPException
 
 from b2t.history import infer_run_id
 from b2t.storage import StoredArtifact
 from b2t.storage.base import classify_artifact_filename
-
 from backend.dependencies import get_history_db, get_storage_backend
 from backend.download_registry import download_registry
 from backend.schemas import GenerateFancyHtmlRequest, GenerateFancyHtmlResponse
@@ -49,6 +48,9 @@ def generate_fancy_html(payload: GenerateFancyHtmlRequest) -> GenerateFancyHtmlR
             require_public_api_key=True,
             api_key=(payload.api_key or "").strip() or None,
             deepseek_api_key=(payload.deepseek_api_key or "").strip() or None,
+            custom_llm_base_url=(payload.custom_llm_base_url or "").strip() or None,
+            custom_llm_api_key=(payload.custom_llm_api_key or "").strip() or None,
+            custom_llm_model=(payload.custom_llm_model or "").strip() or None,
         )
         storage_backend = get_storage_backend()
     except FileNotFoundError as exc:

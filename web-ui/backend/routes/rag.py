@@ -12,6 +12,8 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
+from backend.dependencies import get_history_db, get_rag_store, get_storage_backend
+from backend.download_registry import download_registry
 from backend.schemas_rag import (
     RagAuthorItem,
     RagAuthorsResponse,
@@ -24,8 +26,6 @@ from backend.schemas_rag import (
     RagSourceItem,
     RagStatusResponse,
 )
-from backend.dependencies import get_history_db, get_rag_store, get_storage_backend
-from backend.download_registry import download_registry
 from backend.settings import get_runtime_app_config
 
 router = APIRouter(prefix="/api/rag", tags=["rag"])
@@ -79,6 +79,9 @@ async def rag_query_stream(
     llm_profile: str = "",
     api_key: str = "",
     deepseek_api_key: str = "",
+    custom_llm_base_url: str = "",
+    custom_llm_api_key: str = "",
+    custom_llm_model: str = "",
 ) -> StreamingResponse:
     authors = [a.strip() for a in filter_authors.split(",") if a.strip()]
     return _rag_query_stream_impl(
@@ -87,6 +90,9 @@ async def rag_query_stream(
         llm_profile=llm_profile,
         api_key=api_key,
         deepseek_api_key=deepseek_api_key,
+        custom_llm_base_url=custom_llm_base_url,
+        custom_llm_api_key=custom_llm_api_key,
+        custom_llm_model=custom_llm_model,
     )
 
 
@@ -98,6 +104,9 @@ async def rag_query_stream_post(payload: RagQueryRequest) -> StreamingResponse:
         llm_profile=(payload.llm_profile or "").strip(),
         api_key=(payload.api_key or "").strip(),
         deepseek_api_key=(payload.deepseek_api_key or "").strip(),
+        custom_llm_base_url=(payload.custom_llm_base_url or "").strip(),
+        custom_llm_api_key=(payload.custom_llm_api_key or "").strip(),
+        custom_llm_model=(payload.custom_llm_model or "").strip(),
     )
 
 
@@ -108,12 +117,18 @@ def _rag_query_stream_impl(
     llm_profile: str,
     api_key: str,
     deepseek_api_key: str,
+    custom_llm_base_url: str,
+    custom_llm_api_key: str,
+    custom_llm_model: str,
 ) -> StreamingResponse:
     """Stream RAG query progress as Server-Sent Events."""
     _require_rag_enabled()
     config = get_runtime_app_config(
         api_key=api_key.strip(),
         deepseek_api_key=deepseek_api_key.strip(),
+        custom_llm_base_url=custom_llm_base_url.strip(),
+        custom_llm_api_key=custom_llm_api_key.strip(),
+        custom_llm_model=custom_llm_model.strip(),
     )
     store = get_rag_store()
     history_db = get_history_db()
@@ -129,9 +144,10 @@ def _rag_query_stream_impl(
             where_filter = {"run_id": {"$in": ["__no_match__"]}}
 
     async def _generate():
-        from b2t.rag.embedder import embed_texts  # noqa: PLC0415
-        from b2t.rag.retriever import _ANSWER_PROMPT_TEMPLATE  # noqa: PLC0415
-        import litellm  # noqa: PLC0415
+        import litellm
+
+        from b2t.rag.embedder import embed_texts
+        from b2t.rag.retriever import _ANSWER_PROMPT_TEMPLATE
 
         def _sse(payload: dict) -> str:
             return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
@@ -186,8 +202,13 @@ def _rag_query_stream_impl(
                 chunks=chunks_str, question=question
             )
 
-            from b2t.config import resolve_rag_llm_profile, resolve_summarize_api_base  # noqa: PLC0415
-            from b2t.summarize.litellm_client import _to_litellm_model_name  # noqa: PLC0415
+            from b2t.config import (
+                resolve_rag_llm_profile,
+                resolve_summarize_api_base,
+            )
+            from b2t.summarize.litellm_client import (
+                _to_litellm_model_name,
+            )
 
             profile = resolve_rag_llm_profile(config, override=llm_profile.strip())
             llm_model = _to_litellm_model_name(profile.model, profile.provider)
@@ -246,9 +267,13 @@ def _rag_query_stream_impl(
 
             # Persist to storage and record in history (best-effort)
             try:
-                import tempfile  # noqa: PLC0415
-                from pathlib import Path  # noqa: PLC0415
-                from b2t.history import HistoryArtifact, record_rag_query  # noqa: PLC0415
+                import tempfile
+                from pathlib import Path
+
+                from b2t.history import (
+                    HistoryArtifact,
+                    record_rag_query,
+                )
 
                 def _persist():
                     storage = get_storage_backend()
@@ -258,7 +283,7 @@ def _rag_query_stream_impl(
                         tmp.write(answer_bytes)
                         tmp_path = Path(tmp.name)
                     try:
-                        from uuid import uuid4  # noqa: PLC0415
+                        from uuid import uuid4
 
                         artifact = storage.store_file(
                             tmp_path,
@@ -306,7 +331,13 @@ def _rag_query_stream_impl(
 def rag_query(request: RagQueryRequest) -> RagQueryResponse:
     """Answer a question using RAG over indexed video transcripts."""
     _require_rag_enabled()
-    config = get_runtime_app_config()
+    config = get_runtime_app_config(
+        api_key=(request.api_key or "").strip(),
+        deepseek_api_key=(request.deepseek_api_key or "").strip(),
+        custom_llm_base_url=(request.custom_llm_base_url or "").strip(),
+        custom_llm_api_key=(request.custom_llm_api_key or "").strip(),
+        custom_llm_model=(request.custom_llm_model or "").strip(),
+    )
     store = get_rag_store()
 
     try:
@@ -439,7 +470,7 @@ def rag_status() -> RagStatusResponse:
         logger.error("获取 RAG 状态失败: %s", exc)
         raise HTTPException(status_code=500, detail=f"获取状态失败: {exc}") from exc
 
-    from b2t.rag.indexer import select_index_artifact  # noqa: PLC0415
+    from b2t.rag.indexer import select_index_artifact
 
     indexed_run_ids: list[str] = []
     indexed_items: list[RagIndexedItem] = []

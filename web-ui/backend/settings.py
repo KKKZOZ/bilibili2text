@@ -1,11 +1,10 @@
 """Runtime settings, path-independent config loading, and feature flags."""
 
-from dataclasses import replace
-from datetime import datetime, timezone
 import os
+from dataclasses import replace
+from datetime import UTC, datetime
 from threading import Lock
 
-from backend import PROJECT_ROOT
 from b2t.config import (
     AppConfig,
     STTConfig,
@@ -14,6 +13,7 @@ from b2t.config import (
     SummarizeModelProfile,
     load_config,
 )
+from backend import PROJECT_ROOT
 
 ROOT_CONFIG_PATH = PROJECT_ROOT / "config.toml"
 
@@ -23,6 +23,11 @@ WEB_UI_MODE_ENV = "B2T_WEB_UI_MODE"
 OPEN_PUBLIC_API_KEY_ENV = "B2T_OPEN_PUBLIC_API_KEY"
 OPEN_PUBLIC_DEEPSEEK_API_KEY_ENV = "B2T_OPEN_PUBLIC_DEEPSEEK_API_KEY"
 TRANSCRIPTION_BVID_LOCK_TIMEOUT_ENV = "B2T_TRANSCRIPTION_BVID_LOCK_TIMEOUT_SECONDS"
+STOCK_STATUS_SYNC_TIMEOUT_ENV = "B2T_STOCK_STATUS_SYNC_TIMEOUT_SECONDS"
+EPHEMERAL_UPLOAD_TTL_SECONDS_ENV = "B2T_EPHEMERAL_UPLOAD_TTL_SECONDS"
+EPHEMERAL_UPLOAD_CLEANUP_INTERVAL_SECONDS_ENV = (
+    "B2T_EPHEMERAL_UPLOAD_CLEANUP_INTERVAL_SECONDS"
+)
 
 STAGE_KEYS = (
     "queued",
@@ -34,9 +39,25 @@ STAGE_KEYS = (
     "completed",
 )
 JOB_LOG_LIMIT = 400
+OPEN_PUBLIC_CUSTOM_LLM_PROFILE = "open_public_custom_llm"
 TRANSCRIPTION_BVID_LOCK_TIMEOUT_SECONDS = max(
     1,
     int(os.environ.get(TRANSCRIPTION_BVID_LOCK_TIMEOUT_ENV, "600").strip() or "600"),
+)
+STOCK_STATUS_SYNC_TIMEOUT_SECONDS = max(
+    0.0,
+    float(os.environ.get(STOCK_STATUS_SYNC_TIMEOUT_ENV, "30").strip() or "30"),
+)
+EPHEMERAL_UPLOAD_TTL_SECONDS = max(
+    1,
+    int(os.environ.get(EPHEMERAL_UPLOAD_TTL_SECONDS_ENV, "7200").strip() or "7200"),
+)
+EPHEMERAL_UPLOAD_CLEANUP_INTERVAL_SECONDS = max(
+    1,
+    int(
+        os.environ.get(EPHEMERAL_UPLOAD_CLEANUP_INTERVAL_SECONDS_ENV, "7200").strip()
+        or "7200"
+    ),
 )
 
 try:
@@ -64,7 +85,7 @@ _public_deepseek_api_key = (
 
 
 def utc_iso() -> str:
-    return datetime.now(tz=timezone.utc).isoformat()
+    return datetime.now(tz=UTC).isoformat()
 
 
 def get_app_config() -> AppConfig:
@@ -83,7 +104,7 @@ def is_open_public_mode() -> bool:
 
 
 def is_upload_enabled() -> bool:
-    return not is_open_public_mode()
+    return True
 
 
 def is_delete_enabled() -> bool:
@@ -164,6 +185,8 @@ def _pick_qwen_stt_profile(stt: STTConfig) -> STTProfile:
         groq_chunk_length=stt.groq_chunk_length,
         groq_overlap=stt.groq_overlap,
         groq_bitrate=stt.groq_bitrate,
+        diarization_enabled=stt.diarization_enabled,
+        speaker_count=stt.speaker_count,
     )
 
 
@@ -207,6 +230,9 @@ def build_open_public_config(
     config: AppConfig,
     api_key: str,
     deepseek_api_key: str = "",
+    custom_llm_base_url: str = "",
+    custom_llm_api_key: str = "",
+    custom_llm_model: str = "",
 ) -> AppConfig:
     base_stt_profile = _pick_qwen_stt_profile(config.stt)
     public_stt_profile = replace(
@@ -230,12 +256,19 @@ def build_open_public_config(
         groq_chunk_length=public_stt_profile.groq_chunk_length,
         groq_overlap=public_stt_profile.groq_overlap,
         groq_bitrate=public_stt_profile.groq_bitrate,
+        diarization_enabled=public_stt_profile.diarization_enabled,
+        speaker_count=public_stt_profile.speaker_count,
     )
 
     # Build summarize profiles by injecting user API keys into the
     # admin-configured profiles.  All of the admin's profiles are
     # preserved so they appear in the frontend model dropdown.
     use_deepseek = bool(deepseek_api_key)
+    use_custom_llm = bool(
+        custom_llm_base_url.strip()
+        and custom_llm_api_key.strip()
+        and custom_llm_model.strip()
+    )
     public_summarize_profiles: dict[str, SummarizeModelProfile] = {}
     selected_profile = ""
     bailian_fallback_profile = ""
@@ -255,7 +288,18 @@ def build_open_public_config(
         else:
             public_summarize_profiles[name] = profile
 
-    if use_deepseek and deepseek_profile_name:
+    if use_custom_llm:
+        public_summarize_profiles[OPEN_PUBLIC_CUSTOM_LLM_PROFILE] = (
+            SummarizeModelProfile(
+                provider="openai_compatible",
+                model=custom_llm_model.strip(),
+                api_key=custom_llm_api_key.strip(),
+                api_base=custom_llm_base_url.strip().rstrip("/"),
+                providers=(),
+            )
+        )
+        selected_profile = OPEN_PUBLIC_CUSTOM_LLM_PROFILE
+    elif use_deepseek and deepseek_profile_name:
         selected_profile = deepseek_profile_name
     elif bailian_fallback_profile:
         selected_profile = bailian_fallback_profile
@@ -272,9 +316,15 @@ def build_open_public_config(
         context_file=config.summarize.context_file,
     )
 
-    # RAG: embedding always uses Aliyun (bailian).  LLM queries follow
-    # the DeepSeek profile when available.
-    rag_llm_profile = deepseek_profile_name if use_deepseek else ""
+    # RAG embedding still uses Aliyun (bailian).  RAG LLM queries follow
+    # the custom OpenAI-compatible profile first, then DeepSeek when available.
+    rag_llm_profile = (
+        OPEN_PUBLIC_CUSTOM_LLM_PROFILE
+        if use_custom_llm
+        else deepseek_profile_name
+        if use_deepseek
+        else ""
+    )
     public_rag = config.rag
     if api_key:
         public_rag_embedding = config.rag.embedding
@@ -300,6 +350,9 @@ def get_runtime_app_config(
     require_public_api_key: bool = False,
     api_key: str | None = None,
     deepseek_api_key: str | None = None,
+    custom_llm_base_url: str | None = None,
+    custom_llm_api_key: str | None = None,
+    custom_llm_model: str | None = None,
 ) -> AppConfig:
     config = get_app_config()
     if not is_open_public_mode():
@@ -311,7 +364,14 @@ def get_runtime_app_config(
             "open-public 模式下请先在「API Key」页面配置阿里云 DashScope API Key"
         )
     resolved_ds_key = (deepseek_api_key or "").strip() or get_public_deepseek_api_key()
-    return build_open_public_config(config, resolved_key, resolved_ds_key)
+    return build_open_public_config(
+        config,
+        resolved_key,
+        resolved_ds_key,
+        (custom_llm_base_url or "").strip(),
+        (custom_llm_api_key or "").strip(),
+        (custom_llm_model or "").strip(),
+    )
 
 
 def get_runtime_features() -> dict[str, str | bool]:

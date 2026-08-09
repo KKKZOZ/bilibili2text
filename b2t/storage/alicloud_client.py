@@ -1,12 +1,14 @@
 """Aliyun OSS storage backend."""
 
-from contextlib import contextmanager
+from datetime import timedelta
 import mimetypes
-from pathlib import Path
 import tempfile
-from typing import BinaryIO, Iterator
-from urllib.parse import quote
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
+from pathlib import Path
+from typing import BinaryIO
+from urllib.parse import quote
 
 import alibabacloud_oss_v2 as oss
 
@@ -28,6 +30,7 @@ class AlicloudStorageBackend(PublicURLStorageBackend):
         self._base_prefix = config.base_prefix.strip("/")
         self._public_base_url = config.public_base_url.strip().rstrip("/")
         self._temporary_prefix = config.temporary_prefix.strip("/")
+        self._temporary_url_expire_seconds = config.temporary_url_expire_seconds
 
         cfg = oss.config.Config(
             credentials_provider=oss.credentials.StaticCredentialsProvider(
@@ -154,10 +157,17 @@ class AlicloudStorageBackend(PublicURLStorageBackend):
             object_key_prefix.strip("/") or self._temporary_prefix or "temp-audio"
         )
         key = self._resolve_object_key(f"{temp_prefix}/{uuid.uuid4().hex}-{path.name}")
-        self._upload(path, object_key=key, acl="public-read")
+        self._upload(path, object_key=key)
 
         try:
-            yield self._build_public_url(key)
+            presigned = self._client.presign(
+                oss.GetObjectRequest(bucket=self._bucket, key=key),
+                expires=timedelta(seconds=self._temporary_url_expire_seconds),
+            )
+            url = str(getattr(presigned, "url", "") or "").strip()
+            if not url:
+                raise RuntimeError("Aliyun OSS did not return a pre-signed URL")
+            yield url
         finally:
             try:
                 self._delete_object(key)

@@ -7,7 +7,6 @@ from b2t.config import (
     resolve_summarize_model_profile,
     resolve_summary_preset_name,
 )
-
 from backend.schemas import (
     SummaryPresetItemResponse,
     SummaryPresetListResponse,

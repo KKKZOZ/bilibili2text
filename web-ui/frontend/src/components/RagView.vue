@@ -1,6 +1,7 @@
 <script setup>
   import { ref, computed, onMounted } from 'vue'
   import { useConversion } from '../composables/useConversion'
+  import { resourceDisplayLabel, resourceUrl } from '../utils/fileUtils'
   import { renderMarkdown } from '../utils/markdown'
   import {
     AlertCircle,
@@ -22,6 +23,10 @@
 
   const LOCAL_API_KEY_KEY = 'b2t.public-api-key'
   const LOCAL_DEEPSEEK_API_KEY_KEY = 'b2t.public-deepseek-api-key'
+  const LOCAL_CUSTOM_LLM_BASE_URL_KEY = 'b2t.public-custom-llm-base-url'
+  const LOCAL_CUSTOM_LLM_API_KEY_KEY = 'b2t.public-custom-llm-api-key'
+  const LOCAL_CUSTOM_LLM_MODEL_KEY = 'b2t.public-custom-llm-model'
+  const CUSTOM_LLM_PROFILE_NAME = 'open_public_custom_llm'
 
   const readLocalStorage = (key) => {
     try {
@@ -29,6 +34,36 @@
     } catch {
       return ''
     }
+  }
+
+  const getCustomLlmPayload = () => ({
+    custom_llm_base_url:
+      readLocalStorage(LOCAL_CUSTOM_LLM_BASE_URL_KEY) || null,
+    custom_llm_api_key: readLocalStorage(LOCAL_CUSTOM_LLM_API_KEY_KEY) || null,
+    custom_llm_model: readLocalStorage(LOCAL_CUSTOM_LLM_MODEL_KEY) || null
+  })
+
+  const getLocalCustomLlmProfile = () => {
+    const baseUrl = readLocalStorage(LOCAL_CUSTOM_LLM_BASE_URL_KEY)
+    const apiKey = readLocalStorage(LOCAL_CUSTOM_LLM_API_KEY_KEY)
+    const model = readLocalStorage(LOCAL_CUSTOM_LLM_MODEL_KEY)
+    if (!baseUrl || !apiKey || !model) {
+      return null
+    }
+    return {
+      name: CUSTOM_LLM_PROFILE_NAME,
+      provider: 'openai_compatible',
+      model,
+      api_base: baseUrl
+    }
+  }
+
+  const formatLlmProfileLabel = (profile) => {
+    if (!profile) return ''
+    if (profile.name === CUSTOM_LLM_PROFILE_NAME) {
+      return `custom(${profile.model || 'model'})`
+    }
+    return `${profile.name} (${profile.model})`
   }
 
   // ─── Query state ──────────────────────────────────────────────────
@@ -58,7 +93,9 @@
         body: JSON.stringify({
           download_id: answerDownloadId.value,
           api_key: readLocalStorage(LOCAL_API_KEY_KEY) || null,
-          deepseek_api_key: readLocalStorage(LOCAL_DEEPSEEK_API_KEY_KEY) || null
+          deepseek_api_key:
+            readLocalStorage(LOCAL_DEEPSEEK_API_KEY_KEY) || null,
+          ...getCustomLlmPayload()
         })
       })
       const data = await resp.json()
@@ -80,8 +117,22 @@
     try {
       const resp = await fetch('/api/summarize-profiles')
       const data = await resp.json()
-      llmProfiles.value = data.profiles || []
-      if (!selectedLlmProfile.value && data.selected_profile) {
+      const profiles = Array.isArray(data.profiles) ? [...data.profiles] : []
+      const customProfile = getLocalCustomLlmProfile()
+      if (customProfile) {
+        const existingIndex = profiles.findIndex(
+          (profile) => profile.name === CUSTOM_LLM_PROFILE_NAME
+        )
+        if (existingIndex >= 0) {
+          profiles.splice(existingIndex, 1, customProfile)
+        } else {
+          profiles.push(customProfile)
+        }
+      }
+      llmProfiles.value = profiles
+      if (customProfile) {
+        selectedLlmProfile.value = CUSTOM_LLM_PROFILE_NAME
+      } else if (!selectedLlmProfile.value && data.selected_profile) {
         selectedLlmProfile.value = data.selected_profile
       }
     } catch {}
@@ -176,7 +227,9 @@
           filter_authors: selectedAuthors.value,
           llm_profile: selectedLlmProfile.value || null,
           api_key: readLocalStorage(LOCAL_API_KEY_KEY) || null,
-          deepseek_api_key: readLocalStorage(LOCAL_DEEPSEEK_API_KEY_KEY) || null
+          deepseek_api_key:
+            readLocalStorage(LOCAL_DEEPSEEK_API_KEY_KEY) || null,
+          ...getCustomLlmPayload()
         })
       })
 
@@ -313,9 +366,6 @@
 
   const scorePercent = (score) => Math.round(score * 100)
 
-  const bilibiliUrl = (bvid) =>
-    bvid ? `https://www.bilibili.com/video/${bvid}` : null
-
   const scoreColor = (score) => {
     const pct = score * 100
     if (pct >= 70) return '#0d9488'
@@ -418,7 +468,7 @@
               :disabled="isQuerying"
             >
               <option v-for="p in llmProfiles" :key="p.name" :value="p.name">
-                {{ p.name }} ({{ p.model }})
+                {{ formatLlmProfileLabel(p) }}
               </option>
             </select>
           </div>
@@ -552,11 +602,11 @@
             v-for="(src, i) in sources"
             :key="i"
             :id="`source-${i}`"
-            :href="bilibiliUrl(src.bvid)"
+            :href="resourceUrl(src.bvid)"
             target="_blank"
             rel="noopener noreferrer"
             class="source-card"
-            :class="{ 'no-link': !bilibiliUrl(src.bvid) }"
+            :class="{ 'no-link': !resourceUrl(src.bvid) }"
           >
             <div class="source-card-top">
               <span class="source-index">{{ i + 1 }}</span>
@@ -565,8 +615,8 @@
                   src.title || src.bvid || '未知视频'
                 }}</span>
                 <span v-if="src.bvid" class="source-bvid">
-                  {{ src.bvid }}
-                  <ExternalLink :size="11" />
+                  {{ resourceDisplayLabel(src.bvid) }}
+                  <ExternalLink v-if="resourceUrl(src.bvid)" :size="11" />
                 </span>
               </div>
               <div

@@ -8,6 +8,7 @@ from backend.jobs import _append_job_log, _get_job, _update_job
 from backend.logging_config import JOB_LOG_DATE_FORMAT, _redact_text
 from backend.services import (
     _artifact_download_item,
+    _generate_summary_png_exports,
     _merge_history_artifact,
     _run_fancy_html_only_from_summary,
 )
@@ -19,13 +20,44 @@ logger = logging.getLogger(__name__)
 class PostProcessScheduler:
     """Schedule non-blocking indexing and fancy HTML generation work."""
 
+    def trigger_stock_status_refresh(
+        self,
+        *,
+        bvid: str | None,
+        results: dict[str, object],
+        config,
+        storage_backend,
+    ) -> None:
+        summary_artifact = results.get("summary")
+        if not bvid or not (
+            hasattr(summary_artifact, "storage_key")
+            and hasattr(summary_artifact, "filename")
+        ):
+            return
+
+        def _do_refresh() -> None:
+            try:
+                generated = _generate_summary_png_exports(
+                    results=results,
+                    storage_backend=storage_backend,
+                    config=config,
+                    refresh_stock_statuses=True,
+                    include_no_table=False,
+                )
+                if generated:
+                    logger.info("股票行情缓存及图片刷新完成: bvid=%s", bvid)
+            except Exception as exc:
+                logger.warning("股票行情后台刷新失败（不影响下载）: %s", exc)
+
+        submit_postprocess(_do_refresh)
+
     def trigger_rag_index(self, run_id: str | None, config) -> None:
         if run_id is None or not config.rag.enabled:
             return
 
         def _do_index() -> None:
             try:
-                from b2t.rag.indexer import index_run  # noqa: PLC0415
+                from b2t.rag.indexer import index_run
 
                 count = index_run(
                     run_id=run_id,

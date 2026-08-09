@@ -1,11 +1,11 @@
 <script setup>
-  import { computed } from 'vue'
+  import { computed, onBeforeUnmount, ref, watch } from 'vue'
   import { CheckCircle2, AlertCircle, LoaderCircle } from 'lucide-vue-next'
 
   const STAGES = [
     { key: 'queued', label: '任务创建' },
-    { key: 'downloading', label: '下载视频音频' },
-    { key: 'transcribing', label: '语音转录' },
+    { key: 'downloading', label: '获取字幕/音频' },
+    { key: 'transcribing', label: '转录/整理文本' },
     { key: 'converting', label: '生成 Markdown' },
     { key: 'summarizing', label: 'LLM 整理总结' },
     { key: 'postprocessing', label: '后处理及文件导出' },
@@ -29,6 +29,8 @@
   const isDone = computed(() => props.job.status === 'succeeded')
   const hasFailed = computed(() => props.job.status === 'failed')
   const progressText = computed(() => `${props.job.progress}%`)
+  const activeStageElapsedTick = ref(0)
+  let activeStageTimer = null
 
   const jobStatusText = computed(() => {
     if (props.job.status === 'succeeded') {
@@ -46,6 +48,86 @@
   const activeStageIndex = computed(() =>
     STAGES.findIndex((stage) => stage.key === props.job.stage)
   )
+
+  const activeStageDurationLabel = computed(() => {
+    if (!props.job.stage_durations || !props.job.stage) {
+      return ''
+    }
+    const label = props.job.stage_durations[props.job.stage]
+    return typeof label === 'string' ? label : ''
+  })
+
+  const parseDurationLabel = (label) => {
+    if (typeof label !== 'string') {
+      return null
+    }
+    const parts = label.split(':').map((part) => Number.parseInt(part, 10))
+    if (
+      parts.length < 2 ||
+      parts.length > 3 ||
+      parts.some((part) => Number.isNaN(part))
+    ) {
+      return null
+    }
+
+    const [hours, minutes, seconds] =
+      parts.length === 3 ? parts : [0, parts[0], parts[1]]
+    return hours * 3600 + minutes * 60 + seconds
+  }
+
+  const formatElapsed = (seconds) => {
+    const normalizedSeconds = Math.max(0, Number.parseInt(seconds, 10) || 0)
+    const hours = Math.floor(normalizedSeconds / 3600)
+    const minutes = Math.floor((normalizedSeconds % 3600) / 60)
+    const secs = normalizedSeconds % 60
+    if (hours > 0) {
+      return [hours, minutes, secs]
+        .map((part) => String(part).padStart(2, '0'))
+        .join(':')
+    }
+    return [minutes, secs]
+      .map((part) => String(part).padStart(2, '0'))
+      .join(':')
+  }
+
+  const shouldTickActiveStage = computed(
+    () =>
+      isRunning.value &&
+      props.job.stage &&
+      !(props.skipSummary && props.job.stage === 'summarizing') &&
+      parseDurationLabel(activeStageDurationLabel.value) !== null
+  )
+
+  const stopActiveStageTimer = () => {
+    if (activeStageTimer !== null) {
+      clearInterval(activeStageTimer)
+      activeStageTimer = null
+    }
+  }
+
+  const syncActiveStageTimer = () => {
+    stopActiveStageTimer()
+    activeStageElapsedTick.value = 0
+    if (!shouldTickActiveStage.value) {
+      return
+    }
+    activeStageTimer = setInterval(() => {
+      activeStageElapsedTick.value += 1
+    }, 1000)
+  }
+
+  watch(
+    () => [
+      props.job.stage,
+      props.job.status,
+      activeStageDurationLabel.value,
+      props.skipSummary
+    ],
+    syncActiveStageTimer,
+    { immediate: true }
+  )
+
+  onBeforeUnmount(stopActiveStageTimer)
 
   const stageStatus = (stageKey) => {
     if (props.skipSummary && stageKey === 'summarizing') {
@@ -71,6 +153,31 @@
       return 'done'
     }
     return 'pending'
+  }
+
+  const stageLabel = (stage) => {
+    if (stage.key === 'downloading' && props.job.used_bilibili_subtitle) {
+      return '已使用 B 站字幕'
+    }
+    return stage.label
+  }
+
+  const stageDurationLabel = (stageKey) => {
+    const label =
+      props.job.stage_durations &&
+      typeof props.job.stage_durations[stageKey] === 'string'
+        ? props.job.stage_durations[stageKey]
+        : '--'
+
+    if (stageKey !== props.job.stage || !shouldTickActiveStage.value) {
+      return label
+    }
+
+    const baseSeconds = parseDurationLabel(label)
+    if (baseSeconds === null) {
+      return label
+    }
+    return formatElapsed(baseSeconds + activeStageElapsedTick.value)
   }
 </script>
 
@@ -100,15 +207,8 @@
         :class="`stage-${stageStatus(stage.key)}`"
       >
         <span class="dot"></span>
-        <span class="stage-name">{{ stage.label }}</span>
-        <span class="stage-duration">
-          {{
-            job.stage_durations &&
-            typeof job.stage_durations[stage.key] === 'string'
-              ? job.stage_durations[stage.key]
-              : '--'
-          }}
-        </span>
+        <span class="stage-name">{{ stageLabel(stage) }}</span>
+        <span class="stage-duration">{{ stageDurationLabel(stage.key) }}</span>
         <LoaderCircle
           v-if="stageStatus(stage.key) === 'active'"
           :size="14"

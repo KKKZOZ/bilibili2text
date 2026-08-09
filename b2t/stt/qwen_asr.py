@@ -27,6 +27,23 @@ def _safe_get(data: Any, key: str) -> Any:
     return data.__dict__.get(key) if hasattr(data, "__dict__") else None
 
 
+def _describe_dashscope_response(response: Any) -> str:
+    if response is None:
+        return "DashScope returned no response"
+
+    parts: list[str] = []
+    for key in ("status_code", "code", "message", "request_id"):
+        value = _safe_get(response, key)
+        if value is not None:
+            parts.append(f"{key}={value}")
+
+    output = _safe_get(response, "output")
+    if output is None:
+        parts.append("output=None")
+
+    return "; ".join(parts) or repr(response)
+
+
 class QwenSTTProvider(STTProvider):
     """Qwen STT Provider (handles storage upload and result download internally)."""
 
@@ -91,11 +108,21 @@ class QwenSTTProvider(STTProvider):
 
         logger.info("Calling Dashscope API: %s", self._stt_config.qwen_base_url)
         model = self._stt_config.qwen_model.strip()
+
         if _is_fun_asr_model(model):
+            diarization_kwargs: dict[str, bool | int] = {}
+            if self._stt_config.diarization_enabled:
+                diarization_kwargs["diarization_enabled"] = True
+                diarization_kwargs["speaker_count"] = self._stt_config.speaker_count
+                logger.info(
+                    "Diarization enabled, speaker_count=%d",
+                    self._stt_config.speaker_count,
+                )
             task_response = Transcription.async_call(
                 model=model,
                 file_urls=[audio_url],
                 language_hints=[self._stt_config.language],
+                **diarization_kwargs,
             )
             wait_fn = Transcription.wait
         else:
@@ -108,10 +135,18 @@ class QwenSTTProvider(STTProvider):
             )
             wait_fn = QwenTranscription.wait
 
-        logger.info("Task submitted, task_id: %s", task_response.output.task_id)
+        output = _safe_get(task_response, "output")
+        task_id = _safe_get(output, "task_id")
+        if not isinstance(task_id, str) or not task_id.strip():
+            raise RuntimeError(
+                "DashScope transcription task submission failed: "
+                f"{_describe_dashscope_response(task_response)}"
+            )
+
+        logger.info("Task submitted, task_id: %s", task_id)
         logger.info("Waiting for transcription to complete...")
 
-        return wait_fn(task=task_response.output.task_id)
+        return wait_fn(task=task_id)
 
     def _extract_task_status(self, response: Any) -> str:
         output = response.output

@@ -1,14 +1,16 @@
 """Reuse previously stored transcriptions when a BV has already been processed."""
 
-from datetime import datetime
+import json
 import logging
+from datetime import datetime
 from pathlib import Path
 
 from b2t.config import resolve_summarize_model_profile, resolve_summary_preset_name
+from b2t.converter.json_to_md import TIMELINE_SCHEMA_VERSION
+from b2t.download.comments import DEFAULT_COMMENT_LIMIT
 from b2t.history import infer_run_id
-from b2t.storage.base import StoredArtifact
 from b2t.storage import StorageBackend
-
+from b2t.storage.base import StoredArtifact
 from backend.dependencies import get_history_db
 from backend.jobs import _append_job_log, _update_job
 from backend.logging_config import JOB_LOG_DATE_FORMAT, _redact_text
@@ -19,9 +21,11 @@ from backend.services import (
     _collect_all_artifacts_for_bvid,
     _record_history,
     _run_summary_only_from_existing,
+    _should_refresh_existing_summary_metadata,
 )
 
 logger = logging.getLogger(__name__)
+CUSTOM_SUMMARY_PRESET_VALUE = "__user_custom__"
 
 
 def _storage_parent_key(storage_key: str) -> str:
@@ -37,11 +41,15 @@ def _resolve_requested_summary_selection(
     summary_preset: str | None,
     summary_profile: str | None,
 ) -> tuple[str, str]:
-    resolved_preset = resolve_summary_preset_name(
-        summarize=config.summarize,
-        summary_presets=config.summary_presets,
-        override=(summary_preset or "").strip() or None,
-    )
+    cleaned_preset = (summary_preset or "").strip() or None
+    if cleaned_preset == CUSTOM_SUMMARY_PRESET_VALUE:
+        resolved_preset = CUSTOM_SUMMARY_PRESET_VALUE
+    else:
+        resolved_preset = resolve_summary_preset_name(
+            summarize=config.summarize,
+            summary_presets=config.summary_presets,
+            override=cleaned_preset,
+        )
     resolved_profile = (
         summary_profile or ""
     ).strip() or config.summarize.profile.strip()
@@ -52,9 +60,54 @@ def _resolve_requested_summary_selection(
     return resolved_preset, resolved_profile
 
 
+def _summary_requires_video_timestamps(
+    *,
+    config,
+    summary_preset: str | None,
+    summary_prompt_template: str | None,
+) -> bool:
+    template = (summary_prompt_template or "").strip()
+    if not template:
+        cleaned_preset = (summary_preset or "").strip() or None
+        if cleaned_preset == CUSTOM_SUMMARY_PRESET_VALUE:
+            return False
+        preset_name = resolve_summary_preset_name(
+            summarize=config.summarize,
+            summary_presets=config.summary_presets,
+            override=cleaned_preset,
+        )
+        template = config.summary_presets.presets[preset_name].prompt_template
+    return "视频时间" in template and "Speaker MM:SS" in template
+
+
+def _has_current_timeline_schema(
+    storage_backend: StorageBackend,
+    existing_results: dict[str, StoredArtifact],
+) -> bool:
+    json_artifact = existing_results.get("json")
+    if json_artifact is None:
+        return False
+
+    try:
+        with storage_backend.open_stream(json_artifact.storage_key) as stream:
+            payload = json.load(stream)
+        version = int(payload.get("timeline_schema_version", 0))
+    except (
+        AttributeError,
+        OSError,
+        RuntimeError,
+        TypeError,
+        UnicodeError,
+        ValueError,
+    ) as exc:
+        logger.info("无法确认历史转录时间轴版本，将重新转录: %s", exc)
+        return False
+    return version >= TIMELINE_SCHEMA_VERSION
+
+
 def _find_existing_summary_results_for_selection(
     *,
-    bvid: str,
+    transcription_id: str,
     existing_results: dict[str, StoredArtifact],
     resolved_preset: str,
     resolved_profile: str,
@@ -63,7 +116,7 @@ def _find_existing_summary_results_for_selection(
     if markdown_artifact is None:
         return None
 
-    run_id = infer_run_id(markdown_artifact.storage_key, bvid=bvid)
+    run_id = infer_run_id(markdown_artifact.storage_key, bvid=transcription_id)
     detail = get_history_db().get_run_detail(run_id)
     if detail is None:
         return None
@@ -88,6 +141,7 @@ def _find_existing_summary_results_for_selection(
         f"{summary_stem}_fancy.html",
         f"{summary_stem}_table.md",
         f"{summary_stem}_table.pdf",
+        f"{summary_stem}_timeline.txt",
         f"{summary_stem}.png",
         f"{summary_stem}_no_table.png",
         f"{summary_stem}_table.png",
@@ -102,6 +156,7 @@ def _find_existing_summary_results_for_selection(
         "summary_table_md",
         "summary_table_png",
         "summary_table_pdf",
+        "summary_timeline",
     }
 
     selected_results = dict(existing_results)
@@ -128,6 +183,7 @@ class ExistingTranscriptionService:
         *,
         job_id: str,
         bvid: str,
+        transcription_id: str | None = None,
         storage_backend: StorageBackend,
         config,
         skip_summary: bool,
@@ -135,9 +191,12 @@ class ExistingTranscriptionService:
         summary_profile: str | None,
         summary_prompt_template: str | None,
         auto_generate_fancy_html: bool,
+        include_comments: bool = False,
+        comment_limit: int | None = DEFAULT_COMMENT_LIMIT,
     ) -> bool:
+        storage_id = (transcription_id or bvid).strip()
         try:
-            existing_results = storage_backend.find_existing_transcription(bvid)
+            existing_results = storage_backend.find_existing_transcription(storage_id)
         except Exception as exc:
             logger.warning("查询历史转录结果失败，将继续正常转录: %s", exc)
             return False
@@ -145,10 +204,26 @@ class ExistingTranscriptionService:
         if existing_results is None:
             return False
 
+        if (
+            not skip_summary
+            and _summary_requires_video_timestamps(
+                config=config,
+                summary_preset=summary_preset,
+                summary_prompt_template=summary_prompt_template,
+            )
+            and not _has_current_timeline_schema(storage_backend, existing_results)
+        ):
+            logger.info(
+                "历史转录不含当前版本的逐句时间轴，跳过缓存并重新转录: %s",
+                storage_id,
+            )
+            return False
+
         if skip_summary:
             return self._return_existing_without_summary(
                 job_id=job_id,
                 bvid=bvid,
+                transcription_id=storage_id,
                 storage_backend=storage_backend,
                 config=config,
                 existing_results=existing_results,
@@ -157,6 +232,7 @@ class ExistingTranscriptionService:
         return self._summarize_existing(
             job_id=job_id,
             bvid=bvid,
+            transcription_id=storage_id,
             storage_backend=storage_backend,
             config=config,
             existing_results=existing_results,
@@ -164,6 +240,8 @@ class ExistingTranscriptionService:
             summary_profile=summary_profile,
             summary_prompt_template=summary_prompt_template,
             auto_generate_fancy_html=auto_generate_fancy_html,
+            include_comments=include_comments,
+            comment_limit=comment_limit,
         )
 
     def _return_existing_without_summary(
@@ -171,6 +249,7 @@ class ExistingTranscriptionService:
         *,
         job_id: str,
         bvid: str,
+        transcription_id: str,
         storage_backend: StorageBackend,
         config,
         existing_results,
@@ -182,10 +261,10 @@ class ExistingTranscriptionService:
 
         all_artifacts = _collect_all_artifacts_for_bvid(
             storage_backend,
-            bvid,
+            transcription_id,
             existing_results,
         )
-        notice = f"检测到 {bvid} 已经转录过，已直接返回历史文件。"
+        notice = f"检测到 {transcription_id} 已经转录过，已直接返回历史文件。"
         _update_job(
             job_id,
             status="succeeded",
@@ -204,6 +283,8 @@ class ExistingTranscriptionService:
             results=existing_results,
             config=config,
         )
+        if run_id:
+            _update_job(job_id, history_run_id=run_id)
         postprocess_scheduler.trigger_rag_index(run_id, config)
         return True
 
@@ -212,6 +293,7 @@ class ExistingTranscriptionService:
         *,
         job_id: str,
         bvid: str,
+        transcription_id: str,
         storage_backend: StorageBackend,
         config,
         existing_results,
@@ -219,6 +301,8 @@ class ExistingTranscriptionService:
         summary_profile: str | None,
         summary_prompt_template: str | None,
         auto_generate_fancy_html: bool,
+        include_comments: bool,
+        comment_limit: int | None,
     ) -> bool:
         resolved_preset, resolved_profile = _resolve_requested_summary_selection(
             config=config,
@@ -226,12 +310,19 @@ class ExistingTranscriptionService:
             summary_profile=summary_profile,
         )
         existing_summary_match = _find_existing_summary_results_for_selection(
-            bvid=bvid,
+            transcription_id=transcription_id,
             existing_results=existing_results,
             resolved_preset=resolved_preset,
             resolved_profile=resolved_profile,
         )
-        if existing_summary_match is not None:
+        if (
+            not include_comments
+            and existing_summary_match is not None
+            and not _should_refresh_existing_summary_metadata(
+                bvid=bvid,
+                existing_results=existing_results,
+            )
+        ):
             run_id, matched_results = existing_summary_match
             try:
                 success_fields = _build_success_download_fields(matched_results)
@@ -240,11 +331,11 @@ class ExistingTranscriptionService:
 
             all_artifacts = _collect_all_artifacts_for_bvid(
                 storage_backend,
-                bvid,
+                transcription_id,
                 matched_results,
             )
             notice = (
-                f"检测到 {bvid} 已存在使用模型配置 {resolved_profile} "
+                f"检测到 {transcription_id} 已存在使用模型配置 {resolved_profile} "
                 f"与总结模板 {resolved_preset} 生成的总结，已直接返回历史文件。"
             )
             _update_job(
@@ -256,6 +347,7 @@ class ExistingTranscriptionService:
                 already_transcribed=True,
                 notice=notice,
                 all_downloads=_build_all_download_items(all_artifacts),
+                history_run_id=run_id,
                 error=None,
                 **success_fields,
             )
@@ -273,12 +365,15 @@ class ExistingTranscriptionService:
         try:
             summary_results = _run_summary_only_from_existing(
                 bvid=bvid,
+                transcription_id=transcription_id,
                 storage_backend=storage_backend,
                 config=config,
                 existing_results=existing_results,
                 summary_preset=summary_preset,
                 summary_profile=summary_profile,
                 summary_prompt_template=summary_prompt_template,
+                include_comments=include_comments,
+                comment_limit=comment_limit,
             )
         except Exception as exc:
             _fail_job(job_id, str(exc))
@@ -294,10 +389,14 @@ class ExistingTranscriptionService:
 
         all_artifacts = _collect_all_artifacts_for_bvid(
             storage_backend,
-            bvid,
+            transcription_id,
             combined_results,
         )
-        notice = f"检测到 {bvid} 已经转录过，已复用历史转录并完成新的总结。"
+        notice = (
+            f"检测到 {transcription_id} 已经转录过，已复用历史转录并完成评论补充总结。"
+            if include_comments
+            else f"检测到 {transcription_id} 已经转录过，已复用历史转录并完成新的总结。"
+        )
         _update_job(
             job_id,
             status="succeeded",
@@ -319,6 +418,8 @@ class ExistingTranscriptionService:
             summary_preset=summary_preset,
             summary_profile=summary_profile,
         )
+        if run_id:
+            _update_job(job_id, history_run_id=run_id)
         if auto_generate_fancy_html:
             postprocess_scheduler.trigger_fancy_html_generation(
                 job_id=job_id,

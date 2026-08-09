@@ -1,17 +1,21 @@
 """SQLite-backed metadata store and helpers for transcription history."""
 
+import json
 import re
 import sqlite3
 import threading
-from dataclasses import dataclass
-from datetime import datetime, timezone
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Mapping
 
+from b2t.stock_status import StockDailyStatus
 from b2t.storage.base import StoredArtifact, classify_artifact_filename
 
 _DB_FILENAME = "b2t_history.db"
 _RUN_ID_SUFFIX_PATTERN = re.compile(r"^-[0-9a-f]{8}(?:_|$)", re.IGNORECASE)
+_MULTIPART_TITLE_PATTERN = re.compile(r"^p([1-9][0-9]*)_(.+)$", re.IGNORECASE)
 
 _SCHEMA_SQL = """\
 CREATE TABLE IF NOT EXISTS transcription_runs (
@@ -44,6 +48,18 @@ CREATE TABLE IF NOT EXISTS transcription_artifacts (
 );
 
 CREATE INDEX IF NOT EXISTS idx_artifacts_run_id ON transcription_artifacts(run_id);
+
+CREATE TABLE IF NOT EXISTS stock_status_cache (
+    bvid        TEXT NOT NULL,
+    as_of_date  TEXT NOT NULL,
+    symbol      TEXT NOT NULL,
+    status_json TEXT NOT NULL,
+    fetched_at  TEXT NOT NULL,
+    PRIMARY KEY (bvid, as_of_date, symbol)
+);
+
+CREATE INDEX IF NOT EXISTS idx_stock_status_cache_bvid_date
+    ON stock_status_cache(bvid, as_of_date);
 """
 
 
@@ -127,6 +143,10 @@ class HistoryDB:
             self._ensure_schema(conn)
         return conn
 
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
+        yield self._conn()
+
     @staticmethod
     def _normalize_artifact_kind(kind: str, filename: str) -> str:
         inferred = classify_artifact_filename(filename)
@@ -190,7 +210,7 @@ class HistoryDB:
     ) -> None:
         """Insert or replace a transcription run and its artifacts."""
         if created_at is None:
-            created_at = datetime.now(tz=timezone.utc).isoformat()
+            created_at = datetime.now(tz=UTC).isoformat()
 
         artifact_list = artifacts or []
         conn = self._conn()
@@ -442,6 +462,86 @@ class HistoryDB:
                 (status.strip() or "idle", error.strip(), run_id),
             )
 
+    def upsert_stock_statuses(
+        self,
+        *,
+        bvid: str,
+        as_of_date: str,
+        statuses: Mapping[str, StockDailyStatus] | list[StockDailyStatus],
+    ) -> None:
+        normalized_bvid = bvid.strip()
+        normalized_date = as_of_date.strip() or "latest"
+        if not normalized_bvid:
+            return
+        status_items = (
+            list(statuses.items())
+            if isinstance(statuses, Mapping)
+            else [(status.symbol, status) for status in statuses]
+        )
+        if not status_items:
+            return
+
+        fetched_at = datetime.now(tz=UTC).isoformat()
+        conn = self._conn()
+        with conn:
+            conn.executemany(
+                """\
+                INSERT INTO stock_status_cache
+                    (bvid, as_of_date, symbol, status_json, fetched_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(bvid, as_of_date, symbol) DO UPDATE SET
+                    status_json = excluded.status_json,
+                    fetched_at = excluded.fetched_at
+                """,
+                [
+                    (
+                        normalized_bvid,
+                        normalized_date,
+                        symbol.strip().upper(),
+                        json.dumps(asdict(status), ensure_ascii=False),
+                        fetched_at,
+                    )
+                    for symbol, status in status_items
+                    if symbol.strip()
+                ],
+            )
+
+    def get_stock_statuses(
+        self,
+        *,
+        bvid: str,
+        as_of_date: str,
+        symbols: list[str],
+    ) -> dict[str, StockDailyStatus]:
+        normalized_bvid = bvid.strip()
+        normalized_date = as_of_date.strip() or "latest"
+        normalized_symbols = [
+            symbol.strip().upper() for symbol in symbols if symbol.strip()
+        ]
+        if not normalized_bvid or not normalized_symbols:
+            return {}
+
+        placeholders = ",".join("?" * len(normalized_symbols))
+        conn = self._conn()
+        rows = conn.execute(
+            f"""\
+            SELECT symbol, status_json
+            FROM stock_status_cache
+            WHERE bvid = ? AND as_of_date = ? AND symbol IN ({placeholders})
+            """,
+            [normalized_bvid, normalized_date, *normalized_symbols],
+        ).fetchall()
+
+        statuses: dict[str, StockDailyStatus] = {}
+        for row in rows:
+            symbol = str(row["symbol"] or "").strip().upper()
+            try:
+                payload = json.loads(str(row["status_json"] or "{}"))
+                statuses[symbol] = StockDailyStatus(**payload)
+            except (TypeError, ValueError):
+                continue
+        return statuses
+
     def list_authors(self) -> list[str]:
         """Return distinct non-empty author names, sorted alphabetically."""
         conn = self._conn()
@@ -494,9 +594,42 @@ class HistoryDB:
         ).fetchone()
         return row is not None
 
+    @staticmethod
+    def _normalize_stock_cache_date(as_of_date: str) -> str:
+        text = as_of_date.strip()
+        return text[:10] if text else "latest"
+
+    def delete_stock_status_cache(
+        self,
+        *,
+        bvid: str,
+        as_of_date: str | None = None,
+    ) -> int:
+        normalized_bvid = bvid.strip()
+        if not normalized_bvid:
+            return 0
+        conn = self._conn()
+        with conn:
+            if as_of_date is None:
+                cursor = conn.execute(
+                    "DELETE FROM stock_status_cache WHERE bvid = ?",
+                    (normalized_bvid,),
+                )
+            else:
+                cursor = conn.execute(
+                    "DELETE FROM stock_status_cache WHERE bvid = ? AND as_of_date = ?",
+                    (normalized_bvid, self._normalize_stock_cache_date(as_of_date)),
+                )
+        return int(cursor.rowcount or 0)
+
     def delete_run(self, run_id: str) -> list[HistoryArtifact]:
         """Delete a transcription run and return its artifacts for file cleanup."""
         conn = self._conn()
+
+        run_row = conn.execute(
+            "SELECT bvid, pubdate FROM transcription_runs WHERE run_id = ?",
+            (run_id,),
+        ).fetchone()
 
         # Get artifacts before deleting
         artifact_rows = conn.execute(
@@ -522,6 +655,14 @@ class HistoryDB:
 
         # Delete from database
         with conn:
+            if run_row is not None and str(run_row["bvid"] or "").strip():
+                conn.execute(
+                    "DELETE FROM stock_status_cache WHERE bvid = ? AND as_of_date = ?",
+                    (
+                        str(run_row["bvid"] or "").strip(),
+                        self._normalize_stock_cache_date(str(run_row["pubdate"] or "")),
+                    ),
+                )
             conn.execute(
                 "DELETE FROM transcription_artifacts WHERE run_id = ?",
                 (run_id,),
@@ -542,7 +683,7 @@ def record_rag_query(
     created_at: str | None = None,
 ) -> str:
     """Persist a RAG query + answer to the history DB. Returns run_id."""
-    from uuid import uuid4  # noqa: PLC0415
+    from uuid import uuid4
 
     run_id = uuid4().hex
     title = question[:200]
@@ -583,13 +724,16 @@ def infer_title(filename: str, *, bvid: str) -> str:
         return stem if stem else bvid
 
     remainder = stem[len(bvid) :]
-    if remainder.startswith("_"):
-        remainder = remainder[1:]
+    remainder = remainder.removeprefix("_")
 
     # Optional run suffix like "-a1b2c3d4" inserted before title.
     remainder = _RUN_ID_SUFFIX_PATTERN.sub("", remainder)
-    if remainder.startswith("_"):
-        remainder = remainder[1:]
+    remainder = remainder.removeprefix("_")
+
+    multipart_match = _MULTIPART_TITLE_PATTERN.match(remainder)
+    if multipart_match:
+        page, title = multipart_match.groups()
+        return f"{title}_P{page}"
 
     return remainder if remainder else bvid
 
@@ -610,6 +754,7 @@ def build_history_artifacts(
         "summary_table_md",
         "summary_table_png",
         "summary_table_pdf",
+        "summary_timeline",
     }
     cleaned_preset = (summary_preset or "").strip()
     cleaned_profile = (summary_profile or "").strip()
@@ -696,6 +841,7 @@ def record_pipeline_run(
             "summary_table_md",
             "summary_table_png",
             "summary_table_pdf",
+            "summary_timeline",
         }
         for artifact in artifacts
     )

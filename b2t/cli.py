@@ -5,8 +5,8 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 from rich.console import Console
 from rich.table import Table
@@ -18,6 +18,8 @@ from b2t.monitor import BilibiliMonitorService
 from b2t.pipeline import run_pipeline
 from b2t.storage import StoredArtifact
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True)
 class CLIArgs:
@@ -27,6 +29,7 @@ class CLIArgs:
     no_summary: bool = False
     summary_preset: str | None = None
     summary_profile: str | None = None
+    prefer_bilibili_subtitle: bool = True
     verbose: bool = False
 
 
@@ -120,6 +123,11 @@ def _build_script_parser() -> argparse.ArgumentParser:
         default=None,
         help="指定总结模型 profile 名称（默认使用配置中的 summarize.profile）",
     )
+    parser.add_argument(
+        "--no-bilibili-subtitle",
+        action="store_true",
+        help="不优先使用 B 站字幕，直接下载音频并进行 ASR 转录",
+    )
     parser.add_argument("-v", "--verbose", action="store_true", help="显示详细日志")
     return parser
 
@@ -178,6 +186,7 @@ def _validate_script_args(
         no_summary=bool(parsed.no_summary),
         summary_preset=summary_preset,
         summary_profile=summary_profile,
+        prefer_bilibili_subtitle=not bool(parsed.no_bilibili_subtitle),
         verbose=bool(parsed.verbose),
     )
 
@@ -451,12 +460,13 @@ def _run_pipeline_with_args(args: CLIArgs, console: Console) -> int:
             summary_preset=args.summary_preset,
             summary_profile=args.summary_profile,
             output_dir=args.output,
+            prefer_bilibili_subtitle=args.prefer_bilibili_subtitle,
         )
     except KeyboardInterrupt:
         console.print("[bold #334155]已取消[/bold #334155]")
         return 130
     except Exception as exc:
-        logging.error("执行失败: %s", exc)
+        logger.error("执行失败: %s", exc)
         console.print(f"[bold red]执行失败:[/] {exc}")
         return 1
 
@@ -484,7 +494,7 @@ def _run_pipeline_with_args(args: CLIArgs, console: Console) -> int:
             summary_profile=args.summary_profile,
         )
     except Exception as exc:  # noqa: BLE001
-        logging.warning("记录历史转录失败: %s", exc)
+        logger.warning("记录历史转录失败: %s", exc)
 
     return 0
 
@@ -515,7 +525,7 @@ def _run_monitor_with_args(args: MonitorCLIArgs, console: Console) -> int:
         console.print("[bold #334155]已停止监控[/bold #334155]")
         return 130
     except Exception as exc:
-        logging.error("监控执行失败: %s", exc)
+        logger.error("监控执行失败: %s", exc)
         console.print(f"[bold red]监控执行失败:[/] {exc}")
         return 1
     finally:

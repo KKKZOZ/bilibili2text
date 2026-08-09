@@ -2,31 +2,209 @@
 
 import logging
 import tempfile
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Mapping
 from uuid import uuid4
 
 from b2t.config import (
     AppConfig,
+    build_bilibili_cookie,
     resolve_summarize_model_profile,
     resolve_summary_preset_name,
 )
 from b2t.converter.md_remove_table import MarkdownRemoveTableConverter
 from b2t.converter.md_to_png import MarkdownToPngConverter
+from b2t.download.comments import (
+    DEFAULT_COMMENT_LIMIT,
+    count_comment_replies,
+    count_up_replies,
+    fetch_platform_comments,
+    write_comments_json,
+    write_comments_markdown,
+)
 from b2t.download.metadata import VideoMetadata
+from b2t.download.platform import Platform
 from b2t.history import HistoryArtifact, infer_run_id, record_pipeline_run
 from b2t.storage import StorageBackend, StoredArtifact
 from b2t.storage.base import classify_artifact_filename
 from b2t.summarize.fancy_html import generate_fancy_summary_html
 from b2t.summarize.llm import (
-    export_summary_table_markdown,
+    append_comment_summary_to_markdown,
     summarize,
 )
-
+from b2t.summarize.timeline import (
+    export_summary_table_without_video_time,
+    export_summary_timeline_text,
+)
 from backend.dependencies import get_history_db
 from backend.download_registry import download_registry
+from backend.stock_cache import get_cached_stock_statuses, get_or_fetch_stock_statuses
 
 logger = logging.getLogger(__name__)
+CUSTOM_SUMMARY_PRESET_VALUE = "__user_custom__"
+_XIAOYUZHOU_BVID_PREFIX = "xiaoyuzhou_"
+_MISSING_METADATA_TEXT = {"", "unknown"}
+
+
+def _comment_platform_from_metadata(metadata: VideoMetadata) -> Platform | None:
+    if metadata.bvid.startswith("BV") and metadata.aid > 0:
+        return Platform.BILIBILI
+    if metadata.bvid.startswith(_XIAOYUZHOU_BVID_PREFIX):
+        return Platform.XIAOYUZHOU
+    return None
+
+
+def _comment_platform_label(platform: Platform) -> str:
+    if platform == Platform.BILIBILI:
+        return "B 站"
+    if platform == Platform.XIAOYUZHOU:
+        return "小宇宙"
+    return platform.value
+
+
+def _clean_metadata_text(value: object) -> str:
+    text = str(value or "").strip()
+    if text.lower() in _MISSING_METADATA_TEXT:
+        return ""
+    return text
+
+
+def _history_detail_for_existing_results(
+    *,
+    bvid: str,
+    existing_results: Mapping[str, object],
+) -> object | None:
+    markdown_artifact = existing_results.get("markdown")
+    if not isinstance(markdown_artifact, StoredArtifact):
+        return None
+    try:
+        return get_history_db().get_run_detail(
+            infer_run_id(markdown_artifact.storage_key, bvid=bvid)
+        )
+    except Exception as exc:
+        logger.debug("读取历史元信息失败: %s", exc)
+        return None
+
+
+def _fetch_platform_metadata_for_bvid(bvid: str) -> VideoMetadata | None:
+    if bvid.startswith("BV"):
+        try:
+            from b2t.download.metadata import get_video_metadata
+
+            return get_video_metadata(bvid)
+        except Exception as exc:
+            logger.warning("补取 Bilibili 元信息失败（将继续使用历史字段）: %s", exc)
+            return None
+
+    if not bvid.startswith(_XIAOYUZHOU_BVID_PREFIX):
+        return None
+
+    episode_id = bvid.removeprefix(_XIAOYUZHOU_BVID_PREFIX).strip()
+    if not episode_id:
+        return None
+
+    try:
+        from b2t.download.metadata import VideoMetadata as PlatformVideoMetadata
+        from b2t.download.xiaoyuzhou import fetch_xiaoyuzhou_metadata
+
+        return PlatformVideoMetadata.from_platform_metadata(
+            fetch_xiaoyuzhou_metadata(episode_id)
+        )
+    except Exception as exc:
+        logger.warning("补取小宇宙元信息失败（将继续使用历史字段）: %s", exc)
+        return None
+
+
+def _resolve_existing_video_metadata(
+    *,
+    bvid: str,
+    existing_results: Mapping[str, object],
+    title: str = "",
+    author: str = "",
+    pubdate: str = "",
+    require_platform_metadata: bool = False,
+) -> VideoMetadata | None:
+    """Resolve metadata for reused transcriptions without redownloading audio."""
+    resolved_title = _clean_metadata_text(title)
+    resolved_author = _clean_metadata_text(author)
+    resolved_pubdate = _clean_metadata_text(pubdate)
+    pubdate_timestamp = 0
+    author_uid = 0
+    description = ""
+    aid = 0
+
+    if not (resolved_title and resolved_author and resolved_pubdate):
+        detail = _history_detail_for_existing_results(
+            bvid=bvid,
+            existing_results=existing_results,
+        )
+        if detail is not None:
+            resolved_title = resolved_title or _clean_metadata_text(
+                getattr(detail, "title", "")
+            )
+            resolved_author = resolved_author or _clean_metadata_text(
+                getattr(detail, "author", "")
+            )
+            resolved_pubdate = resolved_pubdate or _clean_metadata_text(
+                getattr(detail, "pubdate", "")
+            )
+
+    platform_metadata = None
+    if require_platform_metadata or not (
+        resolved_title and resolved_author and resolved_pubdate
+    ):
+        platform_metadata = _fetch_platform_metadata_for_bvid(bvid)
+        if platform_metadata is not None:
+            resolved_title = resolved_title or _clean_metadata_text(
+                platform_metadata.title
+            )
+            resolved_author = resolved_author or _clean_metadata_text(
+                platform_metadata.author
+            )
+            resolved_pubdate = resolved_pubdate or _clean_metadata_text(
+                platform_metadata.pubdate
+            )
+            if resolved_pubdate == _clean_metadata_text(platform_metadata.pubdate):
+                pubdate_timestamp = platform_metadata.pubdate_timestamp
+            author_uid = platform_metadata.author_uid
+            description = platform_metadata.description
+            aid = platform_metadata.aid
+
+    if not (resolved_title or resolved_author or resolved_pubdate):
+        return None
+
+    return VideoMetadata(
+        bvid=bvid,
+        title=resolved_title,
+        author=resolved_author,
+        author_uid=author_uid,
+        pubdate=resolved_pubdate,
+        pubdate_timestamp=pubdate_timestamp,
+        description=description,
+        aid=aid,
+    )
+
+
+def _should_refresh_existing_summary_metadata(
+    *,
+    bvid: str,
+    existing_results: Mapping[str, object],
+) -> bool:
+    """Return True when an old cached summary likely has Unknown metadata header."""
+    if not bvid.startswith(_XIAOYUZHOU_BVID_PREFIX):
+        return False
+
+    detail = _history_detail_for_existing_results(
+        bvid=bvid,
+        existing_results=existing_results,
+    )
+    if detail is None:
+        return True
+
+    return not (
+        _clean_metadata_text(getattr(detail, "author", ""))
+        and _clean_metadata_text(getattr(detail, "pubdate", ""))
+    )
 
 
 def _resolve_summary_selection(
@@ -44,11 +222,14 @@ def _resolve_summary_selection(
     if config is None:
         return cleaned_preset, cleaned_profile
 
-    resolved_preset = resolve_summary_preset_name(
-        summarize=config.summarize,
-        summary_presets=config.summary_presets,
-        override=cleaned_preset,
-    )
+    if cleaned_preset == CUSTOM_SUMMARY_PRESET_VALUE:
+        resolved_preset = CUSTOM_SUMMARY_PRESET_VALUE
+    else:
+        resolved_preset = resolve_summary_preset_name(
+            summarize=config.summarize,
+            summary_presets=config.summary_presets,
+            override=cleaned_preset,
+        )
     resolved_profile = cleaned_profile or config.summarize.profile.strip()
     resolve_summarize_model_profile(
         config.summarize,
@@ -170,19 +351,98 @@ def _collect_all_artifacts_for_bvid(
     return fallback_artifacts
 
 
+def _fetch_comments_for_existing_summary(
+    *,
+    bvid: str,
+    metadata: VideoMetadata | None,
+    work_dir: Path,
+    storage_backend: StorageBackend,
+    config: AppConfig,
+    run_prefix: str,
+    summary_profile: str | None,
+    comment_limit: int | None,
+    summary_path: Path,
+) -> dict[str, StoredArtifact]:
+    if metadata is None:
+        logger.warning("历史转录缺少平台元信息，已跳过评论下载")
+        return {}
+
+    comment_platform = _comment_platform_from_metadata(metadata)
+    if comment_platform is None:
+        logger.warning("历史转录平台暂不支持评论下载，已跳过: %s", bvid)
+        return {}
+
+    try:
+        platform_label = _comment_platform_label(comment_platform)
+        logger.info(
+            "历史评论补充配置：平台=%s，热门主评论=%s，子评论=每条主评论全部下载",
+            platform_label,
+            "全部" if comment_limit is None else f"{comment_limit} 条",
+        )
+        comments = fetch_platform_comments(
+            platform=comment_platform,
+            resource_id=metadata.bvid or bvid,
+            aid=metadata.aid,
+            up_uid=metadata.author_uid,
+            limit=comment_limit,
+            sort="hot",
+            cookie=(
+                build_bilibili_cookie(config)
+                if comment_platform == Platform.BILIBILI
+                else ""
+            ),
+        )
+        comments_json_path = work_dir / f"{work_dir.name}_comments.json"
+        comments_md_path = work_dir / f"{work_dir.name}_comments.md"
+        write_comments_json(comments, comments_json_path)
+        write_comments_markdown(comments, comments_md_path)
+        comments_markdown_text = comments_md_path.read_text(encoding="utf-8")
+        append_comment_summary_to_markdown(
+            summary_path,
+            comments_markdown_text,
+            config.summarize,
+            profile=summary_profile,
+        )
+        logger.info(
+            "历史评论补充完成：平台=%s，主评论=%s，子评论=%s，UP主回复=%s，排序=%s，来源=%s，资源=%s",
+            platform_label,
+            comments.fetched_count,
+            count_comment_replies(comments),
+            count_up_replies(comments),
+            comments.sort,
+            comments.source,
+            metadata.bvid or bvid,
+        )
+        return {
+            "comments_json": storage_backend.store_file(
+                comments_json_path,
+                object_key=f"{run_prefix}/{comments_json_path.name}",
+            ),
+            "comments_markdown": storage_backend.store_file(
+                comments_md_path,
+                object_key=f"{run_prefix}/{comments_md_path.name}",
+            ),
+        }
+    except Exception as exc:
+        logger.warning("历史转录评论补充失败，已跳过: %s", exc)
+        return {}
+
+
 def _materialize_artifact_to_file(
     storage_backend: StorageBackend,
     artifact: StoredArtifact,
     target_dir: Path,
 ) -> Path:
     target_path = target_dir / artifact.filename
-    with storage_backend.open_stream(artifact.storage_key) as stream:
-        with target_path.open("wb") as output:
-            while True:
-                chunk = stream.read(1024 * 1024)
-                if not chunk:
-                    break
-                output.write(chunk)
+    with (
+        storage_backend.open_stream(artifact.storage_key) as stream,
+        target_path.open("wb") as output,
+    ):
+        while True:
+            chunk = stream.read(1024 * 1024)
+            if not chunk:
+                break
+            output.write(chunk)
     return target_path
 
 
@@ -234,6 +494,9 @@ def _generate_summary_png_exports(
     results: dict[str, StoredArtifact],
     storage_backend: StorageBackend,
     config: AppConfig,
+    refresh_stock_statuses: bool = False,
+    stock_status_timeout_seconds: float | None = None,
+    include_no_table: bool = True,
 ) -> dict[str, StoredArtifact]:
     summary_artifact = results.get("summary")
     if summary_artifact is None:
@@ -260,6 +523,48 @@ def _generate_summary_png_exports(
             summary_artifact,
             work_dir,
         )
+        summary_table_artifact = results.get("summary_table_md")
+        table_md_path = (
+            _materialize_artifact_to_file(
+                storage_backend,
+                summary_table_artifact,
+                work_dir,
+            )
+            if summary_table_artifact is not None
+            else None
+        )
+        bvid = getattr(metadata, "bvid", "") if metadata is not None else ""
+        stock_statuses = {}
+        if bvid:
+            try:
+                markdown_paths = [
+                    path for path in (summary_path, table_md_path) if path is not None
+                ]
+                if refresh_stock_statuses or stock_status_timeout_seconds is not None:
+                    stock_statuses = get_or_fetch_stock_statuses(
+                        db=get_history_db(),
+                        bvid=bvid,
+                        as_of_date=as_of_date,
+                        markdown_paths=markdown_paths,
+                        timeout_seconds=stock_status_timeout_seconds,
+                    )
+                else:
+                    stock_statuses = get_cached_stock_statuses(
+                        db=get_history_db(),
+                        bvid=bvid,
+                        as_of_date=as_of_date,
+                        markdown_paths=markdown_paths,
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "股票状态缓存读取失败，导出将不展示实时行情: %s",
+                    exc,
+                )
+
+        if refresh_stock_statuses and not stock_statuses:
+            logger.info("后台行情刷新未获得可用数据，保留现有导出文件")
+            return {}
+
         png_converter = MarkdownToPngConverter()
 
         summary_png_path = summary_path.with_suffix(".png")
@@ -269,6 +574,7 @@ def _generate_summary_png_exports(
             is_table=False,
             as_of_date=as_of_date,
             enhance_stock_tables=True,
+            stock_statuses=stock_statuses,
             dpr=4,
         )
         generated["summary_png"] = _store_sibling_artifact(
@@ -278,30 +584,26 @@ def _generate_summary_png_exports(
             path=summary_png_path,
         )
 
-        no_table_md_path = summary_path.with_stem(f"{summary_path.stem}_no_table")
-        MarkdownRemoveTableConverter().convert(summary_path, no_table_md_path)
-        no_table_png_path = no_table_md_path.with_suffix(".png")
-        png_converter.convert(no_table_md_path, no_table_png_path, is_table=False)
-        generated["summary_no_table_png"] = _store_sibling_artifact(
-            storage_backend=storage_backend,
-            config=config,
-            source_artifact=summary_artifact,
-            path=no_table_png_path,
-        )
-
-        summary_table_artifact = results.get("summary_table_md")
-        if summary_table_artifact is not None:
-            table_md_path = _materialize_artifact_to_file(
-                storage_backend,
-                summary_table_artifact,
-                work_dir,
+        if include_no_table:
+            no_table_md_path = summary_path.with_stem(f"{summary_path.stem}_no_table")
+            MarkdownRemoveTableConverter().convert(summary_path, no_table_md_path)
+            no_table_png_path = no_table_md_path.with_suffix(".png")
+            png_converter.convert(no_table_md_path, no_table_png_path, is_table=False)
+            generated["summary_no_table_png"] = _store_sibling_artifact(
+                storage_backend=storage_backend,
+                config=config,
+                source_artifact=summary_artifact,
+                path=no_table_png_path,
             )
+
+        if summary_table_artifact is not None and table_md_path is not None:
             table_png_path = table_md_path.with_suffix(".png")
             png_converter.convert(
                 table_md_path,
                 table_png_path,
                 is_table=True,
                 as_of_date=as_of_date,
+                stock_statuses=stock_statuses,
             )
             generated["summary_table_png"] = _store_sibling_artifact(
                 storage_backend=storage_backend,
@@ -324,49 +626,33 @@ def _generate_summary_png_exports(
 def _run_summary_only_from_existing(
     *,
     bvid: str,
+    transcription_id: str | None = None,
     storage_backend: StorageBackend,
     config: AppConfig,
-    existing_results: dict[str, StoredArtifact],
+    existing_results: Mapping[str, object],
     summary_preset: str | None,
     summary_profile: str | None,
     summary_prompt_template: str | None = None,
     title: str = "",
     author: str = "",
     pubdate: str = "",
-) -> dict[str, StoredArtifact]:
+    include_comments: bool = False,
+    comment_limit: int | None = DEFAULT_COMMENT_LIMIT,
+) -> dict[str, object]:
     markdown_artifact = existing_results.get("markdown")
     if markdown_artifact is None:
         raise ValueError("历史转录结果中缺少 Markdown 文件，无法仅执行总结步骤")
 
-    resolved_title = title.strip()
-    resolved_author = author.strip()
-    resolved_pubdate = pubdate.strip()
-    if not (resolved_title and resolved_author and resolved_pubdate):
-        try:
-            detail = get_history_db().get_run_detail(
-                infer_run_id(markdown_artifact.storage_key, bvid=bvid)
-            )
-        except Exception as exc:
-            logger.debug("读取历史元信息失败，重新总结将回退到文件名推断标题: %s", exc)
-        else:
-            if detail is not None:
-                resolved_title = resolved_title or detail.title.strip()
-                resolved_author = resolved_author or detail.author.strip()
-                resolved_pubdate = resolved_pubdate or detail.pubdate.strip()
+    metadata = _resolve_existing_video_metadata(
+        bvid=bvid,
+        existing_results=existing_results,
+        title=title,
+        author=author,
+        pubdate=pubdate,
+        require_platform_metadata=include_comments,
+    )
 
-    metadata = None
-    if resolved_title or resolved_author or resolved_pubdate:
-        metadata = VideoMetadata(
-            bvid=bvid,
-            title=resolved_title,
-            author=resolved_author,
-            author_uid=0,
-            pubdate=resolved_pubdate,
-            pubdate_timestamp=0,
-            description="",
-        )
-
-    run_prefix = f"{bvid}-{uuid4().hex[:8]}"
+    run_prefix = f"{transcription_id or bvid}-{uuid4().hex[:8]}"
     cleanup_temp_dir: tempfile.TemporaryDirectory | None = None
     if storage_backend.persist_local_outputs:
         work_root = Path(config.download.output_dir).expanduser().resolve()
@@ -395,13 +681,27 @@ def _run_summary_only_from_existing(
             metadata=metadata,
         )
 
+        comment_results: dict[str, StoredArtifact] = {}
+        if include_comments:
+            comment_results = _fetch_comments_for_existing_summary(
+                bvid=bvid,
+                metadata=metadata,
+                work_dir=work_dir,
+                storage_backend=storage_backend,
+                config=config,
+                run_prefix=run_prefix,
+                summary_profile=summary_profile,
+                comment_limit=comment_limit,
+                summary_path=summary_path,
+            )
+
         summary_table_md: Path | None = None
         try:
-            summary_table_md = export_summary_table_markdown(summary_path, which="last")
+            summary_table_md = export_summary_table_without_video_time(summary_path)
         except Exception as exc:
             logger.warning("总结表格 Markdown 导出失败，已跳过: %s", exc)
 
-        results: dict[str, StoredArtifact] = {}
+        results: dict[str, object] = {}
         results["summary"] = storage_backend.store_file(
             summary_path,
             object_key=f"{run_prefix}/{summary_path.name}",
@@ -411,6 +711,15 @@ def _run_summary_only_from_existing(
                 summary_table_md,
                 object_key=f"{run_prefix}/{summary_table_md.name}",
             )
+        summary_timeline = export_summary_timeline_text(summary_path)
+        if summary_timeline is not None:
+            results["summary_timeline"] = storage_backend.store_file(
+                summary_timeline,
+                object_key=f"{run_prefix}/{summary_timeline.name}",
+            )
+        results.update(comment_results)
+        if metadata is not None:
+            results["_metadata"] = metadata
 
         # Local backend temporarily copies markdown for summary only, to avoid polluting the history file list.
         if storage_backend.persist_local_outputs:
@@ -552,6 +861,7 @@ def _merge_history_artifact(
             "summary_table_md",
             "summary_table_png",
             "summary_table_pdf",
+            "summary_timeline",
         }
         for item in merged_artifacts
     )
@@ -582,7 +892,7 @@ def _artifact_download_item(artifact: StoredArtifact) -> dict[str, str]:
 def _record_history(
     *,
     bvid: str,
-    results: dict[str, StoredArtifact],
+    results: dict[str, object],
     created_at: str | None = None,
     config: AppConfig | None = None,
     summary_preset: str | None = None,
@@ -601,11 +911,19 @@ def _record_history(
     try:
         # Extract metadata from results
         metadata = results.get("_metadata")
+        if not isinstance(metadata, VideoMetadata):
+            metadata = _resolve_existing_video_metadata(
+                bvid=bvid,
+                existing_results=results,
+            )
         author = metadata.author if metadata else ""
         pubdate = metadata.pubdate if metadata else ""
-        has_summary = "summary" in {
-            key: value for key, value in results.items() if not key.startswith("_")
+        file_results = {
+            key: value
+            for key, value in results.items()
+            if not key.startswith("_") and isinstance(value, StoredArtifact)
         }
+        has_summary = "summary" in file_results
         resolved_preset, resolved_profile = _resolve_summary_selection(
             config=config,
             has_summary=has_summary,
@@ -616,7 +934,7 @@ def _record_history(
         return record_pipeline_run(
             db=db,
             bvid=bvid,
-            results=results,
+            results=file_results,
             author=author,
             pubdate=pubdate,
             created_at=created_at,

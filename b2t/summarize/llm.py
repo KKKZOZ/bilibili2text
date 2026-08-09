@@ -1,9 +1,9 @@
 """LLM Summarization"""
 
 import logging
+import re
 from datetime import datetime
 from pathlib import Path
-import re
 
 from b2t.config import (
     SummarizeConfig,
@@ -26,9 +26,13 @@ from b2t.summary_context import (
 
 logger = logging.getLogger(__name__)
 
+CUSTOM_SUMMARY_PRESET_VALUE = "__user_custom__"
 TABLE_ROW_RE = re.compile(r"^\s*\|?.*\|.*\|?\s*$")
 TABLE_SEPARATOR_RE = re.compile(r"^\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?\s*$")
 _BVID_PREFIX_RE = re.compile(r"^(BV[0-9A-Za-z]{10})[_-]?", re.IGNORECASE)
+_COMMENT_TOTAL_RE = re.compile(r"^- 评论区总数:\s*(\d+)\s*$", re.MULTILINE)
+_COMMENT_FETCHED_RE = re.compile(r"^- 已抓取主评论:\s*(\d+)\s*$", re.MULTILINE)
+_COMMENT_FETCHED_REPLIES_RE = re.compile(r"^- 已抓取子评论:\s*(\d+)\s*$", re.MULTILINE)
 
 
 def validate_summary_prompt_template(template: str) -> str:
@@ -233,6 +237,113 @@ def post_process_summary_markdown(
     return "\n".join(parts).rstrip() + "\n"
 
 
+def summarize_comment_viewpoints(
+    comments_markdown: str,
+    config: SummarizeConfig,
+    *,
+    profile: str | None = None,
+) -> str:
+    """Summarize selected platform comments into a Markdown section."""
+    content = comments_markdown.strip()
+    if not content:
+        return ""
+
+    selected_profile = (profile or config.profile).strip()
+    model_profile = resolve_summarize_model_profile(config, override=selected_profile)
+    if not model_profile.api_key:
+        raise ValueError(
+            f"summarize.profiles.{selected_profile}.api_key is empty, please set it in the config file"
+        )
+
+    prompt = (
+        "请基于下面的视频或播客精选评论，提炼观众讨论中的相关观点，"
+        "输出 Markdown 片段并以二级标题 `## 精选评论观点` 开头。\n"
+        "要求：\n"
+        "- 总结高频观点、争议点、补充信息和情绪倾向。\n"
+        "- 重点关注标记为 `UP主回复` 的内容。\n"
+        "- 涉及 UP 主回复的结论或原话必须使用 Markdown 加粗。\n"
+        "- 不要输出表格。\n"
+        "- 不要编造评论中不存在的观点。\n\n"
+        f"{content}"
+    )
+    stream = stream_summary_completion(
+        prompt=prompt,
+        summarize_config=config,
+        model_profile=model_profile,
+        include_usage=True,
+    )
+    _, summary = collect_stream_result(stream)
+    return summary.strip()
+
+
+def _extract_comment_summary_stats(comments_markdown: str) -> str:
+    total_match = _COMMENT_TOTAL_RE.search(comments_markdown)
+    fetched_match = _COMMENT_FETCHED_RE.search(comments_markdown)
+    fetched_replies_match = _COMMENT_FETCHED_REPLIES_RE.search(comments_markdown)
+    total_count = total_match.group(1) if total_match else "未知"
+    fetched_main_count = fetched_match.group(1) if fetched_match else "未知"
+    fetched_reply_count = (
+        fetched_replies_match.group(1) if fetched_replies_match else "未知"
+    )
+    if fetched_match and fetched_replies_match:
+        summarized_count = str(int(fetched_main_count) + int(fetched_reply_count))
+    else:
+        summarized_count = "未知"
+    up_reply_count = comments_markdown.count("**UP主回复**")
+
+    return "\n".join(
+        (
+            "评论统计：",
+            "",
+            f"- 视频总评论数: {total_count}",
+            f"- 本次总结评论数: {summarized_count}（主评论 {fetched_main_count}，子评论 {fetched_reply_count}）",
+            f"- UP主回复评论数: {up_reply_count}",
+        )
+    )
+
+
+def _prepend_comment_summary_stats(
+    comment_summary: str,
+    comments_markdown: str,
+) -> str:
+    stats = _extract_comment_summary_stats(comments_markdown)
+    stripped = comment_summary.strip()
+    heading = "## 精选评论观点"
+    if stripped.startswith(heading):
+        return stripped.replace(heading, f"{heading}\n\n{stats}", 1)
+    return f"{heading}\n\n{stats}\n\n{stripped}"
+
+
+def append_comment_summary_to_markdown(
+    summary_path: Path | str,
+    comments_markdown: str,
+    config: SummarizeConfig,
+    *,
+    profile: str | None = None,
+) -> bool:
+    """Append summarized comment viewpoints to an existing summary file."""
+    comment_summary = summarize_comment_viewpoints(
+        comments_markdown,
+        config,
+        profile=profile,
+    )
+    if not comment_summary:
+        return False
+    comment_summary = _prepend_comment_summary_stats(
+        comment_summary,
+        comments_markdown,
+    )
+
+    summary_path = Path(summary_path)
+    original = summary_path.read_text(encoding="utf-8").rstrip()
+    summary_path.write_text(
+        f"{original}\n\n{comment_summary}\n",
+        encoding="utf-8",
+    )
+    format_markdown_with_markdownlint(summary_path)
+    return True
+
+
 def summarize(
     md_path: Path | str,
     config: SummarizeConfig,
@@ -263,16 +374,23 @@ def summarize(
     md_path = Path(md_path)
     content = md_path.read_text(encoding="utf-8")
 
-    preset_name = resolve_summary_preset_name(
-        summarize=config,
-        summary_presets=summary_presets,
-        override=preset,
-    )
-    template = (
-        validate_summary_prompt_template(prompt_template_override)
-        if prompt_template_override is not None
-        else summary_presets.presets[preset_name].prompt_template
-    )
+    cleaned_preset = (preset or "").strip() or None
+    if cleaned_preset == CUSTOM_SUMMARY_PRESET_VALUE:
+        if prompt_template_override is None:
+            raise ValueError("用户自定义总结模板不能为空")
+        preset_name = CUSTOM_SUMMARY_PRESET_VALUE
+        template = validate_summary_prompt_template(prompt_template_override)
+    else:
+        preset_name = resolve_summary_preset_name(
+            summarize=config,
+            summary_presets=summary_presets,
+            override=cleaned_preset,
+        )
+        template = (
+            validate_summary_prompt_template(prompt_template_override)
+            if prompt_template_override is not None
+            else summary_presets.presets[preset_name].prompt_template
+        )
     resolved_context = resolve_author_summary_context(summary_context_config, metadata)
     context_block = render_summary_context_block(resolved_context)
     prompt_content = content

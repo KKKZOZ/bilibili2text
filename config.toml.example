@@ -27,6 +27,7 @@ access_key_id = "your-access-key-id"
 access_key_secret = "your-access-key-secret"
 base_prefix = "b2t"
 temporary_prefix = "temp-audio"
+temporary_url_expire_seconds = 7200
 public_base_url = ""
 auto_create_bucket = false
 
@@ -45,6 +46,9 @@ qwen_api_key = "your-dashscope-api-key"
 # 支持 `qwen3-asr-flash-filetrans` 与 `fun-asr`
 qwen_model = "qwen3-asr-flash-filetrans"
 qwen_base_url = "https://dashscope.aliyuncs.com/api/v1"
+# 仅 `fun-asr` 支持声纹分离；开启后按预期说话人数调整 speaker_count。
+diarization_enabled = false
+speaker_count = 2
 
 [stt.profiles.groq-main]
 provider = "groq"

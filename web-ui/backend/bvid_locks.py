@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import time
+from dataclasses import dataclass
 from threading import Lock
 
 from backend.settings import TRANSCRIPTION_BVID_LOCK_TIMEOUT_SECONDS

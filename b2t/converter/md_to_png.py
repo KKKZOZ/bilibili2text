@@ -2,18 +2,21 @@
 
 import hashlib
 import logging
-from pathlib import Path
+import os
 import queue
 import re
 import shutil
 import subprocess
 import tempfile
 import threading
+from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
 
-from b2t.stock_status import build_stock_table_cards_html, extract_stock_symbols
+from b2t.converter.chromium import chromium_launch_options
 from playwright.sync_api import sync_playwright
+
+from b2t.stock_status import build_stock_table_cards_html, extract_stock_symbols
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +26,8 @@ except ImportError:  # pragma: no cover
     Image = None
 
 GITHUB_CSS_URL = "https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.5.1/github-markdown.min.css"
+CHROMIUM_SAFE_MAX_PX = 15000
+DEFAULT_PLAYWRIGHT_RENDER_TIMEOUT_MS = 120_000
 LOCAL_CSS_CACHE_DIR = Path(tempfile.gettempdir()) / "b2t-assets"
 LOCAL_CSS_FALLBACK_NAME = "github-markdown-fallback.css"
 TABLE_DELIMITER_CELL_RE = re.compile(r"^:?-{3,}:?$")
@@ -40,6 +45,31 @@ TABLE_DASH_TRANSLATION = str.maketrans(
 )
 PANDOC_MARKDOWN_FORMAT = "markdown+pipe_tables+lists_without_preceding_blankline"
 
+
+def _load_playwright_render_timeout_ms() -> int:
+    raw_value = os.getenv("B2T_PLAYWRIGHT_RENDER_TIMEOUT_MS", "").strip()
+    if not raw_value:
+        return DEFAULT_PLAYWRIGHT_RENDER_TIMEOUT_MS
+    try:
+        timeout_ms = int(raw_value)
+    except ValueError:
+        logger.warning(
+            "Invalid B2T_PLAYWRIGHT_RENDER_TIMEOUT_MS=%r, using default %dms",
+            raw_value,
+            DEFAULT_PLAYWRIGHT_RENDER_TIMEOUT_MS,
+        )
+        return DEFAULT_PLAYWRIGHT_RENDER_TIMEOUT_MS
+    if timeout_ms <= 0:
+        logger.warning(
+            "B2T_PLAYWRIGHT_RENDER_TIMEOUT_MS must be positive, using default %dms",
+            DEFAULT_PLAYWRIGHT_RENDER_TIMEOUT_MS,
+        )
+        return DEFAULT_PLAYWRIGHT_RENDER_TIMEOUT_MS
+    return timeout_ms
+
+
+PLAYWRIGHT_RENDER_TIMEOUT_MS = _load_playwright_render_timeout_ms()
+
 HTML_TEMPLATE = r"""<!doctype html>
 <html>
 <head>
@@ -47,7 +77,7 @@ HTML_TEMPLATE = r"""<!doctype html>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
   <!-- GitHub markdown css (requires .markdown-body wrapper) -->
-  <link rel="stylesheet" href="{css_href}">
+  {css_tag}
 
   <style>
     /* Make it look good on phone screenshots */
@@ -171,6 +201,29 @@ HTML_TEMPLATE = r"""<!doctype html>
       line-height: 1.45;
       word-break: break-word;
       overflow-wrap: anywhere;
+    }}
+    .markdown-body .stock-table-time-links {{
+      display: inline-flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      vertical-align: middle;
+    }}
+    .markdown-body .stock-table-time-link {{
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 2px 7px;
+      border: 1px solid #0969da;
+      border-radius: 5px;
+      color: #0969da;
+      background: #ffffff;
+      font: 700 12px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+      text-decoration: none;
+    }}
+    .markdown-body a.stock-table-time-link:hover {{
+      color: #ffffff;
+      background: #0969da;
+      text-decoration: none;
     }}
     .markdown-body .stock-status-change {{
       flex-shrink: 0;
@@ -410,7 +463,7 @@ class _ChromiumWorker:
         browser = None
         try:
             with sync_playwright() as p:
-                browser = p.chromium.launch()
+                browser = p.chromium.launch(**chromium_launch_options())
                 self._ready.set()
 
                 while True:
@@ -513,25 +566,23 @@ class MarkdownToPngConverter:
         dpr = options.get("dpr", self.dpr)
         css_url = options.get("css_url", self.css_url)
         keep_html = options.get("keep_html", False)
-        max_full_page_height = options.get("max_full_page_height", 12000)
+        # Stay below Chromium's full-page physical pixel limit by default.
+        max_safe = max(1, int(CHROMIUM_SAFE_MAX_PX // max(1, dpr)))
+        max_full_page_height = options.get("max_full_page_height", max_safe)
         tile_height = options.get("tile_height", 1800)
         reuse_browser = options.get("reuse_browser", True)
         as_of_date = options.get("as_of_date")
         enhance_stock_tables = options.get("enhance_stock_tables", False)
+        stock_statuses = options.get("stock_statuses")
 
         # Generate intermediate HTML
         html_path = output_path.with_suffix(".html")
-        body_html = (
-            self._run_table_cards(input_path, as_of_date=as_of_date)
-            if is_table
-            else (
-                self._run_markdown_with_stock_table_cards(
-                    input_path,
-                    as_of_date=as_of_date,
-                )
-                if enhance_stock_tables
-                else self._run_pandoc(input_path)
-            )
+        body_html = self._build_body_html(
+            input_path,
+            is_table=is_table,
+            as_of_date=as_of_date,
+            enhance_stock_tables=enhance_stock_tables,
+            stock_statuses=stock_statuses,
         )
         if is_table:
             if STOCK_CARD_MARKER in body_html:
@@ -539,11 +590,11 @@ class MarkdownToPngConverter:
             else:
                 width = 1200
 
-        # Resolve CSS href (prefer local cache to avoid external requests)
-        css_href = self._resolve_css_href(css_url)
-
-        # Generate full HTML
-        full_html = HTML_TEMPLATE.format(css_href=css_href, body_html=body_html)
+        full_html = self._wrap_body_html(
+            body_html,
+            css_url=css_url,
+            inline_css=False,
+        )
         html_path.write_text(full_html, encoding="utf-8")
 
         try:
@@ -565,6 +616,93 @@ class MarkdownToPngConverter:
             # Clean up intermediate HTML file (unless keep_html is set)
             if not keep_html and html_path.exists():
                 html_path.unlink()
+
+    def write_render_html(
+        self,
+        input_path: Path,
+        output_path: Path,
+        is_table: bool = False,
+        **options,
+    ) -> Path:
+        if not input_path.exists():
+            raise FileNotFoundError(f"Markdown file does not exist: {input_path}")
+
+        input_path = input_path.expanduser().resolve()
+        output_path = output_path.expanduser().resolve()
+        output_path.write_text(
+            self.build_render_html(input_path, is_table=is_table, **options),
+            encoding="utf-8",
+        )
+        logger.info("Render HTML file generated: %s", output_path)
+        return output_path
+
+    def build_render_html(
+        self,
+        input_path: Path,
+        is_table: bool = False,
+        **options,
+    ) -> str:
+        if not input_path.exists():
+            raise FileNotFoundError(f"Markdown file does not exist: {input_path}")
+
+        input_path = input_path.expanduser().resolve()
+        body_html = self._build_body_html(
+            input_path,
+            is_table=is_table,
+            as_of_date=options.get("as_of_date"),
+            enhance_stock_tables=options.get("enhance_stock_tables", False),
+            stock_statuses=options.get("stock_statuses"),
+            bvid=options.get("bvid", ""),
+        )
+        return self._wrap_body_html(
+            body_html,
+            css_url=options.get("css_url", self.css_url),
+            inline_css=options.get("inline_css", False),
+        )
+
+    def _build_body_html(
+        self,
+        input_path: Path,
+        *,
+        is_table: bool,
+        as_of_date=None,
+        enhance_stock_tables: bool = False,
+        stock_statuses=None,
+        bvid: str = "",
+    ) -> str:
+        if is_table:
+            return self._run_table_cards(
+                input_path,
+                as_of_date=as_of_date,
+                stock_statuses=stock_statuses,
+                bvid=bvid,
+            )
+        if enhance_stock_tables:
+            return self._run_markdown_with_stock_table_cards(
+                input_path,
+                as_of_date=as_of_date,
+                stock_statuses=stock_statuses,
+                bvid=bvid,
+            )
+        return self._run_pandoc(input_path)
+
+    def _wrap_body_html(
+        self,
+        body_html: str,
+        *,
+        css_url: str,
+        inline_css: bool,
+    ) -> str:
+        return HTML_TEMPLATE.format(
+            css_tag=self._build_css_tag(css_url, inline_css=inline_css),
+            body_html=body_html,
+        )
+
+    def _build_css_tag(self, css_url: str, *, inline_css: bool) -> str:
+        if inline_css:
+            css_path = self._resolve_css_path(css_url)
+            return f"<style>\n{css_path.read_text(encoding='utf-8')}\n</style>"
+        return f'<link rel="stylesheet" href="{self._resolve_css_href(css_url)}">'
 
     def _run_pandoc(self, md_path: Path) -> str:
         """Convert Markdown to an HTML fragment using pandoc."""
@@ -590,19 +728,36 @@ class MarkdownToPngConverter:
             detail = exc.stderr.strip() or exc.stdout.strip() or str(exc)
             raise RuntimeError(f"pandoc conversion failed: {detail}") from exc
 
-    def _run_table_cards(self, md_path: Path, *, as_of_date=None) -> str:
+    def _run_table_cards(
+        self,
+        md_path: Path,
+        *,
+        as_of_date=None,
+        stock_statuses=None,
+        bvid: str = "",
+    ) -> str:
         markdown_content = md_path.read_text(encoding="utf-8")
         normalized_content = self._normalize_markdown_for_tables(markdown_content)
+        status_options = {"as_of_date": as_of_date}
+        if bvid:
+            status_options["bvid"] = bvid
+        if stock_statuses is not None:
+            status_options["stock_statuses"] = stock_statuses
         cards_html = build_stock_table_cards_html(
             normalized_content,
-            as_of_date=as_of_date,
+            **status_options,
         )
         if cards_html:
             return cards_html
         return self._run_pandoc(md_path)
 
     def _run_markdown_with_stock_table_cards(
-        self, md_path: Path, *, as_of_date=None
+        self,
+        md_path: Path,
+        *,
+        as_of_date=None,
+        stock_statuses=None,
+        bvid: str = "",
     ) -> str:
         markdown_content = md_path.read_text(encoding="utf-8")
         normalized_content = self._normalize_markdown_for_tables(markdown_content)
@@ -623,9 +778,14 @@ class MarkdownToPngConverter:
                     end += 1
                 table_markdown = "\n".join(lines[index:end]).strip()
                 if table_markdown and extract_stock_symbols(table_markdown):
+                    status_options = {"as_of_date": as_of_date}
+                    if bvid:
+                        status_options["bvid"] = bvid
+                    if stock_statuses is not None:
+                        status_options["stock_statuses"] = stock_statuses
                     cards_html = build_stock_table_cards_html(
                         table_markdown,
-                        as_of_date=as_of_date,
+                        **status_options,
                     )
                     if cards_html:
                         if markdown_buffer:
@@ -699,20 +859,16 @@ class MarkdownToPngConverter:
 
     def _split_markdown_table_cells(self, line: str) -> list[str]:
         stripped = line.strip()
-        if stripped.startswith("|"):
-            stripped = stripped[1:]
-        if stripped.endswith("|"):
-            stripped = stripped[:-1]
+        stripped = stripped.removeprefix("|")
+        stripped = stripped.removesuffix("|")
         return [cell.strip() for cell in stripped.split("|")]
 
     def _looks_like_table_delimiter_line(self, line: str) -> bool:
         text = line.strip()
         if "|" not in text:
             return False
-        if text.startswith("|"):
-            text = text[1:]
-        if text.endswith("|"):
-            text = text[:-1]
+        text = text.removeprefix("|")
+        text = text.removesuffix("|")
 
         cells = [
             cell.strip().translate(TABLE_DASH_TRANSLATION) for cell in text.split("|")
@@ -737,6 +893,21 @@ class MarkdownToPngConverter:
                 return self._ensure_fallback_css().resolve().as_uri()
             return requested
         return self._ensure_fallback_css().resolve().as_uri()
+
+    def _resolve_css_path(self, css_url: str) -> Path:
+        requested = (css_url or "").strip()
+        if requested:
+            candidate = Path(requested)
+            if candidate.exists():
+                return candidate.resolve()
+            if requested.startswith(("http://", "https://")):
+                cached = self._download_css_to_cache(requested)
+                if cached is not None:
+                    return cached.resolve()
+                logger.warning(
+                    "Remote CSS unavailable, falling back to built-in local styles"
+                )
+        return self._ensure_fallback_css().resolve()
 
     def _download_css_to_cache(self, css_url: str) -> Path | None:
         LOCAL_CSS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -777,6 +948,7 @@ class MarkdownToPngConverter:
         max_full_page_height: int,
         tile_height: int,
     ) -> None:
+        """Render HTML to PNG using a full-page or tiled screenshot."""
         context = browser.new_context(
             viewport={"width": width, "height": height},
             device_scale_factor=dpr,
@@ -785,18 +957,35 @@ class MarkdownToPngConverter:
         )
         try:
             page = context.new_page()
-            page.goto(html_path.as_uri(), wait_until="domcontentloaded")
+            page.set_default_timeout(PLAYWRIGHT_RENDER_TIMEOUT_MS)
+            page.goto(
+                html_path.as_uri(),
+                wait_until="domcontentloaded",
+                timeout=PLAYWRIGHT_RENDER_TIMEOUT_MS,
+            )
             full_height = int(
                 page.evaluate("Math.ceil(document.documentElement.scrollHeight)")
             )
+            exceeds_css_limit = full_height > max_full_page_height
+            exceeds_physical_limit = full_height * dpr > CHROMIUM_SAFE_MAX_PX
 
-            if full_height <= max_full_page_height or Image is None:
-                page.screenshot(path=str(png_path), full_page=True)
+            if not exceeds_css_limit and not exceeds_physical_limit:
+                page.screenshot(
+                    path=str(png_path),
+                    full_page=True,
+                    timeout=PLAYWRIGHT_RENDER_TIMEOUT_MS,
+                )
             else:
+                logger.info(
+                    "Capturing tall page in tiles: css_height=%d, "
+                    "physical_height=%d, max_full_page_height=%d",
+                    full_height,
+                    full_height * dpr,
+                    max_full_page_height,
+                )
                 self._capture_tiled_png(
                     page=page,
                     output_path=png_path,
-                    viewport_height=height,
                     dpr=dpr,
                     full_height=full_height,
                     tile_height=tile_height,
@@ -834,7 +1023,7 @@ class MarkdownToPngConverter:
                 return
 
             with sync_playwright() as p:
-                browser = p.chromium.launch()
+                browser = p.chromium.launch(**chromium_launch_options())
                 try:
                     self._render_with_browser(
                         browser,
@@ -856,66 +1045,70 @@ class MarkdownToPngConverter:
         *,
         page,
         output_path: Path,
-        viewport_height: int,
         dpr: int,
         full_height: int,
         tile_height: int,
     ) -> None:
-        """Capture very long pages in tiles and stitch them to avoid blur."""
+        """Capture viewport tiles and stitch each tile's unique page interval."""
         if Image is None:
-            page.screenshot(path=str(output_path), full_page=True)
-            return
+            raise RuntimeError("Pillow is required to render long PNG screenshots")
 
-        step_height = max(256, min(tile_height, viewport_height))
-        scroll_positions: list[int] = list(range(0, full_height, step_height))
+        viewport_size = page.viewport_size
+        if not viewport_size:
+            raise RuntimeError("Playwright page viewport is unavailable")
 
-        tile_paths: list[Path] = []
+        viewport_height = int(viewport_size["height"])
+        if viewport_height <= 0:
+            raise RuntimeError("Playwright page viewport height must be positive")
+
+        step_height = max(1, min(int(tile_height), viewport_height))
+        last_scroll_y = max(0, full_height - viewport_height)
+        positions = list(range(0, last_scroll_y, step_height))
+        if not positions or positions[-1] != last_scroll_y:
+            positions.append(last_scroll_y)
+
         with tempfile.TemporaryDirectory(prefix="b2t-png-tiles-") as temp_dir:
             temp_root = Path(temp_dir)
-            for idx, y in enumerate(scroll_positions):
-                tile_path = temp_root / f"tile-{idx:04d}.png"
+            tiles: list[Image.Image] = []
+
+            for y in positions:
                 page.evaluate("(offset) => window.scrollTo(0, offset)", y)
-                page.wait_for_timeout(30)
+                page.wait_for_timeout(100)
+                tile_path = temp_root / f"tile-{len(tiles):04d}.png"
                 page.screenshot(
                     path=str(tile_path),
                     full_page=False,
+                    timeout=PLAYWRIGHT_RENDER_TIMEOUT_MS,
                 )
-                tile_paths.append(tile_path)
+                with Image.open(tile_path) as tile:
+                    tiles.append(tile.convert("RGB"))
 
-            tile_target_heights: list[int] = []
-            for y in scroll_positions:
-                css_height = min(step_height, full_height - y)
-                pixel_height = max(1, int(round(css_height * dpr)))
-                tile_target_heights.append(pixel_height)
-
-            with Image.open(tile_paths[0]) as first_img:
-                merged_width = first_img.width
-
-            merged_height = 0
-            for tile_path, target_height in zip(
-                tile_paths, tile_target_heights, strict=True
-            ):
-                with Image.open(tile_path) as img:
-                    merged_height += min(target_height, img.height)
-
-            merged = Image.new("RGB", (merged_width, merged_height), "white")
+            total_height_px = max(1, int(round(full_height * dpr)))
+            merged = Image.new("RGB", (tiles[0].width, total_height_px), "white")
             try:
-                offset_y = 0
-                for tile_path, target_height in zip(
-                    tile_paths, tile_target_heights, strict=True
+                for index, (position, tile) in enumerate(
+                    zip(positions, tiles, strict=True)
                 ):
-                    with Image.open(tile_path) as img:
-                        crop_height = min(target_height, img.height)
-                        if crop_height <= 0:
-                            continue
-                        segment = img.crop((0, 0, img.width, crop_height))
-                        try:
-                            merged.paste(segment, (0, offset_y))
-                        finally:
-                            segment.close()
-                        offset_y += crop_height
+                    next_position = (
+                        positions[index + 1]
+                        if index + 1 < len(positions)
+                        else full_height
+                    )
+                    start_px = int(round(position * dpr))
+                    end_px = int(round(next_position * dpr))
+                    contribution_height = min(end_px - start_px, tile.height)
+                    if contribution_height <= 0:
+                        continue
+                    region = tile.crop((0, 0, tile.width, contribution_height))
+                    try:
+                        merged.paste(region, (0, start_px))
+                    finally:
+                        region.close()
+
                 merged.save(output_path)
             finally:
+                for img in tiles:
+                    img.close()
                 merged.close()
 
 
@@ -968,7 +1161,7 @@ class HtmlToPngConverter:
                 )
             else:
                 with sync_playwright() as p:
-                    browser = p.chromium.launch()
+                    browser = p.chromium.launch(**chromium_launch_options())
                     try:
                         self._render(
                             browser,
@@ -1006,10 +1199,19 @@ class HtmlToPngConverter:
         )
         try:
             page = context.new_page()
-            page.goto(html_path.as_uri(), wait_until="domcontentloaded")
+            page.set_default_timeout(PLAYWRIGHT_RENDER_TIMEOUT_MS)
+            page.goto(
+                html_path.as_uri(),
+                wait_until="domcontentloaded",
+                timeout=PLAYWRIGHT_RENDER_TIMEOUT_MS,
+            )
             if is_mobile:
                 self._rewrite_tables_for_mobile(page)
-            page.screenshot(path=str(png_path), full_page=True)
+            page.screenshot(
+                path=str(png_path),
+                full_page=True,
+                timeout=PLAYWRIGHT_RENDER_TIMEOUT_MS,
+            )
         finally:
             context.close()
 

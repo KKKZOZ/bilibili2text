@@ -3,7 +3,9 @@
   import {
     AlertCircle,
     Braces,
+    ChevronDown,
     File,
+    Eye,
     FileText,
     Image as ImageIcon,
     LoaderCircle,
@@ -59,7 +61,8 @@
         'summary_no_table',
         'summary_fancy_html',
         'summary_table_md',
-        'summary_table_pdf'
+        'summary_table_pdf',
+        'summary_timeline'
       ]
     },
     allowDelete: {
@@ -75,6 +78,10 @@
   const emit = defineEmits(['artifactDeleted', 'artifactGenerated'])
   const LOCAL_API_KEY_KEY = 'b2t.public-api-key'
   const LOCAL_DEEPSEEK_API_KEY_KEY = 'b2t.public-deepseek-api-key'
+  const LOCAL_CUSTOM_LLM_BASE_URL_KEY = 'b2t.public-custom-llm-base-url'
+  const LOCAL_CUSTOM_LLM_API_KEY_KEY = 'b2t.public-custom-llm-api-key'
+  const LOCAL_CUSTOM_LLM_MODEL_KEY = 'b2t.public-custom-llm-model'
+  const CUSTOM_LLM_PROFILE_NAME = 'open_public_custom_llm'
 
   const { conversionError, convertAndDownload, isConverting, download } =
     useConversion()
@@ -84,6 +91,8 @@
   const deletingKeys = ref(new Set())
   const deleteConfirmItem = ref(null)
   const generatedItems = ref([])
+  const previewError = ref('')
+  const openPngMenuKey = ref('')
 
   const formatIconMap = {
     markdown: FileText,
@@ -123,6 +132,23 @@
     }
   }
 
+  const getCustomLlmPayload = () => {
+    if (!props.requiresApiKey) {
+      return {
+        custom_llm_base_url: null,
+        custom_llm_api_key: null,
+        custom_llm_model: null
+      }
+    }
+    return {
+      custom_llm_base_url:
+        readLocalStorage(LOCAL_CUSTOM_LLM_BASE_URL_KEY) || null,
+      custom_llm_api_key:
+        readLocalStorage(LOCAL_CUSTOM_LLM_API_KEY_KEY) || null,
+      custom_llm_model: readLocalStorage(LOCAL_CUSTOM_LLM_MODEL_KEY) || null
+    }
+  }
+
   const resolveSummaryPresetLabel = (presetName) => {
     let effectiveName = (presetName || '').trim()
     if (!effectiveName || effectiveName === 'default') {
@@ -141,6 +167,7 @@
   const isSummaryKind = (kind) =>
     kind === 'summary' ||
     kind === 'summary_text' ||
+    kind === 'summary_timeline' ||
     kind === 'summary_no_table' ||
     kind === 'summary_png' ||
     kind === 'summary_no_table_png' ||
@@ -149,6 +176,11 @@
     kind === 'summary_table_png' ||
     kind === 'summary_table_pdf'
 
+  const isRenderedSummaryKind = (kind) =>
+    kind === 'summary' ||
+    kind === 'summary_no_table' ||
+    kind === 'summary_table_md'
+
   const isSummaryDerivedKind = (kind) =>
     kind === 'summary_no_table' ||
     kind === 'summary_png' ||
@@ -156,7 +188,8 @@
     kind === 'summary_fancy_html' ||
     kind === 'summary_table_md' ||
     kind === 'summary_table_png' ||
-    kind === 'summary_table_pdf'
+    kind === 'summary_table_pdf' ||
+    kind === 'summary_timeline'
 
   const isHiddenDerivedPngKind = (kind) =>
     kind === 'summary_png' ||
@@ -171,8 +204,15 @@
     const matched = props.summaryProfiles.find(
       (item) => item.name === effectiveName
     )
+    if (matched?.name === CUSTOM_LLM_PROFILE_NAME) {
+      return `custom(${matched.model || 'model'})`
+    }
     if (matched && typeof matched.name === 'string' && matched.name.trim()) {
       return matched.name.trim()
+    }
+    if (effectiveName === CUSTOM_LLM_PROFILE_NAME) {
+      const model = readLocalStorage(LOCAL_CUSTOM_LLM_MODEL_KEY)
+      return model ? `custom(${model})` : 'custom'
     }
     return effectiveName
   }
@@ -199,9 +239,13 @@
       kind === 'summary_fancy_html' ||
       kind === 'summary_table_md' ||
       kind === 'summary_table_png' ||
-      kind === 'summary_table_pdf'
+      kind === 'summary_table_pdf' ||
+      kind === 'summary_timeline'
     ) {
-      return stem.replace(/_fancy$/i, '').replace(/_table$/i, '')
+      return stem
+        .replace(/_fancy$/i, '')
+        .replace(/_table$/i, '')
+        .replace(/_timeline$/i, '')
     }
     return ''
   }
@@ -226,6 +270,7 @@
       summary_table_md: 230,
       summary_table_png: 231,
       summary_table_pdf: 231,
+      summary_timeline: 240,
       text: 300,
       summary_text: 310,
       json: 400,
@@ -263,7 +308,8 @@
           kind === 'summary_no_table_png' ||
           kind === 'summary_fancy_html' ||
           kind === 'summary_table_md' ||
-          kind === 'summary_table_png'
+          kind === 'summary_table_png' ||
+          kind === 'summary_timeline'
             ? resolveSummaryPresetLabel(item.presetName || '')
             : '',
         modelProfileLabel: isSummaryKind(kind)
@@ -358,7 +404,8 @@
         item.kind === 'summary_fancy_html' ||
         item.kind === 'summary_table_md' ||
         item.kind === 'summary_table_png' ||
-        item.kind === 'summary_table_pdf'
+        item.kind === 'summary_table_pdf' ||
+        item.kind === 'summary_timeline'
       ) {
         const signature = `${(item.presetName || '').trim()}::${(item.summaryProfile || '').trim()}`
         const familyKey = resolveSummaryFamilyKey(item, item.kind)
@@ -382,7 +429,9 @@
                 ? 0.21
                 : item.kind === 'summary_table_pdf'
                   ? 0.25
-                  : 0.18
+                  : item.kind === 'summary_timeline'
+                    ? 0.3
+                    : 0.18
         rows.push(
           toDisplayItem(item, index, {
             parentSummaryRowId: parentSummary?.summaryRowId || '',
@@ -438,6 +487,14 @@
   }
 
   const handlePrimaryAction = (item) => {
+    if (item.kind === 'summary_fancy_html') {
+      previewRenderedHtml(item)
+      return
+    }
+    if (item.kind === 'summary_timeline') {
+      previewTimelineText(item)
+      return
+    }
     if (item.primaryTargetFormat) {
       convertAndDownload(
         item.downloadId,
@@ -550,6 +607,32 @@
     convertAndDownload(item.downloadId, item.filename, targetFormat)
   }
 
+  const previewRenderedHtml = (item) => {
+    previewError.value = ''
+    const sourceVariant =
+      item.kind === 'summary_no_table' ? '?source_variant=summary_no_table' : ''
+    const previewUrl = `/api/preview/html/${encodeURIComponent(item.downloadId)}${sourceVariant}`
+    const opened = window.open(previewUrl, '_blank')
+    if (opened) {
+      opened.opener = null
+      return
+    }
+    previewError.value = '浏览器阻止了新标签页，请允许弹窗后重试'
+  }
+
+  const previewTimelineText = (item) => {
+    previewError.value = ''
+    const previewUrl = `/api/preview/txt/${encodeURIComponent(item.downloadId)}`
+    const opened = window.open(previewUrl, '_blank')
+    if (opened) {
+      opened.opener = null
+      return
+    }
+    previewError.value = '浏览器阻止了新标签页，请允许弹窗后重试'
+  }
+
+  const isTimelineArtifact = (item) => item.kind === 'summary_timeline'
+
   const generateFancyHtml = async (item) => {
     const key = fancyGenerateKey(item.downloadId)
     if (fancyGenerating.value.has(key)) {
@@ -574,7 +657,8 @@
             : null,
           deepseek_api_key: props.requiresApiKey
             ? readLocalStorage(LOCAL_DEEPSEEK_API_KEY_KEY) || null
-            : null
+            : null,
+          ...getCustomLlmPayload()
         })
       })
       const data = await resp.json()
@@ -609,13 +693,35 @@
     return isConverting(item.downloadId, targetFormat)
   }
 
-  const isFancyPngConverting = (item, renderMode) =>
-    isConverting(item.downloadId, 'png', { render_mode: renderMode })
-
-  const convertFancyHtmlToPng = (item, renderMode) =>
-    convertAndDownload(item.downloadId, item.filename, 'png', {
-      render_mode: renderMode
+  const isPngModeConverting = (item, renderMode) =>
+    isConverting(item.downloadId, 'png', {
+      render_mode: renderMode,
+      ...(item.kind === 'summary_no_table'
+        ? { source_variant: 'summary_no_table' }
+        : {})
     })
+
+  const isAnyPngModeConverting = (item) =>
+    isPngModeConverting(item, 'desktop') || isPngModeConverting(item, 'mobile')
+
+  const pngMenuKey = (item) => `${item.key || item.downloadId}-png-menu`
+
+  const isPngMenuOpen = (item) => openPngMenuKey.value === pngMenuKey(item)
+
+  const togglePngMenu = (item) => {
+    const key = pngMenuKey(item)
+    openPngMenuKey.value = openPngMenuKey.value === key ? '' : key
+  }
+
+  const convertToPng = (item, renderMode) => {
+    openPngMenuKey.value = ''
+    convertAndDownload(item.downloadId, item.filename, 'png', {
+      render_mode: renderMode,
+      ...(item.kind === 'summary_no_table'
+        ? { source_variant: 'summary_no_table' }
+        : {})
+    })
+  }
 
   const canDeleteMarkdownArtifact = (item) => {
     if (!props.allowDelete) {
@@ -671,6 +777,12 @@
         candidate.parentSummaryRowId === item.summaryRowId &&
         candidate.kind === 'summary_fancy_html'
     )
+    const timeline = displayItems.value.find(
+      (candidate) =>
+        candidate.parentSummaryRowId &&
+        candidate.parentSummaryRowId === item.summaryRowId &&
+        candidate.kind === 'summary_timeline'
+    )
     return [
       item.displayName,
       noTable ? noTable.displayName : `${item.displayName}_无表格`,
@@ -692,6 +804,15 @@
             {
               filename: item.filename,
               kind: 'summary_table_md'
+            },
+            { bvid: props.bvid }
+          ),
+      timeline
+        ? timeline.displayName
+        : buildArtifactDisplayName(
+            {
+              filename: item.filename,
+              kind: 'summary_timeline'
             },
             { bvid: props.bvid }
           )
@@ -739,6 +860,10 @@
     <p v-if="deleteError" class="inline-error">
       <AlertCircle :size="16" />
       <span>{{ deleteError }}</span>
+    </p>
+    <p v-if="previewError" class="inline-error">
+      <AlertCircle :size="16" />
+      <span>{{ previewError }}</span>
     </p>
 
     <div v-if="displayItems.length > 0" class="all-downloads">
@@ -819,45 +944,74 @@
                 :size="14"
                 class="spin"
               />
+              <template v-else-if="item.kind === 'summary_fancy_html'">
+                <Eye :size="14" />
+                <span>HTML Preview</span>
+              </template>
+              <template v-else-if="isTimelineArtifact(item)">
+                <Eye :size="14" />
+                <span>TXT Preview</span>
+              </template>
               <template v-else>
                 <component :is="getFormatIcon(item.fileType)" :size="14" />
                 <span>{{ getFormatLabel(item.fileType) }}</span>
               </template>
             </button>
-            <button
+            <div
               v-if="item.kind === 'summary_fancy_html'"
-              class="download download-sm"
-              type="button"
-              :disabled="isFancyPngConverting(item, 'desktop')"
-              @click="convertFancyHtmlToPng(item, 'desktop')"
+              class="png-export-menu"
+              :class="{ 'png-export-menu-open': isPngMenuOpen(item) }"
             >
-              <LoaderCircle
-                v-if="isFancyPngConverting(item, 'desktop')"
-                :size="14"
-                class="spin"
-              />
-              <template v-else>
-                <component :is="getFormatIcon('png')" :size="14" />
-                <span>PNG Desktop</span>
-              </template>
-            </button>
-            <button
-              v-if="item.kind === 'summary_fancy_html'"
-              class="download download-sm"
-              type="button"
-              :disabled="isFancyPngConverting(item, 'mobile')"
-              @click="convertFancyHtmlToPng(item, 'mobile')"
-            >
-              <LoaderCircle
-                v-if="isFancyPngConverting(item, 'mobile')"
-                :size="14"
-                class="spin"
-              />
-              <template v-else>
-                <component :is="getFormatIcon('png')" :size="14" />
-                <span>PNG Mobile</span>
-              </template>
-            </button>
+              <button
+                class="download download-sm png-export-trigger"
+                type="button"
+                :disabled="isAnyPngModeConverting(item)"
+                :aria-expanded="isPngMenuOpen(item)"
+                aria-haspopup="menu"
+                @click="togglePngMenu(item)"
+              >
+                <LoaderCircle
+                  v-if="isAnyPngModeConverting(item)"
+                  :size="14"
+                  class="spin"
+                />
+                <template v-else>
+                  <component :is="getFormatIcon('png')" :size="14" />
+                  <span>PNG</span>
+                  <ChevronDown
+                    :size="14"
+                    class="png-export-chevron"
+                    :class="{ 'png-export-chevron-open': isPngMenuOpen(item) }"
+                  />
+                </template>
+              </button>
+              <div class="png-export-options" role="menu">
+                <button
+                  type="button"
+                  :disabled="isPngModeConverting(item, 'desktop')"
+                  @click="convertToPng(item, 'desktop')"
+                >
+                  <LoaderCircle
+                    v-if="isPngModeConverting(item, 'desktop')"
+                    :size="14"
+                    class="spin"
+                  />
+                  <span>Desktop</span>
+                </button>
+                <button
+                  type="button"
+                  :disabled="isPngModeConverting(item, 'mobile')"
+                  @click="convertToPng(item, 'mobile')"
+                >
+                  <LoaderCircle
+                    v-if="isPngModeConverting(item, 'mobile')"
+                    :size="14"
+                    class="spin"
+                  />
+                  <span>Mobile</span>
+                </button>
+              </div>
+            </div>
             <template v-if="canConvert(item.kind)">
               <button
                 v-if="item.kind === 'summary' || item.kind === 'rag_answer'"
@@ -877,6 +1031,7 @@
                 </template>
               </button>
               <button
+                v-if="!isRenderedSummaryKind(item.kind)"
                 class="download download-sm"
                 type="button"
                 :disabled="isConvertButtonLoading(item, 'txt')"
@@ -908,21 +1063,72 @@
                   <span>{{ getFormatLabel('pdf') }}</span>
                 </template>
               </button>
+              <div
+                class="png-export-menu"
+                :class="{ 'png-export-menu-open': isPngMenuOpen(item) }"
+              >
+                <button
+                  class="download download-sm png-export-trigger"
+                  type="button"
+                  :disabled="isAnyPngModeConverting(item)"
+                  :aria-expanded="isPngMenuOpen(item)"
+                  aria-haspopup="menu"
+                  @click="togglePngMenu(item)"
+                >
+                  <LoaderCircle
+                    v-if="isAnyPngModeConverting(item)"
+                    :size="14"
+                    class="spin"
+                  />
+                  <template v-else>
+                    <component :is="getFormatIcon('png')" :size="14" />
+                    <span>{{ getFormatLabel('png') }}</span>
+                    <ChevronDown
+                      :size="14"
+                      class="png-export-chevron"
+                      :class="{
+                        'png-export-chevron-open': isPngMenuOpen(item)
+                      }"
+                    />
+                  </template>
+                </button>
+                <div class="png-export-options" role="menu">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    :disabled="isPngModeConverting(item, 'desktop')"
+                    @click="convertToPng(item, 'desktop')"
+                  >
+                    <LoaderCircle
+                      v-if="isPngModeConverting(item, 'desktop')"
+                      :size="14"
+                      class="spin"
+                    />
+                    <span>Desktop</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    :disabled="isPngModeConverting(item, 'mobile')"
+                    @click="convertToPng(item, 'mobile')"
+                  >
+                    <LoaderCircle
+                      v-if="isPngModeConverting(item, 'mobile')"
+                      :size="14"
+                      class="spin"
+                    />
+                    <span>Mobile</span>
+                  </button>
+                </div>
+              </div>
               <button
+                v-if="isRenderedSummaryKind(item.kind)"
                 class="download download-sm"
                 type="button"
-                :disabled="isConvertButtonLoading(item, 'png')"
-                @click="onConvertClick(item, 'png')"
+                @click="previewRenderedHtml(item)"
               >
-                <LoaderCircle
-                  v-if="isConvertButtonLoading(item, 'png')"
-                  :size="14"
-                  class="spin"
-                />
-                <template v-else>
-                  <component :is="getFormatIcon('png')" :size="14" />
-                  <span>{{ getFormatLabel('png') }}</span>
-                </template>
+                <Eye :size="14" />
+                <span>HTML Preview</span>
               </button>
             </template>
           </div>
@@ -1214,6 +1420,73 @@
     flex-wrap: wrap;
   }
 
+  .png-export-menu {
+    position: relative;
+  }
+
+  .png-export-options {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    z-index: 20;
+    min-width: 132px;
+    padding: 6px;
+    border-top: 6px solid transparent;
+    border-right: 1px solid rgba(20, 184, 166, 0.24);
+    border-bottom: 1px solid rgba(20, 184, 166, 0.24);
+    border-left: 1px solid rgba(20, 184, 166, 0.24);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.98);
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.14);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-4px);
+    transition:
+      opacity 0.16s ease,
+      transform 0.16s ease;
+  }
+
+  .png-export-menu-open .png-export-options {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+  }
+
+  .png-export-chevron {
+    transition: transform 0.16s ease;
+  }
+
+  .png-export-chevron-open {
+    transform: rotate(180deg);
+  }
+
+  .png-export-options button {
+    width: 100%;
+    min-height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+    border: none;
+    border-radius: 9px;
+    background: transparent;
+    color: #0f766e;
+    font-size: 0.84rem;
+    font-weight: 700;
+    cursor: pointer;
+    padding: 0 10px;
+  }
+
+  .png-export-options button:hover:not(:disabled),
+  .png-export-options button:focus-visible:not(:disabled) {
+    background: #ecfeff;
+  }
+
+  .png-export-options button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
   /* ─── Responsive ─────────────────────────────────────────────── */
 
   @media (max-width: 640px) {
@@ -1237,9 +1510,15 @@
       gap: 8px;
     }
 
-    .all-download-actions .download-sm {
+    .all-download-actions .download-sm,
+    .png-export-menu {
       min-width: 0;
       width: 100%;
+    }
+
+    .png-export-options {
+      left: 0;
+      right: 0;
     }
   }
 </style>

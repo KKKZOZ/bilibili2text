@@ -1,14 +1,32 @@
 """Local filesystem storage backend."""
 
+import re
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import BinaryIO, Iterator
+from typing import BinaryIO
 
 from b2t.storage.base import (
     StorageBackend,
     StoredArtifact,
     classify_artifact_filename,
 )
+
+_MULTIPART_SUFFIX_PATTERN = re.compile(r"^_p[1-9][0-9]*(?:_|-|$)", re.IGNORECASE)
+
+
+def _matches_transcription_id(value: str, transcription_id: str) -> bool:
+    value_lower = value.lower()
+    target_lower = transcription_id.lower()
+    if not value_lower.startswith(target_lower):
+        return False
+
+    remainder = value[len(transcription_id) :]
+    if remainder and not remainder.startswith(("_", "-")):
+        return False
+    if "_p" not in target_lower and _MULTIPART_SUFFIX_PATTERN.match(remainder):
+        return False
+    return True
 
 
 class LocalStorageBackend(StorageBackend):
@@ -62,7 +80,7 @@ class LocalStorageBackend(StorageBackend):
         run_order: list[str] = []
         for artifact in artifacts:
             parent_name = Path(artifact.storage_key).parent.name
-            if not parent_name.lower().startswith(bvid.lower()):
+            if not _matches_transcription_id(parent_name, bvid):
                 continue
             artifact_key = classify_artifact_filename(artifact.filename)
             if artifact_key is None:
@@ -97,11 +115,10 @@ class LocalStorageBackend(StorageBackend):
         if self._output_root is None or not self._output_root.exists():
             return []
 
-        bvid_lower = bvid.lower()
         candidate_dirs = [
             path
             for path in self._output_root.iterdir()
-            if path.is_dir() and path.name.lower().startswith(bvid_lower)
+            if path.is_dir() and _matches_transcription_id(path.name, bvid)
         ]
         if not candidate_dirs:
             return []
@@ -122,7 +139,7 @@ class LocalStorageBackend(StorageBackend):
             for path in directory.rglob("*"):
                 if not path.is_file():
                     continue
-                if not path.name.lower().startswith(bvid_lower):
+                if not _matches_transcription_id(path.name, bvid):
                     continue
 
                 artifact_key = classify_artifact_filename(path.name)

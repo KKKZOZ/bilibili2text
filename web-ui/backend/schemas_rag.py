@@ -9,6 +9,9 @@ class RagQueryRequest(BaseModel):
     llm_profile: str | None = None
     api_key: str | None = None
     deepseek_api_key: str | None = None
+    custom_llm_base_url: str | None = None
+    custom_llm_api_key: str | None = None
+    custom_llm_model: str | None = None
 
 
 class RagSourceItem(BaseModel):

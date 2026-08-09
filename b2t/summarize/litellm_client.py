@@ -66,6 +66,11 @@ def _to_litellm_model_name(model: str, provider: str) -> str:
             return normalized
         return f"deepseek/{normalized}"
 
+    if provider == "openai_compatible":
+        if normalized.startswith("openai/"):
+            return normalized
+        return f"openai/{normalized}"
+
     return normalized
 
 
@@ -125,9 +130,8 @@ def extract_reasoning_text(delta: object) -> str:
 
             summary = get_message_field(item, "summary")
             summary_text = to_text(summary)
-            if summary_text:
-                if not parts or parts[-1] != summary_text:
-                    parts.append(summary_text)
+            if summary_text and (not parts or parts[-1] != summary_text):
+                parts.append(summary_text)
 
     return "".join(parts)
 

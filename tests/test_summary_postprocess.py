@@ -1,6 +1,7 @@
 from datetime import datetime
 from pathlib import Path
 
+import b2t.summarize.llm as llm_module
 from b2t.config import (
     SummarizeConfig,
     SummarizeModelProfile,
@@ -8,7 +9,6 @@ from b2t.config import (
     SummaryPresetsConfig,
 )
 from b2t.download.metadata import VideoMetadata
-import b2t.summarize.llm as llm_module
 
 
 def _summarize_config() -> SummarizeConfig:

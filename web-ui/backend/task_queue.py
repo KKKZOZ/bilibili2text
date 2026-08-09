@@ -1,7 +1,7 @@
 """Bounded background execution for API-triggered work."""
 
-from concurrent.futures import Future, ThreadPoolExecutor
 import atexit
+from concurrent.futures import Future, ThreadPoolExecutor
 
 _main_executor = ThreadPoolExecutor(max_workers=20, thread_name_prefix="b2t-job")
 _postprocess_executor = ThreadPoolExecutor(
