@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
 import re
+import time
+import urllib.parse
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -23,6 +26,73 @@ BILIBILI_VIDEO_COMMENT_TYPE = 1
 DEFAULT_COMMENT_LIMIT = 500
 MAX_PAGE_SIZE = 20
 XIAOYUZHOU_PAGE_SIZE = 20
+BILIBILI_WBI_WEB_LOCATION = 1315875
+BILIBILI_MIXIN_KEY_ENC_TAB = (
+    46,
+    47,
+    18,
+    2,
+    53,
+    8,
+    23,
+    32,
+    15,
+    50,
+    10,
+    31,
+    58,
+    3,
+    45,
+    35,
+    27,
+    43,
+    5,
+    49,
+    33,
+    9,
+    42,
+    19,
+    29,
+    28,
+    14,
+    39,
+    12,
+    38,
+    41,
+    13,
+    37,
+    48,
+    7,
+    16,
+    24,
+    55,
+    40,
+    61,
+    26,
+    17,
+    0,
+    1,
+    60,
+    51,
+    30,
+    4,
+    22,
+    25,
+    54,
+    21,
+    56,
+    59,
+    6,
+    63,
+    57,
+    62,
+    11,
+    36,
+    20,
+    34,
+    44,
+    52,
+)
 XIAOYUZHOU_COMMENT_API_URL = "https://api.xiaoyuzhoufm.com/v1/comment/list-primary"
 XIAOYUZHOU_REPLY_API_URL = "https://api.xiaoyuzhoufm.com/v1/comment/list-reply"
 _NEXT_DATA_PATTERN = re.compile(
@@ -154,6 +224,86 @@ def _sort_value(sort: str) -> int:
     return 1
 
 
+def _wbi_sort_mode(sort: str) -> int:
+    normalized = sort.strip().lower()
+    if normalized in {"time", "latest", "new"}:
+        return 2
+    return 3
+
+
+def _wbi_mixin_key(img_key: str, sub_key: str) -> str:
+    original = f"{img_key}{sub_key}"
+    if len(original) < 64:
+        raise RuntimeError("Bilibili WBI key is incomplete")
+    return "".join(original[index] for index in BILIBILI_MIXIN_KEY_ENC_TAB)[:32]
+
+
+def _extract_wbi_key(url: Any) -> str:
+    filename = str(url or "").rsplit("/", 1)[-1]
+    return filename.split(".", 1)[0]
+
+
+async def _fetch_wbi_mixin_key(client: httpx.AsyncClient) -> str:
+    response = await client.get("https://api.bilibili.com/x/web-interface/nav")
+    response.raise_for_status()
+    payload = response.json()
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        raise RuntimeError("Bilibili WBI nav data is missing")
+    wbi_img = data.get("wbi_img")
+    if not isinstance(wbi_img, dict):
+        raise RuntimeError("Bilibili WBI image keys are missing")
+    return _wbi_mixin_key(
+        _extract_wbi_key(wbi_img.get("img_url")),
+        _extract_wbi_key(wbi_img.get("sub_url")),
+    )
+
+
+def _sign_wbi_params(params: dict[str, Any], mixin_key: str) -> dict[str, Any]:
+    signed = dict(params)
+    signed["wts"] = int(time.time())
+    sanitized = {
+        key: "".join(char for char in str(value) if char not in "!'()*")
+        for key, value in signed.items()
+    }
+    query = urllib.parse.urlencode(sorted(sanitized.items()))
+    sanitized["w_rid"] = hashlib.md5(f"{query}{mixin_key}".encode()).hexdigest()
+    return sanitized
+
+
+async def _fetch_main_comment_page(
+    client: httpx.AsyncClient,
+    *,
+    aid: int,
+    mode: int,
+    offset: str,
+    mixin_key: str,
+) -> dict[str, Any]:
+    response = await client.get(
+        "https://api.bilibili.com/x/v2/reply/wbi/main",
+        params=_sign_wbi_params(
+            {
+                "oid": aid,
+                "type": BILIBILI_VIDEO_COMMENT_TYPE,
+                "mode": mode,
+                "pagination_str": json.dumps({"offset": offset}, separators=(",", ":")),
+                "plat": 1,
+                "seek_rpid": "",
+                "web_location": BILIBILI_WBI_WEB_LOCATION,
+            },
+            mixin_key,
+        ),
+    )
+    response.raise_for_status()
+    payload = response.json()
+    if payload.get("code") != 0:
+        raise RuntimeError(payload.get("message") or "Bilibili WBI comment API error")
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        return {}
+    return data
+
+
 async def _fetch_reply_page(
     client: httpx.AsyncClient,
     *,
@@ -196,12 +346,21 @@ async def _fetch_all_replies(
     replies: list[PlatformComment] = []
     page = 1
     while True:
-        raw_replies = await _fetch_reply_page(
-            client,
-            aid=aid,
-            root_rpid=root_rpid,
-            page=page,
-        )
+        try:
+            raw_replies = await _fetch_reply_page(
+                client,
+                aid=aid,
+                root_rpid=root_rpid,
+                page=page,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Failed to fetch Bilibili child replies for root %s page %s: %s",
+                root_rpid,
+                page,
+                exc,
+            )
+            break
         if not raw_replies:
             break
         replies.extend(_parse_comment(item, up_uid=up_uid) for item in raw_replies)
@@ -227,6 +386,146 @@ async def fetch_bilibili_comments_async(
     if limit is not None and limit <= 0:
         raise ValueError("comment limit must be positive or None")
 
+    try:
+        return await _fetch_bilibili_comments_wbi(
+            aid=aid,
+            bvid=bvid,
+            up_uid=up_uid,
+            limit=limit,
+            sort=sort,
+            cookie=cookie,
+        )
+    except Exception as exc:
+        logger.warning("Bilibili WBI comment API failed, falling back: %s", exc)
+
+    return await _fetch_bilibili_comments_legacy(
+        aid=aid,
+        bvid=bvid,
+        up_uid=up_uid,
+        limit=limit,
+        sort=sort,
+        cookie=cookie,
+    )
+
+
+async def _fetch_bilibili_comments_wbi(
+    *,
+    aid: int,
+    bvid: str,
+    up_uid: int,
+    limit: int | None,
+    sort: str,
+    cookie: str,
+) -> PlatformCommentBundle:
+    total_count = 0
+    comments: list[PlatformComment] = []
+    seen_rpids: set[int | str] = set()
+    offset = ""
+    mode = _wbi_sort_mode(sort)
+    stopped_early = False
+
+    async with httpx.AsyncClient(
+        follow_redirects=True,
+        timeout=30.0,
+        headers=_headers(cookie),
+    ) as client:
+        mixin_key = await _fetch_wbi_mixin_key(client)
+        while limit is None or len(comments) < limit:
+            try:
+                data = await _fetch_main_comment_page(
+                    client,
+                    aid=aid,
+                    mode=mode,
+                    offset=offset,
+                    mixin_key=mixin_key,
+                )
+            except Exception:
+                if comments:
+                    logger.warning(
+                        "Bilibili WBI comment pagination stopped after %s comments; returning partial results",
+                        len(comments),
+                    )
+                    stopped_early = True
+                    break
+                raise
+            cursor = data.get("cursor")
+            if isinstance(cursor, dict):
+                total_count = max(
+                    total_count,
+                    _to_int(cursor.get("all_count")),
+                    _to_int(cursor.get("total")),
+                )
+            raw_comments = data.get("replies")
+            if not isinstance(raw_comments, list) or not raw_comments:
+                break
+
+            for raw_comment in raw_comments:
+                if not isinstance(raw_comment, dict):
+                    continue
+                comment = _parse_comment(raw_comment, up_uid=up_uid)
+                if comment.rpid in seen_rpids:
+                    continue
+                seen_rpids.add(comment.rpid)
+                reply_count = _to_int(
+                    raw_comment.get("rcount"), _to_int(raw_comment.get("count"))
+                )
+                replies = await _fetch_all_replies(
+                    client,
+                    aid=aid,
+                    root_rpid=comment.rpid,
+                    reply_count=reply_count,
+                    up_uid=up_uid,
+                )
+                comments.append(
+                    PlatformComment(
+                        rpid=comment.rpid,
+                        author=comment.author,
+                        author_uid=comment.author_uid,
+                        message=comment.message,
+                        like=comment.like,
+                        ctime=comment.ctime,
+                        ctime_timestamp=comment.ctime_timestamp,
+                        is_up_reply=comment.is_up_reply,
+                        replies=replies,
+                    )
+                )
+                if limit is not None and len(comments) >= limit:
+                    break
+
+            if not isinstance(cursor, dict) or cursor.get("is_end"):
+                break
+            pagination_reply = cursor.get("pagination_reply")
+            next_offset = (
+                pagination_reply.get("next_offset")
+                if isinstance(pagination_reply, dict)
+                else ""
+            )
+            if not next_offset or next_offset == offset:
+                break
+            offset = str(next_offset)
+
+    return PlatformCommentBundle(
+        bvid=bvid,
+        fetched_count=len(comments),
+        requested_limit=limit,
+        total_count=max(total_count, len(comments)),
+        sort=sort,
+        comments=tuple(comments),
+        aid=aid,
+        platform=Platform.BILIBILI.value,
+        source="wbi_api_partial" if stopped_early else "wbi_api",
+    )
+
+
+async def _fetch_bilibili_comments_legacy(
+    *,
+    aid: int,
+    bvid: str,
+    up_uid: int,
+    limit: int | None,
+    sort: str,
+    cookie: str,
+) -> PlatformCommentBundle:
     page = 1
     total_count = 0
     comments: list[PlatformComment] = []
@@ -736,6 +1035,7 @@ def comments_to_markdown(bundle: PlatformCommentBundle) -> str:
         f"- 资源: {bundle.bvid}",
         f"- 排序: {bundle.sort}",
         f"- 已抓取主评论: {bundle.fetched_count}",
+        f"- 已抓取子评论: {count_comment_replies(bundle)}",
         f"- 评论区总数: {bundle.total_count}",
         f"- 来源: {bundle.source}",
         "",

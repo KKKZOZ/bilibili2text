@@ -30,6 +30,9 @@ CUSTOM_SUMMARY_PRESET_VALUE = "__user_custom__"
 TABLE_ROW_RE = re.compile(r"^\s*\|?.*\|.*\|?\s*$")
 TABLE_SEPARATOR_RE = re.compile(r"^\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?\s*$")
 _BVID_PREFIX_RE = re.compile(r"^(BV[0-9A-Za-z]{10})[_-]?", re.IGNORECASE)
+_COMMENT_TOTAL_RE = re.compile(r"^- 评论区总数:\s*(\d+)\s*$", re.MULTILINE)
+_COMMENT_FETCHED_RE = re.compile(r"^- 已抓取主评论:\s*(\d+)\s*$", re.MULTILINE)
+_COMMENT_FETCHED_REPLIES_RE = re.compile(r"^- 已抓取子评论:\s*(\d+)\s*$", re.MULTILINE)
 
 
 def validate_summary_prompt_template(template: str) -> str:
@@ -273,6 +276,44 @@ def summarize_comment_viewpoints(
     return summary.strip()
 
 
+def _extract_comment_summary_stats(comments_markdown: str) -> str:
+    total_match = _COMMENT_TOTAL_RE.search(comments_markdown)
+    fetched_match = _COMMENT_FETCHED_RE.search(comments_markdown)
+    fetched_replies_match = _COMMENT_FETCHED_REPLIES_RE.search(comments_markdown)
+    total_count = total_match.group(1) if total_match else "未知"
+    fetched_main_count = fetched_match.group(1) if fetched_match else "未知"
+    fetched_reply_count = (
+        fetched_replies_match.group(1) if fetched_replies_match else "未知"
+    )
+    if fetched_match and fetched_replies_match:
+        summarized_count = str(int(fetched_main_count) + int(fetched_reply_count))
+    else:
+        summarized_count = "未知"
+    up_reply_count = comments_markdown.count("**UP主回复**")
+
+    return "\n".join(
+        (
+            "评论统计：",
+            "",
+            f"- 视频总评论数: {total_count}",
+            f"- 本次总结评论数: {summarized_count}（主评论 {fetched_main_count}，子评论 {fetched_reply_count}）",
+            f"- UP主回复评论数: {up_reply_count}",
+        )
+    )
+
+
+def _prepend_comment_summary_stats(
+    comment_summary: str,
+    comments_markdown: str,
+) -> str:
+    stats = _extract_comment_summary_stats(comments_markdown)
+    stripped = comment_summary.strip()
+    heading = "## 精选评论观点"
+    if stripped.startswith(heading):
+        return stripped.replace(heading, f"{heading}\n\n{stats}", 1)
+    return f"{heading}\n\n{stats}\n\n{stripped}"
+
+
 def append_comment_summary_to_markdown(
     summary_path: Path | str,
     comments_markdown: str,
@@ -288,6 +329,10 @@ def append_comment_summary_to_markdown(
     )
     if not comment_summary:
         return False
+    comment_summary = _prepend_comment_summary_stats(
+        comment_summary,
+        comments_markdown,
+    )
 
     summary_path = Path(summary_path)
     original = summary_path.read_text(encoding="utf-8").rstrip()

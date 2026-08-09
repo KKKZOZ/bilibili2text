@@ -29,6 +29,7 @@ wheels/
 /web-ui/transcriptions/
 /db_data/
 /chroma_data/
+/logs/
 /web-ui/logs/
 /input.md
 /output.*
