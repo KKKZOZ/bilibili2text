@@ -1,13 +1,14 @@
 """Markdown to PDF conversion (via Pandoc + Playwright, avoids LaTeX)"""
 
 import logging
-from pathlib import Path
 import re
 import shutil
 import subprocess
+from pathlib import Path
+
+from playwright.sync_api import sync_playwright
 
 from b2t.stock_status import build_stock_table_cards_html, extract_stock_symbols
-from playwright.sync_api import sync_playwright
 
 logger = logging.getLogger(__name__)
 
@@ -401,20 +402,16 @@ class MarkdownToPdfConverter:
 
     def _split_markdown_table_cells(self, line: str) -> list[str]:
         stripped = line.strip()
-        if stripped.startswith("|"):
-            stripped = stripped[1:]
-        if stripped.endswith("|"):
-            stripped = stripped[:-1]
+        stripped = stripped.removeprefix("|")
+        stripped = stripped.removesuffix("|")
         return [cell.strip() for cell in stripped.split("|")]
 
     def _looks_like_table_delimiter_line(self, line: str) -> bool:
         text = line.strip()
         if "|" not in text:
             return False
-        if text.startswith("|"):
-            text = text[1:]
-        if text.endswith("|"):
-            text = text[:-1]
+        text = text.removeprefix("|")
+        text = text.removesuffix("|")
         cells = [
             cell.strip().translate(TABLE_DASH_TRANSLATION) for cell in text.split("|")
         ]

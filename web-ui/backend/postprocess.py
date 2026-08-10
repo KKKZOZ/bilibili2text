@@ -25,7 +25,7 @@ class PostProcessScheduler:
 
         def _do_index() -> None:
             try:
-                from b2t.rag.indexer import index_run  # noqa: PLC0415
+                from b2t.rag.indexer import index_run
 
                 count = index_run(
                     run_id=run_id,

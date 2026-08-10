@@ -1,9 +1,9 @@
 """Markdown to HTML conversion (via Pandoc)"""
 
 import logging
-from pathlib import Path
 import shutil
 import subprocess
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 PANDOC_MARKDOWN_FORMAT = "markdown+pipe_tables+lists_without_preceding_blankline"

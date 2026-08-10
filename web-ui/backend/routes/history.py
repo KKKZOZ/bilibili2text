@@ -25,6 +25,17 @@ from backend.settings import get_runtime_app_config, is_delete_enabled
 router = APIRouter()
 CUSTOM_SUMMARY_PRESET_VALUE = "__user_custom__"
 logger = logging.getLogger(__name__)
+SUMMARY_ARTIFACT_KINDS = {
+    "summary",
+    "summary_text",
+    "summary_fancy_html",
+    "summary_png",
+    "summary_no_table_png",
+    "summary_table_md",
+    "summary_table_png",
+    "summary_table_pdf",
+    "summary_timeline",
+}
 
 
 def _storage_parent_key(storage_key: str) -> str:
@@ -39,27 +50,18 @@ def _summary_family_storage_keys(detail, summary_artifact) -> set[str]:
     expected_filenames = {
         summary_artifact.filename,
         f"{summary_stem}.txt",
+        f"{summary_stem}.png",
         f"{summary_stem}_fancy.html",
         f"{summary_stem}_table.md",
+        f"{summary_stem}_table.png",
         f"{summary_stem}_table.pdf",
+        f"{summary_stem}_no_table.png",
         f"{summary_stem}_timeline.txt",
     }
     parent_key = _storage_parent_key(summary_artifact.storage_key)
-    summary_kinds = {
-        "summary",
-        "summary_text",
-        "summary_fancy_html",
-        "summary_png",
-        "summary_no_table_png",
-        "summary_table_md",
-        "summary_table_png",
-        "summary_table_pdf",
-        "summary_timeline",
-    }
-
     related: set[str] = set()
     for artifact in detail.artifacts:
-        if artifact.kind not in summary_kinds:
+        if artifact.kind not in SUMMARY_ARTIFACT_KINDS:
             continue
         if artifact.storage_key == summary_artifact.storage_key:
             related.add(artifact.storage_key)
@@ -71,16 +73,32 @@ def _summary_family_storage_keys(detail, summary_artifact) -> set[str]:
     return related
 
 
-def _has_summary_with_config(detail, summary_preset: str, summary_profile: str) -> bool:
-    for artifact in detail.artifacts:
-        if artifact.kind != "summary":
-            continue
-        if (
-            artifact.summary_preset.strip() == summary_preset
-            and artifact.summary_profile.strip() == summary_profile
-        ):
-            return True
-    return False
+def _summary_config_storage_keys(
+    detail,
+    summary_preset: str,
+    summary_profile: str,
+) -> set[str]:
+    """Return every artifact belonging to a generated summary configuration."""
+    matching_summaries = [
+        artifact
+        for artifact in detail.artifacts
+        if artifact.kind == "summary"
+        and artifact.summary_preset.strip() == summary_preset
+        and artifact.summary_profile.strip() == summary_profile
+    ]
+    if not matching_summaries:
+        return set()
+
+    storage_keys = {
+        artifact.storage_key
+        for artifact in detail.artifacts
+        if artifact.kind in SUMMARY_ARTIFACT_KINDS
+        and artifact.summary_preset.strip() == summary_preset
+        and artifact.summary_profile.strip() == summary_profile
+    }
+    for summary_artifact in matching_summaries:
+        storage_keys.update(_summary_family_storage_keys(detail, summary_artifact))
+    return storage_keys
 
 
 def _to_history_detail_response(
@@ -266,13 +284,22 @@ def regenerate_history_summary(
                 f"模型 {resolved_profile}（{provider_label}）需要 API Key，"
                 "但你未提供。请在「API Key」页面配置对应的 Key 后再试。"
             )
-        if _has_summary_with_config(detail, resolved_preset, resolved_profile):
-            raise ValueError(
-                f"已存在使用模型配置 {resolved_profile} 与总结模板 {resolved_preset} "
-                "生成的总结，请选择不同配置后再重新生成。"
-            )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    replaced_storage_keys = _summary_config_storage_keys(
+        detail,
+        resolved_preset,
+        resolved_profile,
+    )
+    if replaced_storage_keys and not payload.overwrite_existing:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"已存在使用模型配置 {resolved_profile} 与总结模板 {resolved_preset} "
+                "生成的总结。覆盖前需要用户确认。"
+            ),
+        )
 
     existing_results: dict[str, StoredArtifact] = {}
     for artifact in detail.artifacts:
@@ -314,7 +341,11 @@ def regenerate_history_summary(
         summary_preset=resolved_preset,
         summary_profile=resolved_profile,
     )
-    merged_artifacts = list(detail.artifacts)
+    merged_artifacts = [
+        artifact
+        for artifact in detail.artifacts
+        if artifact.storage_key not in replaced_storage_keys
+    ]
     merged_artifacts.extend(appended)
 
     deduped_artifacts = []
@@ -335,6 +366,20 @@ def regenerate_history_summary(
         has_summary=True,
         artifacts=deduped_artifacts,
     )
+
+    if replaced_storage_keys:
+        download_registry.remove_artifacts_by_storage_keys(replaced_storage_keys)
+        for artifact in detail.artifacts:
+            if artifact.storage_key not in replaced_storage_keys:
+                continue
+            try:
+                storage_backend.delete_file(artifact.storage_key)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "清理被覆盖的总结文件 %s 失败: %s",
+                    artifact.filename,
+                    exc,
+                )
 
     updated = db.get_run_detail(run_id)
     if updated is None:
@@ -416,19 +461,7 @@ def delete_history_artifact(run_id: str, download_id: str) -> HistoryDetailRespo
         if item.storage_key not in storage_keys_to_delete
     ]
     has_summary = any(
-        item.kind
-        in {
-            "summary",
-            "summary_text",
-            "summary_fancy_html",
-            "summary_png",
-            "summary_no_table_png",
-            "summary_table_md",
-            "summary_table_png",
-            "summary_table_pdf",
-            "summary_timeline",
-        }
-        for item in remained_artifacts
+        item.kind in SUMMARY_ARTIFACT_KINDS for item in remained_artifacts
     )
     db.record_run(
         run_id=detail.run_id,

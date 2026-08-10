@@ -273,6 +273,10 @@ class HistoryRegenerateSummaryRequest(BaseModel):
         default=None,
         description="本次重生成使用的自定义总结模板，必须包含 {content} 占位符",
     )
+    overwrite_existing: bool = Field(
+        default=False,
+        description="确认覆盖相同模型配置与总结模板生成的已有结果",
+    )
     api_key: str | None = Field(
         default=None,
         description="open-public 模式下用户自带的阿里云 DashScope API Key",

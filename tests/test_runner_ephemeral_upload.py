@@ -1,10 +1,11 @@
-from pathlib import Path
 import sys
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "web-ui"))
 
-from b2t.storage import StoredArtifact  # noqa: E402
-from backend import runner  # noqa: E402
+from backend import runner
+
+from b2t.storage import StoredArtifact
 
 
 def test_ephemeral_upload_runner_skips_history_and_rag(monkeypatch, tmp_path) -> None:

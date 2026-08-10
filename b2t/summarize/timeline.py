@@ -1,4 +1,4 @@
-"""Extract stock mention timelines from financial summary tables."""
+"""Extract timestamped timelines from summary tables."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from b2t.converter.markdown_formatter import format_markdown_with_markdownlint
 from b2t.summarize.llm import extract_markdown_table_block
 
 VIDEO_TIME_COLUMN = "视频时间"
+TIMELINE_LABEL_COLUMNS = ("股票名称", "主题", "学习主题")
 _TIME_RE = re.compile(r"(?<!\d)(\d{1,4}):([0-5]\d)(?!\d)")
 _INLINE_MARKER_RE = re.compile(r"(\*\*|__|`|~~)")
 
@@ -62,14 +63,28 @@ def remove_video_time_column(table_markdown: str) -> str:
     return "\n".join(rendered_rows).strip() + "\n"
 
 
+def _timeline_label_index(headers: list[str]) -> int:
+    for column in TIMELINE_LABEL_COLUMNS:
+        if column in headers:
+            return headers.index(column)
+    return next(
+        (
+            index
+            for index, header in enumerate(headers)
+            if header not in {VIDEO_TIME_COLUMN, "股票代码"}
+        ),
+        -1,
+    )
+
+
 def extract_timeline_entries(table_markdown: str) -> list[TimelineEntry]:
-    """Return timestamped stock mentions sorted by video time."""
+    """Return timestamped summary topics sorted by video time."""
     headers, rows = _parse_table(table_markdown)
     if VIDEO_TIME_COLUMN not in headers:
         return []
 
     time_index = headers.index(VIDEO_TIME_COLUMN)
-    name_index = headers.index("股票名称") if "股票名称" in headers else -1
+    name_index = _timeline_label_index(headers)
     code_index = headers.index("股票代码") if "股票代码" in headers else -1
     entries: list[TimelineEntry] = []
     seen: set[tuple[int, str, str]] = set()

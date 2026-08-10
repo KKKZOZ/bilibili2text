@@ -1,14 +1,13 @@
 """Summary-specific generation endpoints."""
 
-from concurrent.futures import ThreadPoolExecutor
 import re
+from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import APIRouter, HTTPException
 
 from b2t.history import infer_run_id
 from b2t.storage import StoredArtifact
 from b2t.storage.base import classify_artifact_filename
-
 from backend.dependencies import get_history_db, get_storage_backend
 from backend.download_registry import download_registry
 from backend.schemas import GenerateFancyHtmlRequest, GenerateFancyHtmlResponse

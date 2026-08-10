@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from pathlib import Path
 import shutil
 import subprocess
+from pathlib import Path
 
 import b2t.converter.md_to_pdf as md_to_pdf_module
 from b2t.converter.md_to_pdf import MarkdownToPdfConverter
@@ -25,6 +25,7 @@ def test_convert_uses_pandoc_html_then_playwright_pdf(
     calls: list[tuple[list[str], dict[str, object]]] = []
     pdf_calls: list[dict[str, object]] = []
     content_calls: list[dict[str, object]] = []
+    pdf_bytes = b"%PDF-1.4\n%%EOF\n"
 
     def fake_run(*args, **kwargs):
         cmd = args[0]
@@ -37,6 +38,7 @@ def test_convert_uses_pandoc_html_then_playwright_pdf(
 
         def pdf(self, **kwargs) -> None:
             pdf_calls.append(kwargs)
+            Path(kwargs["path"]).write_bytes(pdf_bytes)
 
     class FakeBrowser:
         def __init__(self) -> None:
@@ -69,6 +71,8 @@ def test_convert_uses_pandoc_html_then_playwright_pdf(
     result = MarkdownToPdfConverter().convert(md_path, output_path)
 
     assert result == output_path
+    assert output_path.exists()
+    assert output_path.read_bytes() == pdf_bytes
     assert len(calls) == 1
     pandoc_cmd, run_kwargs = calls[0]
     assert pandoc_cmd == [

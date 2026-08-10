@@ -176,19 +176,31 @@ def test_parse_as_of_date_accepts_video_pubdate_string() -> None:
 
 def test_fetch_stock_daily_status_uses_as_of_date(monkeypatch) -> None:
     captured = {}
+    status = _baostock_row_to_status(
+        "600000.SH",
+        {
+            "date": "2026-02-05",
+            "close": "9.1800",
+            "preclose": "9.2700",
+            "pctChg": "-0.970900",
+            "peTTM": "6.080899",
+        },
+        {"code_name": "浦发银行"},
+        {"totalShare": "33305838300.00"},
+    )
 
     def fake_fetch(symbol, as_of_date):
         captured["symbol"] = symbol
         captured["as_of_date"] = as_of_date
-        return None
+        return status
 
     monkeypatch.setattr(
         "b2t.stock_status._fetch_yfinance_status_for_symbol", fake_fetch
     )
 
-    assert (
-        fetch_stock_daily_status(["600000.SH"], as_of_date="2026-02-05 21:00:00") == []
-    )
+    assert fetch_stock_daily_status(
+        ["600000.SH"], as_of_date="2026-02-05 21:00:00"
+    ) == [status]
     assert captured["symbol"] == "600000.SH"
     assert str(captured["as_of_date"]) == "2026-02-05"
 

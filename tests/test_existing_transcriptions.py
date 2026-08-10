@@ -4,14 +4,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "web-ui"))
 
-from backend.existing_transcriptions import (  # noqa: E402
+from backend.existing_transcriptions import (
     ExistingTranscriptionService,
     _has_current_timeline_schema,
     _resolve_requested_summary_selection,
     _summary_requires_video_timestamps,
 )
 
-from b2t.config import (  # noqa: E402
+from b2t.config import (
     AppConfig,
     ConverterConfig,
     DownloadConfig,
@@ -24,8 +24,8 @@ from b2t.config import (  # noqa: E402
     SummaryPreset,
     SummaryPresetsConfig,
 )
-from b2t.history import HistoryArtifact, HistoryDetail  # noqa: E402
-from b2t.storage.base import StoredArtifact  # noqa: E402
+from b2t.history import HistoryArtifact, HistoryDetail
+from b2t.storage.base import StoredArtifact
 
 
 def _config() -> AppConfig:

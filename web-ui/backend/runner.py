@@ -1,9 +1,9 @@
 """Background job execution: the ``_run_job`` orchestrator."""
 
 import logging
-from pathlib import Path
 import shutil
 from datetime import datetime
+from pathlib import Path
 from threading import get_ident
 
 from b2t.download.yutto_cli import (
@@ -12,8 +12,11 @@ from b2t.download.yutto_cli import (
     normalize_bilibili_target,
 )
 from b2t.pipeline import run_pipeline
-
 from backend.bvid_locks import bvid_transcription_locks
+from backend.dependencies import (
+    get_storage_backend,
+    get_stt_storage_backend,
+)
 from backend.ephemeral_uploads import (
     ephemeral_upload_expires_at,
     serialize_ephemeral_artifacts,
@@ -25,6 +28,7 @@ from backend.logging_config import (
     _JobLogHandler,
     _redact_text,
 )
+from backend.postprocess import postprocess_scheduler
 from backend.services import (
     _build_all_download_items,
     _build_success_download_fields,
@@ -32,11 +36,6 @@ from backend.services import (
     _generate_summary_png_exports,
     _record_history,
 )
-from backend.dependencies import (
-    get_storage_backend,
-    get_stt_storage_backend,
-)
-from backend.postprocess import postprocess_scheduler
 from backend.settings import get_runtime_app_config
 
 logger = logging.getLogger(__name__)

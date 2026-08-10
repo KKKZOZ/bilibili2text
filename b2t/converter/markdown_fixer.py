@@ -25,13 +25,15 @@ class MarkdownFixer:
             if line.strip().startswith("|") and i + 1 < len(lines):
                 next_line = lines[i + 1].strip()
                 # Check if next line is a table separator (contains |--- or |:--)
-                if next_line.startswith("|") and (
-                    "---" in next_line or ":--" in next_line
+                if (
+                    next_line.startswith("|")
+                    and ("---" in next_line or ":--" in next_line)
+                    and i > 0
+                    and fixed_lines
+                    and fixed_lines[-1].strip() != ""
                 ):
-                    # This is a table start, check if previous line is not empty
-                    if i > 0 and fixed_lines and fixed_lines[-1].strip() != "":
-                        # Add a blank line before the table
-                        fixed_lines.append("")
+                    # Add a blank line before the table
+                    fixed_lines.append("")
 
             fixed_lines.append(line)
 

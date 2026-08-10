@@ -1,15 +1,16 @@
 """Process endpoints: submit a video URL / upload audio and poll job status."""
 
-import subprocess
+import re
 import shutil
+import subprocess
 import tempfile
 from pathlib import Path
-import re
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
-from backend.jobs import _create_job, _get_job, _list_active_jobs
+from b2t.summarize.llm import validate_summary_prompt_template
 from backend.job_store import job_repository
+from backend.jobs import _create_job, _get_job, _list_active_jobs
 from backend.runner import _run_job
 from backend.schemas import (
     ActiveJobItem,
@@ -25,7 +26,6 @@ from backend.settings import (
     is_upload_enabled,
 )
 from backend.task_queue import submit_job
-from b2t.summarize.llm import validate_summary_prompt_template
 
 router = APIRouter()
 _UPLOAD_BVID_NAME_PATTERN = re.compile(r"^(BV[0-9A-Za-z]{10})_(.+)$", re.IGNORECASE)
@@ -323,13 +323,12 @@ def process_uploaded_audio(
         raise HTTPException(status_code=400, detail="上传文件为空")
 
     input_path = upload_path
-    if open_public:
-        if upload_kind == "video":
-            try:
-                input_path = _convert_video_upload_to_audio(upload_path)
-            except HTTPException:
-                shutil.rmtree(temp_dir, ignore_errors=True)
-                raise
+    if open_public and upload_kind == "video":
+        try:
+            input_path = _convert_video_upload_to_audio(upload_path)
+        except HTTPException:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            raise
 
     job = _create_job(
         skip_summary=skip_summary,

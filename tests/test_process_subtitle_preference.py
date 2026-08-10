@@ -1,10 +1,10 @@
-from pathlib import Path
 import sys
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "web-ui"))
 
-from backend.routes import process  # noqa: E402
-from backend.schemas import ProcessRequest  # noqa: E402
+from backend.routes import process
+from backend.schemas import ProcessRequest
 
 
 def test_process_video_passes_bilibili_subtitle_preference(monkeypatch) -> None:

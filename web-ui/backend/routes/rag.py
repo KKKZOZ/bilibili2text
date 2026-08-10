@@ -12,6 +12,8 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
+from backend.dependencies import get_history_db, get_rag_store, get_storage_backend
+from backend.download_registry import download_registry
 from backend.schemas_rag import (
     RagAuthorItem,
     RagAuthorsResponse,
@@ -24,8 +26,6 @@ from backend.schemas_rag import (
     RagSourceItem,
     RagStatusResponse,
 )
-from backend.dependencies import get_history_db, get_rag_store, get_storage_backend
-from backend.download_registry import download_registry
 from backend.settings import get_runtime_app_config
 
 router = APIRouter(prefix="/api/rag", tags=["rag"])
@@ -144,9 +144,10 @@ def _rag_query_stream_impl(
             where_filter = {"run_id": {"$in": ["__no_match__"]}}
 
     async def _generate():
-        from b2t.rag.embedder import embed_texts  # noqa: PLC0415
-        from b2t.rag.retriever import _ANSWER_PROMPT_TEMPLATE  # noqa: PLC0415
-        import litellm  # noqa: PLC0415
+        import litellm
+
+        from b2t.rag.embedder import embed_texts
+        from b2t.rag.retriever import _ANSWER_PROMPT_TEMPLATE
 
         def _sse(payload: dict) -> str:
             return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
@@ -209,8 +210,13 @@ def _rag_query_stream_impl(
                 chunks=chunks_str, question=question
             )
 
-            from b2t.config import resolve_rag_llm_profile, resolve_summarize_api_base  # noqa: PLC0415
-            from b2t.summarize.litellm_client import _to_litellm_model_name  # noqa: PLC0415
+            from b2t.config import (
+                resolve_rag_llm_profile,
+                resolve_summarize_api_base,
+            )
+            from b2t.summarize.litellm_client import (
+                _to_litellm_model_name,
+            )
 
             profile = resolve_rag_llm_profile(config, override=llm_profile.strip())
             llm_model = _to_litellm_model_name(profile.model, profile.provider)
@@ -274,9 +280,13 @@ def _rag_query_stream_impl(
 
             # Persist to storage and record in history (best-effort)
             try:
-                import tempfile  # noqa: PLC0415
-                from pathlib import Path  # noqa: PLC0415
-                from b2t.history import HistoryArtifact, record_rag_query  # noqa: PLC0415
+                import tempfile
+                from pathlib import Path
+
+                from b2t.history import (
+                    HistoryArtifact,
+                    record_rag_query,
+                )
 
                 def _persist():
                     storage = get_storage_backend()
@@ -286,7 +296,7 @@ def _rag_query_stream_impl(
                         tmp.write(answer_bytes)
                         tmp_path = Path(tmp.name)
                     try:
-                        from uuid import uuid4  # noqa: PLC0415
+                        from uuid import uuid4
 
                         artifact = storage.store_file(
                             tmp_path,
@@ -481,7 +491,7 @@ def rag_status() -> RagStatusResponse:
         logger.error("获取 RAG 状态失败: %s", exc)
         raise HTTPException(status_code=500, detail=f"获取状态失败: {exc}") from exc
 
-    from b2t.rag.indexer import select_index_artifact  # noqa: PLC0415
+    from b2t.rag.indexer import select_index_artifact
 
     indexed_run_ids: list[str] = []
     indexed_items: list[RagIndexedItem] = []

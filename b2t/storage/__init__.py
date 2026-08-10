@@ -51,8 +51,8 @@ def create_stt_storage_backend(
 
 
 __all__ = [
-    "StorageBackend",
     "PublicURLStorageBackend",
+    "StorageBackend",
     "StoredArtifact",
     "create_storage_backend",
     "create_stt_storage_backend",

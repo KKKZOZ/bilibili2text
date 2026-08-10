@@ -1,9 +1,9 @@
 """Markdown to TXT conversion (via pandoc)"""
 
 import logging
-from pathlib import Path
 import shutil
 import subprocess
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 

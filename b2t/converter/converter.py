@@ -1,7 +1,7 @@
 """Unified file conversion interface."""
 
-from enum import Enum
 import logging
+from enum import Enum
 from pathlib import Path
 from typing import Protocol
 
@@ -38,17 +38,15 @@ def get_converter(
     """Return the appropriate converter based on source and target formats."""
     source = source_format.lower().lstrip(".")
 
-    if target_format == ConversionFormat.TXT:
-        if source in ("md", "markdown"):
-            from b2t.converter.md_to_txt import MarkdownToTextConverter
+    if target_format == ConversionFormat.TXT and source in ("md", "markdown"):
+        from b2t.converter.md_to_txt import MarkdownToTextConverter
 
-            return MarkdownToTextConverter()
+        return MarkdownToTextConverter()
 
-    if target_format == ConversionFormat.PDF:
-        if source in ("md", "markdown"):
-            from b2t.converter.md_to_pdf import MarkdownToPdfConverter
+    if target_format == ConversionFormat.PDF and source in ("md", "markdown"):
+        from b2t.converter.md_to_pdf import MarkdownToPdfConverter
 
-            return MarkdownToPdfConverter()
+        return MarkdownToPdfConverter()
 
     if target_format == ConversionFormat.PNG:
         if source in ("md", "markdown"):
@@ -60,17 +58,18 @@ def get_converter(
 
             return HtmlToPngConverter()
 
-    if target_format == ConversionFormat.HTML:
-        if source in ("md", "markdown"):
-            from b2t.converter.md_to_html import MarkdownToHtmlConverter
+    if target_format == ConversionFormat.HTML and source in ("md", "markdown"):
+        from b2t.converter.md_to_html import MarkdownToHtmlConverter
 
-            return MarkdownToHtmlConverter()
+        return MarkdownToHtmlConverter()
 
-    if target_format == ConversionFormat.MD_NO_TABLE:
-        if source in ("md", "markdown"):
-            from b2t.converter.md_remove_table import MarkdownRemoveTableConverter
+    if target_format == ConversionFormat.MD_NO_TABLE and source in (
+        "md",
+        "markdown",
+    ):
+        from b2t.converter.md_remove_table import MarkdownRemoveTableConverter
 
-            return MarkdownRemoveTableConverter()
+        return MarkdownRemoveTableConverter()
 
     raise ValueError(f"Unsupported conversion: {source} -> {target_format.value}")
 

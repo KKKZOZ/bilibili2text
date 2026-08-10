@@ -2,8 +2,8 @@
 
 import logging
 import tempfile
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Mapping
 from uuid import uuid4
 
 from b2t.config import (
@@ -183,13 +183,15 @@ def _materialize_artifact_to_file(
     target_dir: Path,
 ) -> Path:
     target_path = target_dir / artifact.filename
-    with storage_backend.open_stream(artifact.storage_key) as stream:
-        with target_path.open("wb") as output:
-            while True:
-                chunk = stream.read(1024 * 1024)
-                if not chunk:
-                    break
-                output.write(chunk)
+    with (
+        storage_backend.open_stream(artifact.storage_key) as stream,
+        target_path.open("wb") as output,
+    ):
+        while True:
+            chunk = stream.read(1024 * 1024)
+            if not chunk:
+                break
+            output.write(chunk)
     return target_path
 
 

@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import html
-from html.parser import HTMLParser
 import logging
-from pathlib import Path
 import re
+from html.parser import HTMLParser
+from pathlib import Path
 
 from b2t.config import (
     AppConfig,

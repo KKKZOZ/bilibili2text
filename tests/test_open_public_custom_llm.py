@@ -1,23 +1,24 @@
-from pathlib import Path
 import sys
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "web-ui"))
 
-from b2t.config import (  # noqa: E402
+from backend.settings import (
+    OPEN_PUBLIC_CUSTOM_LLM_PROFILE,
+    build_open_public_config,
+)
+
+from b2t.config import (
     AppConfig,
     ConverterConfig,
     DownloadConfig,
     FancyHtmlConfig,
     RagConfig,
-    STTConfig,
     StorageConfig,
+    STTConfig,
     SummarizeConfig,
     SummarizeModelProfile,
     SummaryPresetsConfig,
-)
-from backend.settings import (  # noqa: E402
-    OPEN_PUBLIC_CUSTOM_LLM_PROFILE,
-    build_open_public_config,
 )
 
 

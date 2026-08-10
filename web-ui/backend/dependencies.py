@@ -8,7 +8,6 @@ from b2t.storage import (
     create_storage_backend,
     create_stt_storage_backend,
 )
-
 from backend.settings import get_app_config
 
 _storage_backend: StorageBackend | None = None
@@ -48,7 +47,7 @@ def get_rag_store() -> "RagStore":  # noqa: F821
     with _rag_store_lock:
         if _rag_store is not None:
             return _rag_store
-        from b2t.rag.store import RagStore  # noqa: PLC0415
+        from b2t.rag.store import RagStore
 
         config = get_app_config()
         _rag_store = RagStore(
