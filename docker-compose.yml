@@ -17,6 +17,8 @@ services:
       - ${B2T_TRANSCRIPTIONS_DIR:-./transcriptions}:/app/transcriptions
       - ${B2T_DB_DIR:-./db_data}:/app/db_data
       - ${B2T_CHROMA_DIR:-./chroma_data}:/app/chroma_data
+      # yutto 登录态（auth.toml），可写挂载以便在容器内 yutto auth login 刷新
+      - ${B2T_AUTH_FILE:-C:/Users/Felix/AppData/Roaming/yutto/auth.toml}:/home/appuser/.config/yutto/auth.toml
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
       interval: 30s
