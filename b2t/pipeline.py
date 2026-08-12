@@ -35,7 +35,7 @@ from b2t.storage import (
     create_stt_storage_backend,
 )
 from b2t.stt import create_stt_provider
-from b2t.summarize.llm import append_comment_summary_to_markdown, summarize
+from b2t.summarize.llm import summarize_with_comment_viewpoints
 from b2t.summarize.timeline import (
     export_summary_table_without_video_time,
     export_summary_timeline_text,
@@ -402,26 +402,17 @@ def run_pipeline(
         if not skip_summary:
             emit_progress("summarizing", "LLM summarization", 90)
             logger.info("=== Generating summary ===")
-            summary_path = summarize(
+            summary_path = summarize_with_comment_viewpoints(
                 md_path,
                 config.summarize,
                 config.summary_presets,
+                comments_markdown=comments_markdown_text,
                 summary_context_config=config.summary_context,
                 preset=summary_preset,
                 profile=summary_profile,
                 prompt_template_override=summary_prompt_template,
                 metadata=metadata,
             )
-            if comments_markdown_text:
-                try:
-                    append_comment_summary_to_markdown(
-                        summary_path,
-                        comments_markdown_text,
-                        config.summarize,
-                        profile=summary_profile,
-                    )
-                except Exception as exc:
-                    logger.warning("Failed to summarize platform comments: %s", exc)
             local_results["summary"] = summary_path
 
             # Extract summary table as a separate Markdown file

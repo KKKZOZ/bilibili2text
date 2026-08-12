@@ -2,6 +2,8 @@
 
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
 from datetime import datetime
 from pathlib import Path
 
@@ -17,6 +19,7 @@ from b2t.converter.md_table_to_pdf import markdown_table_to_pdf
 from b2t.download.metadata import VideoMetadata
 from b2t.summarize.litellm_client import (
     collect_stream_result,
+    isolated_summary_client,
     stream_summary_completion,
 )
 from b2t.summary_context import (
@@ -242,6 +245,7 @@ def summarize_comment_viewpoints(
     config: SummarizeConfig,
     *,
     profile: str | None = None,
+    isolated_client: bool = False,
 ) -> str:
     """Summarize selected platform comments into a Markdown section."""
     content = comments_markdown.strip()
@@ -260,19 +264,42 @@ def summarize_comment_viewpoints(
         "输出 Markdown 片段并以二级标题 `## 精选评论观点` 开头。\n"
         "要求：\n"
         "- 总结高频观点、争议点、补充信息和情绪倾向。\n"
+        "- 先过滤无信息量或与视频、播客主题无关的评论，不得将其纳入观点、"
+        "情绪倾向或频次判断。\n"
+        "- 应过滤的内容包括但不限于：`第一`、`前排` 等抢楼评论；"
+        "仅 @ 他人或机器人的评论；`@xxx，请帮我总结一下这个视频` 等求总结、"
+        "求解析指令；纯表情、无意义符号、重复刷屏、广告引流和无关闲聊。\n"
+        "- 不要仅因观点低频或表达负面就过滤；包含具体事实、论据、纠错、"
+        "反例或与主题相关质疑的评论应保留。\n"
+        "- 对过滤后的有效评论逐条进行舆情分类。每条主评论和每条子评论各计 1 条，"
+        "不得按点赞数加权，也不得把同一条评论重复计数。\n"
+        "- 正面、负面判断的是评论者对视频或播客内容、核心观点或创作者表达的态度，"
+        "不是评论所讨论事件本身的正负性质。认可、赞同、支持归为正面；反对、批评、"
+        "质疑归为负面；提问、事实补充、混合态度或态度不明确归为中性。\n"
+        "- 固定输出 `### 舆情统计` 小节，依次列出 `有效评论`、`正面`、`负面`、"
+        "`中性`、`已过滤` 的条数；正面、负面、中性同时给出占有效评论的百分比，"
+        "保留 1 位小数。必须满足 正面 + 负面 + 中性 = 有效评论。有效评论为 0 时"
+        "百分比均写 `0.0%`。\n"
+        "- 舆情数量只能依据本次提供的评论逐条统计，不得依据平台显示的评论区总数"
+        "推算；无法可靠完成统计时应明确说明，不得编造数量。\n"
         "- 重点关注标记为 `UP主回复` 的内容。\n"
         "- 涉及 UP 主回复的结论或原话必须使用 Markdown 加粗。\n"
         "- 不要输出表格。\n"
         "- 不要编造评论中不存在的观点。\n\n"
         f"{content}"
     )
-    stream = stream_summary_completion(
-        prompt=prompt,
-        summarize_config=config,
-        model_profile=model_profile,
-        include_usage=True,
+    client_context = (
+        isolated_summary_client(model_profile) if isolated_client else nullcontext(None)
     )
-    _, summary = collect_stream_result(stream)
+    with client_context as client:
+        stream = stream_summary_completion(
+            prompt=prompt,
+            summarize_config=config,
+            model_profile=model_profile,
+            include_usage=True,
+            client=client,
+        )
+        _, summary = collect_stream_result(stream)
     return summary.strip()
 
 
@@ -327,7 +354,20 @@ def append_comment_summary_to_markdown(
         config,
         profile=profile,
     )
-    if not comment_summary:
+    return append_comment_summary_text_to_markdown(
+        summary_path,
+        comment_summary,
+        comments_markdown,
+    )
+
+
+def append_comment_summary_text_to_markdown(
+    summary_path: Path | str,
+    comment_summary: str,
+    comments_markdown: str,
+) -> bool:
+    """Append an already-generated comment summary to a summary file."""
+    if not comment_summary.strip():
         return False
     comment_summary = _prepend_comment_summary_stats(
         comment_summary,
@@ -344,6 +384,70 @@ def append_comment_summary_to_markdown(
     return True
 
 
+def summarize_with_comment_viewpoints(
+    md_path: Path | str,
+    config: SummarizeConfig,
+    summary_presets: SummaryPresetsConfig,
+    *,
+    comments_markdown: str = "",
+    summary_context_config=None,
+    preset: str | None = None,
+    profile: str | None = None,
+    prompt_template_override: str | None = None,
+    metadata: VideoMetadata | None = None,
+) -> Path:
+    """Generate transcript and comment summaries concurrently, then combine them."""
+    comments_content = comments_markdown.strip()
+    if not comments_content:
+        return summarize(
+            md_path,
+            config,
+            summary_presets,
+            summary_context_config=summary_context_config,
+            preset=preset,
+            profile=profile,
+            prompt_template_override=prompt_template_override,
+            metadata=metadata,
+        )
+
+    with ThreadPoolExecutor(
+        max_workers=2, thread_name_prefix="b2t-summary"
+    ) as executor:
+        summary_future = executor.submit(
+            summarize,
+            md_path,
+            config,
+            summary_presets,
+            summary_context_config=summary_context_config,
+            preset=preset,
+            profile=profile,
+            prompt_template_override=prompt_template_override,
+            metadata=metadata,
+            isolated_client=True,
+        )
+        comment_future = executor.submit(
+            summarize_comment_viewpoints,
+            comments_content,
+            config,
+            profile=profile,
+            isolated_client=True,
+        )
+
+        summary_path = summary_future.result()
+        try:
+            comment_summary = comment_future.result()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Failed to summarize platform comments: %s", exc)
+            return summary_path
+
+    append_comment_summary_text_to_markdown(
+        summary_path,
+        comment_summary,
+        comments_content,
+    )
+    return summary_path
+
+
 def summarize(
     md_path: Path | str,
     config: SummarizeConfig,
@@ -353,6 +457,7 @@ def summarize(
     profile: str | None = None,
     prompt_template_override: str | None = None,
     metadata: VideoMetadata | None = None,
+    isolated_client: bool = False,
 ) -> Path:
     """Summarize a Markdown file using an LLM
 
@@ -419,13 +524,18 @@ def summarize(
             f"summarize.profiles.{selected_profile}.api_key is empty, please set it in the config file"
         )
 
-    stream = stream_summary_completion(
-        prompt=prompt,
-        summarize_config=config,
-        model_profile=model_profile,
-        include_usage=True,
+    client_context = (
+        isolated_summary_client(model_profile) if isolated_client else nullcontext(None)
     )
-    reasoning_content, content = collect_stream_result(stream)
+    with client_context as client:
+        stream = stream_summary_completion(
+            prompt=prompt,
+            summarize_config=config,
+            model_profile=model_profile,
+            include_usage=True,
+            client=client,
+        )
+        reasoning_content, content = collect_stream_result(stream)
 
     print("\n=== reasoning_content (reason_content) ===")
     if reasoning_content:

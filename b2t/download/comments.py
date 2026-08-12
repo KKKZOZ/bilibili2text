@@ -393,7 +393,6 @@ async def fetch_bilibili_comments_async(
             up_uid=up_uid,
             limit=limit,
             sort=sort,
-            cookie=cookie,
         )
     except Exception as exc:
         logger.warning("Bilibili WBI comment API failed, falling back: %s", exc)
@@ -415,7 +414,6 @@ async def _fetch_bilibili_comments_wbi(
     up_uid: int,
     limit: int | None,
     sort: str,
-    cookie: str,
 ) -> PlatformCommentBundle:
     total_count = 0
     comments: list[PlatformComment] = []
@@ -427,7 +425,7 @@ async def _fetch_bilibili_comments_wbi(
     async with httpx.AsyncClient(
         follow_redirects=True,
         timeout=30.0,
-        headers=_headers(cookie),
+        headers=_headers(),
     ) as client:
         mixin_key = await _fetch_wbi_mixin_key(client)
         while limit is None or len(comments) < limit:

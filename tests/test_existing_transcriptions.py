@@ -384,7 +384,11 @@ def test_summary_only_fetches_xiaoyuzhou_metadata_without_redownloading_audio(
         summary_path.write_text("# 总结\n", encoding="utf-8")
         return summary_path
 
-    monkeypatch.setattr(services_module, "summarize", fake_summarize)
+    monkeypatch.setattr(
+        services_module,
+        "summarize_with_comment_viewpoints",
+        fake_summarize,
+    )
     monkeypatch.setattr(
         services_module,
         "export_summary_table_without_video_time",

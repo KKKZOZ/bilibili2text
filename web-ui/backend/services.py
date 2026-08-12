@@ -29,8 +29,7 @@ from b2t.storage import StorageBackend, StoredArtifact
 from b2t.storage.base import classify_artifact_filename
 from b2t.summarize.fancy_html import generate_fancy_summary_html
 from b2t.summarize.llm import (
-    append_comment_summary_to_markdown,
-    summarize,
+    summarize_with_comment_viewpoints,
 )
 from b2t.summarize.timeline import (
     export_summary_table_without_video_time,
@@ -359,18 +358,16 @@ def _fetch_comments_for_existing_summary(
     storage_backend: StorageBackend,
     config: AppConfig,
     run_prefix: str,
-    summary_profile: str | None,
     comment_limit: int | None,
-    summary_path: Path,
-) -> dict[str, StoredArtifact]:
+) -> tuple[dict[str, StoredArtifact], str]:
     if metadata is None:
         logger.warning("历史转录缺少平台元信息，已跳过评论下载")
-        return {}
+        return {}, ""
 
     comment_platform = _comment_platform_from_metadata(metadata)
     if comment_platform is None:
         logger.warning("历史转录平台暂不支持评论下载，已跳过: %s", bvid)
-        return {}
+        return {}, ""
 
     try:
         platform_label = _comment_platform_label(comment_platform)
@@ -397,12 +394,6 @@ def _fetch_comments_for_existing_summary(
         write_comments_json(comments, comments_json_path)
         write_comments_markdown(comments, comments_md_path)
         comments_markdown_text = comments_md_path.read_text(encoding="utf-8")
-        append_comment_summary_to_markdown(
-            summary_path,
-            comments_markdown_text,
-            config.summarize,
-            profile=summary_profile,
-        )
         logger.info(
             "历史评论补充完成：平台=%s，主评论=%s，子评论=%s，UP主回复=%s，排序=%s，来源=%s，资源=%s",
             platform_label,
@@ -422,10 +413,10 @@ def _fetch_comments_for_existing_summary(
                 comments_md_path,
                 object_key=f"{run_prefix}/{comments_md_path.name}",
             ),
-        }
+        }, comments_markdown_text
     except Exception as exc:
         logger.warning("历史转录评论补充失败，已跳过: %s", exc)
-        return {}
+        return {}, ""
 
 
 def _materialize_artifact_to_file(
@@ -675,30 +666,32 @@ def _run_summary_only_from_existing(
             work_dir,
         )
 
-        summary_path = summarize(
+        comment_results: dict[str, StoredArtifact] = {}
+        comments_markdown_text = ""
+        if include_comments:
+            comment_results, comments_markdown_text = (
+                _fetch_comments_for_existing_summary(
+                    bvid=bvid,
+                    metadata=metadata,
+                    work_dir=work_dir,
+                    storage_backend=storage_backend,
+                    config=config,
+                    run_prefix=run_prefix,
+                    comment_limit=comment_limit,
+                )
+            )
+
+        summary_path = summarize_with_comment_viewpoints(
             markdown_path,
             config.summarize,
             config.summary_presets,
+            comments_markdown=comments_markdown_text,
             summary_context_config=config.summary_context,
             preset=summary_preset,
             profile=summary_profile,
             prompt_template_override=summary_prompt_template,
             metadata=metadata,
         )
-
-        comment_results: dict[str, StoredArtifact] = {}
-        if include_comments:
-            comment_results = _fetch_comments_for_existing_summary(
-                bvid=bvid,
-                metadata=metadata,
-                work_dir=work_dir,
-                storage_backend=storage_backend,
-                config=config,
-                run_prefix=run_prefix,
-                summary_profile=summary_profile,
-                comment_limit=comment_limit,
-                summary_path=summary_path,
-            )
 
         summary_table_md: Path | None = None
         try:
