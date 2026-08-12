@@ -7,6 +7,7 @@ from pathlib import Path
 
 from b2t.config import resolve_summarize_model_profile, resolve_summary_preset_name
 from b2t.converter.json_to_md import TIMELINE_SCHEMA_VERSION
+from b2t.download.comments import DEFAULT_COMMENT_LIMIT
 from b2t.history import infer_run_id
 from b2t.storage import StorageBackend
 from b2t.storage.base import StoredArtifact
@@ -20,6 +21,7 @@ from backend.services import (
     _collect_all_artifacts_for_bvid,
     _record_history,
     _run_summary_only_from_existing,
+    _should_refresh_existing_summary_metadata,
 )
 
 logger = logging.getLogger(__name__)
@@ -189,6 +191,8 @@ class ExistingTranscriptionService:
         summary_profile: str | None,
         summary_prompt_template: str | None,
         auto_generate_fancy_html: bool,
+        include_comments: bool = False,
+        comment_limit: int | None = DEFAULT_COMMENT_LIMIT,
     ) -> bool:
         storage_id = (transcription_id or bvid).strip()
         try:
@@ -236,6 +240,8 @@ class ExistingTranscriptionService:
             summary_profile=summary_profile,
             summary_prompt_template=summary_prompt_template,
             auto_generate_fancy_html=auto_generate_fancy_html,
+            include_comments=include_comments,
+            comment_limit=comment_limit,
         )
 
     def _return_existing_without_summary(
@@ -277,6 +283,8 @@ class ExistingTranscriptionService:
             results=existing_results,
             config=config,
         )
+        if run_id:
+            _update_job(job_id, history_run_id=run_id)
         postprocess_scheduler.trigger_rag_index(run_id, config)
         return True
 
@@ -293,6 +301,8 @@ class ExistingTranscriptionService:
         summary_profile: str | None,
         summary_prompt_template: str | None,
         auto_generate_fancy_html: bool,
+        include_comments: bool,
+        comment_limit: int | None,
     ) -> bool:
         resolved_preset, resolved_profile = _resolve_requested_summary_selection(
             config=config,
@@ -305,7 +315,14 @@ class ExistingTranscriptionService:
             resolved_preset=resolved_preset,
             resolved_profile=resolved_profile,
         )
-        if existing_summary_match is not None:
+        if (
+            not include_comments
+            and existing_summary_match is not None
+            and not _should_refresh_existing_summary_metadata(
+                bvid=bvid,
+                existing_results=existing_results,
+            )
+        ):
             run_id, matched_results = existing_summary_match
             try:
                 success_fields = _build_success_download_fields(matched_results)
@@ -330,6 +347,7 @@ class ExistingTranscriptionService:
                 already_transcribed=True,
                 notice=notice,
                 all_downloads=_build_all_download_items(all_artifacts),
+                history_run_id=run_id,
                 error=None,
                 **success_fields,
             )
@@ -354,6 +372,8 @@ class ExistingTranscriptionService:
                 summary_preset=summary_preset,
                 summary_profile=summary_profile,
                 summary_prompt_template=summary_prompt_template,
+                include_comments=include_comments,
+                comment_limit=comment_limit,
             )
         except Exception as exc:
             _fail_job(job_id, str(exc))
@@ -372,7 +392,11 @@ class ExistingTranscriptionService:
             transcription_id,
             combined_results,
         )
-        notice = f"检测到 {transcription_id} 已经转录过，已复用历史转录并完成新的总结。"
+        notice = (
+            f"检测到 {transcription_id} 已经转录过，已复用历史转录并完成评论补充总结。"
+            if include_comments
+            else f"检测到 {transcription_id} 已经转录过，已复用历史转录并完成新的总结。"
+        )
         _update_job(
             job_id,
             status="succeeded",
@@ -394,6 +418,8 @@ class ExistingTranscriptionService:
             summary_preset=summary_preset,
             summary_profile=summary_profile,
         )
+        if run_id:
+            _update_job(job_id, history_run_id=run_id)
         if auto_generate_fancy_html:
             postprocess_scheduler.trigger_fancy_html_generation(
                 job_id=job_id,

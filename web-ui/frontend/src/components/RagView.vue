@@ -1,6 +1,7 @@
 <script setup>
   import { ref, computed, onMounted } from 'vue'
   import { useConversion } from '../composables/useConversion'
+  import { resourceDisplayLabel, resourceUrl } from '../utils/fileUtils'
   import { renderMarkdown } from '../utils/markdown'
   import {
     AlertCircle,
@@ -365,9 +366,6 @@
 
   const scorePercent = (score) => Math.round(score * 100)
 
-  const bilibiliUrl = (bvid) =>
-    bvid ? `https://www.bilibili.com/video/${bvid}` : null
-
   const scoreColor = (score) => {
     const pct = score * 100
     if (pct >= 70) return '#0d9488'
@@ -604,11 +602,11 @@
             v-for="(src, i) in sources"
             :key="i"
             :id="`source-${i}`"
-            :href="bilibiliUrl(src.bvid)"
+            :href="resourceUrl(src.bvid)"
             target="_blank"
             rel="noopener noreferrer"
             class="source-card"
-            :class="{ 'no-link': !bilibiliUrl(src.bvid) }"
+            :class="{ 'no-link': !resourceUrl(src.bvid) }"
           >
             <div class="source-card-top">
               <span class="source-index">{{ i + 1 }}</span>
@@ -617,8 +615,8 @@
                   src.title || src.bvid || '未知视频'
                 }}</span>
                 <span v-if="src.bvid" class="source-bvid">
-                  {{ src.bvid }}
-                  <ExternalLink :size="11" />
+                  {{ resourceDisplayLabel(src.bvid) }}
+                  <ExternalLink v-if="resourceUrl(src.bvid)" :size="11" />
                 </span>
               </div>
               <div

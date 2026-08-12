@@ -161,3 +161,98 @@ export function bilibiliVideoLabel(bvid, page = null) {
     ? `${bvid} · P${pageNumber}`
     : bvid
 }
+
+const PLATFORM_RESOURCE_PREFIXES = {
+  xiaoyuzhou: {
+    name: '小宇宙',
+    authorLabel: '主播',
+    url: (id) =>
+      `https://www.xiaoyuzhoufm.com/episode/${encodeURIComponent(id)}`
+  },
+  ximalaya: {
+    name: '喜马拉雅',
+    authorLabel: '主播',
+    url: (id) => `https://www.ximalaya.com/sound/${encodeURIComponent(id)}`
+  }
+}
+
+export function resourcePlatformInfo(resourceId) {
+  const raw = typeof resourceId === 'string' ? resourceId.trim() : ''
+  if (!raw) {
+    return {
+      key: 'unknown',
+      name: '资源',
+      id: '',
+      authorLabel: '作者',
+      url: null
+    }
+  }
+
+  for (const [key, config] of Object.entries(PLATFORM_RESOURCE_PREFIXES)) {
+    const prefix = `${key}_`
+    if (raw.toLowerCase().startsWith(prefix)) {
+      const id = raw.slice(prefix.length)
+      return {
+        key,
+        name: config.name,
+        id,
+        authorLabel: config.authorLabel,
+        url: id ? config.url(id) : null
+      }
+    }
+  }
+
+  if (/^BV[0-9A-Za-z]+$/i.test(raw)) {
+    return {
+      key: 'bilibili',
+      name: 'Bilibili',
+      id: raw,
+      authorLabel: 'UP主',
+      url: bilibiliVideoUrl(raw)
+    }
+  }
+
+  if (/^upload-/i.test(raw)) {
+    return {
+      key: 'upload',
+      name: '上传',
+      id: raw.replace(/^upload-/i, ''),
+      authorLabel: '作者',
+      url: null
+    }
+  }
+
+  return {
+    key: 'unknown',
+    name: '资源',
+    id: raw,
+    authorLabel: '作者',
+    url: null
+  }
+}
+
+export function resourceUrl(resourceId, page = null) {
+  const info = resourcePlatformInfo(resourceId)
+  if (info.key === 'bilibili') {
+    return bilibiliVideoUrl(info.id, page)
+  }
+  return info.url
+}
+
+export function resourceDisplayLabel(resourceId, page = null) {
+  const info = resourcePlatformInfo(resourceId)
+  if (!info.id) {
+    return info.name
+  }
+  if (info.key === 'bilibili') {
+    return bilibiliVideoLabel(info.id, page)
+  }
+  if (info.key === 'unknown') {
+    return info.id
+  }
+  return `${info.name} ${info.id}`
+}
+
+export function resourceAuthorLabel(resourceId) {
+  return resourcePlatformInfo(resourceId).authorLabel
+}

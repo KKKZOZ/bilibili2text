@@ -21,6 +21,7 @@ wheels/
 
 # Virtual environments
 .venv/
+.playwright-browsers/
 
 # Runtime data and generated outputs
 /test-audio/
@@ -28,9 +29,11 @@ wheels/
 /web-ui/transcriptions/
 /db_data/
 /chroma_data/
+/logs/
 /web-ui/logs/
 /input.md
 /output.*
+output/
 /raw*.md
 /raw*.txt
 /terminal_input_answer.md

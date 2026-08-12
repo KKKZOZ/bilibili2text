@@ -34,6 +34,10 @@ def classify_artifact_filename(filename: str) -> str | None:
         return "summary_text"
     if lowered.endswith("_summary.md"):
         return "summary"
+    if lowered.endswith("_comments.json"):
+        return "comments_json"
+    if lowered.endswith("_comments.md"):
+        return "comments_markdown"
     if lowered.endswith("_transcription.json"):
         return "json"
     if lowered.endswith(".txt"):

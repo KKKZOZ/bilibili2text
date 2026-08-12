@@ -6,7 +6,11 @@ from pydantic import BaseModel, Field
 
 
 class ProcessRequest(BaseModel):
-    url: str = Field(..., min_length=1, description="Bilibili 视频 URL")
+    url: str = Field(
+        ...,
+        min_length=1,
+        description="视频或播客 URL（支持 Bilibili、小宇宙、喜马拉雅）",
+    )
     skip_summary: bool = Field(
         default=False,
         description="是否跳过总结步骤",
@@ -30,6 +34,16 @@ class ProcessRequest(BaseModel):
     prefer_bilibili_subtitle: bool = Field(
         default=True,
         description="是否优先使用 B 站原生字幕，失败后回退到音频 ASR",
+    )
+    include_comments: bool = Field(
+        default=True,
+        description="是否下载并总结支持平台的热门评论",
+    )
+    comment_limit: int | None = Field(
+        default=500,
+        ge=1,
+        le=1000,
+        description="下载的主评论数量；每条主评论的子评论全部下载；为空表示下载全部主评论",
     )
     api_key: str | None = Field(
         default=None,
@@ -118,6 +132,7 @@ class ProcessStatusResponse(BaseModel):
     pubdate: str | None = None
     bvid: str | None = None
     title: str | None = None
+    history_run_id: str | None = None
     is_ephemeral_upload: bool = False
     expires_at: str | None = None
 

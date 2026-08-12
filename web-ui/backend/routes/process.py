@@ -245,6 +245,8 @@ def process_video(payload: ProcessRequest) -> ProcessStartResponse:
         summary_prompt_template=summary_prompt_template,
         auto_generate_fancy_html=payload.auto_generate_fancy_html,
         prefer_bilibili_subtitle=payload.prefer_bilibili_subtitle,
+        include_comments=payload.include_comments,
+        comment_limit=payload.comment_limit,
         api_key=_clean_optional_text(payload.api_key),
         deepseek_api_key=_clean_optional_text(payload.deepseek_api_key),
         custom_llm_base_url=_clean_optional_text(payload.custom_llm_base_url),
@@ -462,4 +464,7 @@ def process_status(job_id: str) -> ProcessStatusResponse:
         pubdate=job["pubdate"] if isinstance(job.get("pubdate"), str) else None,
         bvid=job["bvid"] if isinstance(job.get("bvid"), str) else None,
         title=job["title"] if isinstance(job.get("title"), str) else None,
+        history_run_id=job["history_run_id"]
+        if isinstance(job.get("history_run_id"), str)
+        else None,
     )

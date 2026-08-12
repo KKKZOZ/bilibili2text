@@ -1,6 +1,6 @@
 # bilibili-to-text
 
-Bilibili 视频转文字工具：自动下载音频、语音转录、生成 Markdown/TXT，并通过 LLM 生成结构化总结，并导出为 PDF/PNG/HTML。
+Bilibili / 小宇宙 / 喜马拉雅音视频转文字工具：自动下载音频、语音转录、生成 Markdown/TXT，并通过 LLM 生成结构化总结，支持导出为 PDF/PNG/HTML。
 
 
 - 提供 CLI 和 Web UI 两种使用方式
@@ -21,14 +21,16 @@ Bilibili 视频转文字工具：自动下载音频、语音转录、生成 Mark
 
 ## 功能
 
+- 支持 Bilibili / 小宇宙 / 喜马拉雅链接解析与音频下载
 - 使用 [yutto](https://github.com/yutto-dev/yutto) 下载 Bilibili 视频音频
 - 语音转文字（支持多 provider）：
   - [Groq](https://console.groq.com/) Whisper 兼容接口
   - 阿里云 DashScope / Qwen ASR
 - 转录结果导出为 Markdown / TXT
 - 使用 LiteLLM 兼容接口对接任意 LLM 生成总结
+- 可选下载并总结 Bilibili / 小宇宙评论，保存评论 JSON / Markdown，并把评论观点追加到总结末尾
 - 三种产物存储后端：本地磁盘 / MinIO / 阿里云 OSS
-- Web UI（FastAPI 后端 + Vue/Vite 前端）管理历史转录
+- Web UI（FastAPI 后端 + Vue/Vite 前端）管理历史转录，并按平台展示原站链接
 - 可选 RAG：检索历史转录内容并问答
 - Markdown 派生转换：PDF / PNG / HTML
 
@@ -208,11 +210,13 @@ api_key = "your-dashscope-api-key"
 
 ## CLI 使用
 
-处理单个视频：
+处理单个视频或播客链接：
 
 ```bash
 uv run b2t "https://www.bilibili.com/video/BVxxxxxxxxxx"
 ```
+
+也可以直接传入小宇宙单集页或喜马拉雅单集页链接。
 
 常用选项：
 
@@ -298,7 +302,7 @@ B2T_WEB_UI_MODE=open-public uv run uvicorn backend.main:app --app-dir web-ui --h
 
 ## open-public 模式
 
-用于对外公开演示。该模式禁用历史删除和本地 API Key，要求用户在页面中自行填写 DashScope API Key；用户上传的音频/视频会作为临时转录处理，不进入共享历史记录，并在完成后 2 小时自动删除：
+用于对外公开演示。该模式禁用历史删除和本地 API Key，要求用户在页面中自行填写 DashScope API Key；用户上传的音频/视频会作为临时转录处理，不进入共享历史记录，并在完成后 2 小时自动删除。页面里的 API Key 只保存在用户浏览器本地，提交任务或测试连接时临时传给当前后端进程，不会写入仓库或服务器持久存储：
 
 ```bash
 # 终端 1：后端

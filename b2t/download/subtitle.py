@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
 import subprocess
+import sys
 from dataclasses import dataclass
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +30,21 @@ class BilibiliSubtitleItem:
     text: str
 
 
+def _resolve_bili_command() -> str:
+    """Prefer the bili executable installed in the active Python environment."""
+    script_dirs = (
+        Path(sys.executable).parent,
+        Path(sys.prefix) / "bin",
+        Path(sys.prefix) / "Scripts",
+    )
+    for script_dir in script_dirs:
+        for name in ("bili", "bili.exe"):
+            candidate = script_dir / name
+            if candidate.is_file():
+                return str(candidate)
+    return shutil.which("bili") or "bili"
+
+
 def fetch_bilibili_subtitle(
     target: str, *, timeout_seconds: int = 60
 ) -> BilibiliSubtitle | None:
@@ -39,7 +57,13 @@ def fetch_bilibili_subtitle(
     if not cleaned_target:
         return None
 
-    cmd = ["bili", "video", cleaned_target, "--subtitle-timeline", "--json"]
+    cmd = [
+        _resolve_bili_command(),
+        "video",
+        cleaned_target,
+        "--subtitle-timeline",
+        "--json",
+    ]
     try:
         result = subprocess.run(
             cmd,

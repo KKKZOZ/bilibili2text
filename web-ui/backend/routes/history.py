@@ -6,6 +6,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Query
 
 from b2t.config import resolve_summarize_model_profile, resolve_summary_preset_name
+from b2t.download.metadata import VideoMetadata
 from b2t.download.yutto_cli import extract_bilibili_page_from_target_id
 from b2t.history import build_history_artifacts
 from b2t.storage import StoredArtifact
@@ -337,7 +338,11 @@ def regenerate_history_summary(
         ) from exc
 
     appended = build_history_artifacts(
-        new_summary_artifacts,
+        {
+            key: artifact
+            for key, artifact in new_summary_artifacts.items()
+            if not key.startswith("_")
+        },
         summary_preset=resolved_preset,
         summary_profile=resolved_profile,
     )
@@ -356,12 +361,21 @@ def regenerate_history_summary(
         seen_storage_keys.add(artifact.storage_key)
         deduped_artifacts.append(artifact)
 
+    metadata = new_summary_artifacts.get("_metadata")
+    author = detail.author
+    pubdate = detail.pubdate
+    if isinstance(metadata, VideoMetadata):
+        if not author.strip() or author.strip().lower() == "unknown":
+            author = metadata.author
+        if not pubdate.strip() or pubdate.strip().lower() == "unknown":
+            pubdate = metadata.pubdate
+
     db.record_run(
         run_id=detail.run_id,
         bvid=detail.bvid,
         title=detail.title,
-        author=detail.author,
-        pubdate=detail.pubdate,
+        author=author,
+        pubdate=pubdate,
         created_at=detail.created_at,
         has_summary=True,
         artifacts=deduped_artifacts,

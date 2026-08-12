@@ -16,7 +16,7 @@ from b2t.storage.base import classify_artifact_filename
 from backend.dependencies import get_history_db, get_storage_backend
 from backend.download_registry import download_registry, media_type_for_filename
 from backend.schemas import ConvertRequest, ConvertResponse
-from backend.stock_cache import get_or_fetch_stock_statuses
+from backend.stock_cache import get_cached_stock_statuses
 
 router = APIRouter()
 
@@ -197,7 +197,9 @@ def _load_stock_statuses_for_render(
     if not bvid:
         return {}
     try:
-        return get_or_fetch_stock_statuses(
+        # Rendering must remain available when market-data providers are slow or
+        # unreachable. Only use data already populated in the local history DB.
+        return get_cached_stock_statuses(
             db=get_history_db(),
             bvid=bvid,
             as_of_date=pubdate,
@@ -525,8 +527,9 @@ def convert_artifact(payload: ConvertRequest) -> ConvertResponse:
                     artifact=artifact,
                     source_path=render_source_path,
                 )
-                if stock_statuses:
-                    convert_options["stock_statuses"] = stock_statuses
+                # Pass an empty mapping too, so the converters never fall back
+                # to a synchronous market-data query during a download.
+                convert_options["stock_statuses"] = stock_statuses
             if source_kind in {"summary", "summary_table_md"}:
                 pubdate = _lookup_artifact_pubdate(artifact.storage_key)
                 if pubdate:

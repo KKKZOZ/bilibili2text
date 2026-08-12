@@ -8,6 +8,7 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
+from b2t.converter.chromium import chromium_launch_options
 from b2t.stock_status import build_stock_table_cards_html, extract_stock_symbols
 
 logger = logging.getLogger(__name__)
@@ -422,7 +423,7 @@ class MarkdownToPdfConverter:
     def _render_html_to_pdf(self, *, html_content: str, output_path: Path) -> None:
         try:
             with sync_playwright() as p:
-                browser = p.chromium.launch()
+                browser = p.chromium.launch(**chromium_launch_options())
                 page = browser.new_page()
                 page.set_content(html_content, wait_until="networkidle")
                 page.pdf(

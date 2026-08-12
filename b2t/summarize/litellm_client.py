@@ -1,6 +1,7 @@
 """LiteLLM summarize client helpers."""
 
 import os
+from contextlib import contextmanager
 from typing import Any
 
 # Prevent litellm from fetching the latest model pricing data from raw.githubusercontent.com
@@ -11,6 +12,8 @@ os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "true")
 os.environ.setdefault("LITELLM_TELEMETRY", "false")
 
 from litellm import completion
+from litellm.llms.custom_httpx.http_handler import HTTPHandler
+from openai import OpenAI
 
 from b2t.config import (
     SummarizeConfig,
@@ -218,6 +221,7 @@ def stream_summary_completion(
     model_profile: SummarizeModelProfile,
     model_override: str | None = None,
     include_usage: bool = True,
+    client: object | None = None,
 ) -> object:
     selected_model = (model_override or model_profile.model).strip()
     if not selected_model:
@@ -235,6 +239,8 @@ def stream_summary_completion(
     }
     if include_usage:
         kwargs["stream_options"] = {"include_usage": True}
+    if client is not None:
+        kwargs["client"] = client
 
     if model_profile.provider == "openrouter":
         max_tokens = _resolve_openrouter_max_tokens(selected_model)
@@ -278,3 +284,19 @@ def stream_summary_completion(
 
         kwargs["extra_body"] = patched_extra_body
         return completion(**kwargs)
+
+
+@contextmanager
+def isolated_summary_client(model_profile: SummarizeModelProfile):
+    """Create one provider-compatible client for a concurrent LLM request."""
+    if model_profile.provider == "deepseek":
+        client = HTTPHandler()
+    else:
+        client = OpenAI(
+            api_key=model_profile.api_key,
+            base_url=resolve_summarize_api_base(model_profile),
+        )
+    try:
+        yield client
+    finally:
+        client.close()

@@ -23,6 +23,7 @@ WEB_UI_MODE_ENV = "B2T_WEB_UI_MODE"
 OPEN_PUBLIC_API_KEY_ENV = "B2T_OPEN_PUBLIC_API_KEY"
 OPEN_PUBLIC_DEEPSEEK_API_KEY_ENV = "B2T_OPEN_PUBLIC_DEEPSEEK_API_KEY"
 TRANSCRIPTION_BVID_LOCK_TIMEOUT_ENV = "B2T_TRANSCRIPTION_BVID_LOCK_TIMEOUT_SECONDS"
+STOCK_STATUS_SYNC_TIMEOUT_ENV = "B2T_STOCK_STATUS_SYNC_TIMEOUT_SECONDS"
 EPHEMERAL_UPLOAD_TTL_SECONDS_ENV = "B2T_EPHEMERAL_UPLOAD_TTL_SECONDS"
 EPHEMERAL_UPLOAD_CLEANUP_INTERVAL_SECONDS_ENV = (
     "B2T_EPHEMERAL_UPLOAD_CLEANUP_INTERVAL_SECONDS"
@@ -42,6 +43,12 @@ OPEN_PUBLIC_CUSTOM_LLM_PROFILE = "open_public_custom_llm"
 TRANSCRIPTION_BVID_LOCK_TIMEOUT_SECONDS = max(
     1,
     int(os.environ.get(TRANSCRIPTION_BVID_LOCK_TIMEOUT_ENV, "600").strip() or "600"),
+)
+STOCK_STATUS_MAX_WORKERS = 4
+BLOCKING_YFINANCE_TIMEOUT_SECONDS = 120.0
+BACKGROUND_HYBRID_SYNC_TIMEOUT_SECONDS = max(
+    0.0,
+    float(os.environ.get(STOCK_STATUS_SYNC_TIMEOUT_ENV, "30").strip() or "30"),
 )
 EPHEMERAL_UPLOAD_TTL_SECONDS = max(
     1,
@@ -180,6 +187,8 @@ def _pick_qwen_stt_profile(stt: STTConfig) -> STTProfile:
         groq_chunk_length=stt.groq_chunk_length,
         groq_overlap=stt.groq_overlap,
         groq_bitrate=stt.groq_bitrate,
+        diarization_enabled=stt.diarization_enabled,
+        speaker_count=stt.speaker_count,
     )
 
 
@@ -249,6 +258,8 @@ def build_open_public_config(
         groq_chunk_length=public_stt_profile.groq_chunk_length,
         groq_overlap=public_stt_profile.groq_overlap,
         groq_bitrate=public_stt_profile.groq_bitrate,
+        diarization_enabled=public_stt_profile.diarization_enabled,
+        speaker_count=public_stt_profile.speaker_count,
     )
 
     # Build summarize profiles by injecting user API keys into the
