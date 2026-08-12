@@ -494,8 +494,11 @@ def _generate_summary_png_exports(
     results: dict[str, StoredArtifact],
     storage_backend: StorageBackend,
     config: AppConfig,
+    fetch_stock_statuses: bool = False,
     refresh_stock_statuses: bool = False,
     stock_status_timeout_seconds: float | None = None,
+    prefer_baostock_for_a_shares: bool = False,
+    stock_status_max_workers: int = 1,
     include_no_table: bool = True,
 ) -> dict[str, StoredArtifact]:
     summary_artifact = results.get("summary")
@@ -540,13 +543,15 @@ def _generate_summary_png_exports(
                 markdown_paths = [
                     path for path in (summary_path, table_md_path) if path is not None
                 ]
-                if refresh_stock_statuses or stock_status_timeout_seconds is not None:
+                if fetch_stock_statuses or refresh_stock_statuses:
                     stock_statuses = get_or_fetch_stock_statuses(
                         db=get_history_db(),
                         bvid=bvid,
                         as_of_date=as_of_date,
                         markdown_paths=markdown_paths,
                         timeout_seconds=stock_status_timeout_seconds,
+                        prefer_baostock_for_a_shares=prefer_baostock_for_a_shares,
+                        max_workers=stock_status_max_workers,
                     )
                 else:
                     stock_statuses = get_cached_stock_statuses(

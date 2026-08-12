@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from threading import get_ident
 
+from b2t.config import STOCK_STATUS_MODE_BACKGROUND_HYBRID, get_stock_status_mode
 from b2t.download.comments import DEFAULT_COMMENT_LIMIT
 from b2t.download.platform import Platform
 from b2t.download.url_detect import detect_platform, extract_platform_id
@@ -36,7 +37,12 @@ from backend.services import (
     _generate_summary_png_exports,
     _record_history,
 )
-from backend.settings import STOCK_STATUS_SYNC_TIMEOUT_SECONDS, get_runtime_app_config
+from backend.settings import (
+    BACKGROUND_HYBRID_SYNC_TIMEOUT_SECONDS,
+    BLOCKING_YFINANCE_TIMEOUT_SECONDS,
+    STOCK_STATUS_MAX_WORKERS,
+    get_runtime_app_config,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -287,11 +293,21 @@ def _run_job(
                 progress=96,
             )
             try:
+                background_hybrid_stock = (
+                    get_stock_status_mode(config) == STOCK_STATUS_MODE_BACKGROUND_HYBRID
+                )
                 png_results = _generate_summary_png_exports(
                     results=results,
                     storage_backend=storage_backend,
                     config=config,
-                    stock_status_timeout_seconds=STOCK_STATUS_SYNC_TIMEOUT_SECONDS,
+                    fetch_stock_statuses=True,
+                    stock_status_timeout_seconds=(
+                        BACKGROUND_HYBRID_SYNC_TIMEOUT_SECONDS
+                        if background_hybrid_stock
+                        else BLOCKING_YFINANCE_TIMEOUT_SECONDS
+                    ),
+                    prefer_baostock_for_a_shares=background_hybrid_stock,
+                    stock_status_max_workers=STOCK_STATUS_MAX_WORKERS,
                 )
                 results.update(png_results)
             except Exception as exc:

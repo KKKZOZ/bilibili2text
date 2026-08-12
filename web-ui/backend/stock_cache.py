@@ -16,7 +16,6 @@ from b2t.stock_status import (
 )
 
 logger = logging.getLogger(__name__)
-_MAX_TIMED_STOCK_FETCH_WORKERS = 8
 
 
 def normalize_stock_cache_date(as_of_date: str | None) -> str:
@@ -31,6 +30,8 @@ def get_or_fetch_stock_statuses(
     as_of_date: str | None,
     markdown_paths: list[Path],
     timeout_seconds: float | None = None,
+    prefer_baostock_for_a_shares: bool = False,
+    max_workers: int = 1,
 ) -> dict[str, StockDailyStatus]:
     symbols = _extract_symbols_from_paths(markdown_paths)
     if not symbols:
@@ -51,6 +52,8 @@ def get_or_fetch_stock_statuses(
             missing_symbols,
             as_of_date=as_of_date,
             timeout_seconds=timeout_seconds,
+            prefer_baostock_for_a_shares=prefer_baostock_for_a_shares,
+            max_workers=max_workers,
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("Failed to fetch stock status cache for %s: %s", bvid, exc)
@@ -88,12 +91,17 @@ def _fetch_stock_daily_statuses(
     *,
     as_of_date: str | None,
     timeout_seconds: float | None,
+    prefer_baostock_for_a_shares: bool,
+    max_workers: int,
 ) -> list[StockDailyStatus]:
     if timeout_seconds is None:
-        return fetch_stock_daily_status(
-            symbols,
-            as_of_date=as_of_date,
-        )
+        if prefer_baostock_for_a_shares:
+            return fetch_stock_daily_status(
+                symbols,
+                as_of_date=as_of_date,
+                prefer_baostock_for_a_shares=True,
+            )
+        return fetch_stock_daily_status(symbols, as_of_date=as_of_date)
 
     timeout = max(0.0, float(timeout_seconds))
     if timeout <= 0:
@@ -114,12 +122,22 @@ def _fetch_stock_daily_statuses(
             except queue.Empty:
                 return
             try:
-                statuses = fetch_stock_daily_status([symbol], as_of_date=as_of_date)
+                if prefer_baostock_for_a_shares:
+                    statuses = fetch_stock_daily_status(
+                        [symbol],
+                        as_of_date=as_of_date,
+                        prefer_baostock_for_a_shares=True,
+                    )
+                else:
+                    statuses = fetch_stock_daily_status(
+                        [symbol],
+                        as_of_date=as_of_date,
+                    )
                 result_queue.put((symbol, statuses, None))
             except Exception as exc:  # noqa: BLE001
                 result_queue.put((symbol, [], exc))
 
-    worker_count = min(len(symbols), _MAX_TIMED_STOCK_FETCH_WORKERS)
+    worker_count = min(len(symbols), max(1, int(max_workers)))
     for index in range(worker_count):
         thread = threading.Thread(
             target=_worker,

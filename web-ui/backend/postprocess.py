@@ -3,6 +3,7 @@
 import logging
 from datetime import datetime
 
+from b2t.config import STOCK_STATUS_MODE_BACKGROUND_HYBRID, get_stock_status_mode
 from backend.dependencies import get_history_db, get_rag_store, get_storage_backend
 from backend.jobs import _append_job_log, _get_job, _update_job
 from backend.logging_config import JOB_LOG_DATE_FORMAT, _redact_text
@@ -12,6 +13,7 @@ from backend.services import (
     _merge_history_artifact,
     _run_fancy_html_only_from_summary,
 )
+from backend.settings import STOCK_STATUS_MAX_WORKERS
 from backend.task_queue import submit_postprocess
 
 logger = logging.getLogger(__name__)
@@ -28,6 +30,8 @@ class PostProcessScheduler:
         config,
         storage_backend,
     ) -> None:
+        if get_stock_status_mode(config) != STOCK_STATUS_MODE_BACKGROUND_HYBRID:
+            return
         summary_artifact = results.get("summary")
         if not bvid or not (
             hasattr(summary_artifact, "storage_key")
@@ -41,7 +45,10 @@ class PostProcessScheduler:
                     results=results,
                     storage_backend=storage_backend,
                     config=config,
+                    fetch_stock_statuses=True,
                     refresh_stock_statuses=True,
+                    prefer_baostock_for_a_shares=True,
+                    stock_status_max_workers=STOCK_STATUS_MAX_WORKERS,
                     include_no_table=False,
                 )
                 if generated:

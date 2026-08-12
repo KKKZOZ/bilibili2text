@@ -5,7 +5,13 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "web-ui"))
 
-from b2t.config import create_app_config
+from b2t.config import (
+    ConverterConfig,
+    STOCK_STATUS_MODE_BACKGROUND_HYBRID,
+    STOCK_STATUS_MODE_BLOCKING_YFINANCE,
+    _load_converter_config,
+    create_app_config,
+)
 from b2t.stock_status import StockDailyStatus
 from b2t.storage import StoredArtifact
 from backend.postprocess import PostProcessScheduler
@@ -33,6 +39,19 @@ class _FakeStorage:
         )
         self.stored.append(artifact)
         return artifact
+
+
+def test_stock_status_mode_defaults_to_blocking_yfinance() -> None:
+    config = _load_converter_config({})
+
+    assert config.stock_status_mode == STOCK_STATUS_MODE_BLOCKING_YFINANCE
+
+
+def test_stock_status_mode_rejects_unknown_value() -> None:
+    import pytest
+
+    with pytest.raises(ValueError, match="converter.stock_status_mode"):
+        _load_converter_config({"stock_status_mode": "fast"})
 
 
 def test_background_stock_refresh_fetches_and_replaces_stock_png(
@@ -85,6 +104,7 @@ def test_background_stock_refresh_fetches_and_replaces_stock_png(
         results=results,
         storage_backend=storage,
         config=create_app_config(output_dir=tmp_path),
+        fetch_stock_statuses=True,
         refresh_stock_statuses=True,
         include_no_table=False,
     )
@@ -149,6 +169,7 @@ def test_sync_stock_wait_fetches_before_generating_png(
         results=results,
         storage_backend=storage,
         config=create_app_config(output_dir=tmp_path),
+        fetch_stock_statuses=True,
         stock_status_timeout_seconds=30,
         include_no_table=False,
     )
@@ -166,7 +187,9 @@ def test_stock_refresh_is_submitted_without_blocking(monkeypatch) -> None:
         storage_key="runs/BV123_summary.md",
         backend="local",
     )
-    config = object()
+    config = SimpleNamespace(
+        converter=ConverterConfig(stock_status_mode=STOCK_STATUS_MODE_BACKGROUND_HYBRID)
+    )
     storage = object()
 
     monkeypatch.setattr(
@@ -196,9 +219,35 @@ def test_stock_refresh_is_submitted_without_blocking(monkeypatch) -> None:
     submitted[0]()
 
     assert captured["refresh_stock_statuses"] is True
+    assert captured["fetch_stock_statuses"] is True
+    assert captured["prefer_baostock_for_a_shares"] is True
     assert captured["include_no_table"] is False
     assert captured["config"] is config
     assert captured["storage_backend"] is storage
+
+
+def test_blocking_yfinance_mode_does_not_submit_background_refresh(monkeypatch) -> None:
+    submitted = []
+    summary_artifact = StoredArtifact(
+        filename="BV123_summary.md",
+        storage_key="runs/BV123_summary.md",
+        backend="local",
+    )
+    config = SimpleNamespace(converter=ConverterConfig())
+
+    monkeypatch.setattr(
+        "backend.postprocess.submit_postprocess",
+        lambda fn: submitted.append(fn),
+    )
+
+    PostProcessScheduler().trigger_stock_status_refresh(
+        bvid="BV123",
+        results={"summary": summary_artifact},
+        config=config,
+        storage_backend=object(),
+    )
+
+    assert submitted == []
 
 
 def test_timed_stock_fetch_returns_partial_results(tmp_path: Path, monkeypatch) -> None:
@@ -248,6 +297,7 @@ def test_timed_stock_fetch_returns_partial_results(tmp_path: Path, monkeypatch) 
         as_of_date="2026-02-05 21:00:00",
         markdown_paths=[summary_path],
         timeout_seconds=0.2,
+        max_workers=4,
     )
 
     assert statuses == {"600000.SH": fast_status}

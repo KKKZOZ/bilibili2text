@@ -113,6 +113,7 @@ def fetch_stock_daily_status(
     *,
     count: int = 1,
     as_of_date: date | datetime | str | None = None,
+    prefer_baostock_for_a_shares: bool = False,
 ) -> list[StockDailyStatus]:
     """Fetch daily K-line and valuation data at or before the video publish date."""
     if not symbols:
@@ -127,7 +128,14 @@ def fetch_stock_daily_status(
     statuses: list[StockDailyStatus] = []
     for symbol in symbols:
         try:
-            status = _fetch_status_for_symbol(symbol, effective_date)
+            if prefer_baostock_for_a_shares:
+                status = _fetch_status_for_symbol(
+                    symbol,
+                    effective_date,
+                    prefer_baostock_for_a_shares=True,
+                )
+            else:
+                status = _fetch_status_for_symbol(symbol, effective_date)
         except Exception as exc:  # noqa: BLE001
             logger.warning("stock status fetch failed for %s: %s", symbol, exc)
             continue
@@ -143,14 +151,13 @@ def fetch_stock_daily_status(
 def _fetch_status_for_symbol(
     symbol: str,
     as_of_date: date,
+    *,
+    prefer_baostock_for_a_shares: bool = False,
 ) -> StockDailyStatus | None:
-    """Fetch stock data with a market-specific fallback order."""
+    """Fetch stock data from yfinance, optionally preferring baostock for A-shares."""
     suffix = symbol.upper().split(".")[-1] if "." in symbol else ""
 
-    # Domestic cloud servers often reach Yahoo Finance slowly or not at all.
-    # Prefer baostock for A-shares so normal summary PNG generation can include
-    # market data without first blocking on an overseas data source.
-    if suffix in ("SH", "SZ"):
+    if prefer_baostock_for_a_shares and suffix in ("SH", "SZ"):
         try:
             result = _fetch_baostock_status_for_symbol(symbol, as_of_date)
             if result is not None:

@@ -9,6 +9,14 @@ from typing import Any
 DEFAULT_SUMMARY_PRESETS_FILE = "summary_presets.toml"
 DEFAULT_SUMMARY_CONTEXT_FILE = "context.toml"
 DEFAULT_STT_PROFILE = "qwen"
+STOCK_STATUS_MODE_BLOCKING_YFINANCE = "blocking_yfinance"
+STOCK_STATUS_MODE_BACKGROUND_HYBRID = "background_hybrid"
+SUPPORTED_STOCK_STATUS_MODES = frozenset(
+    {
+        STOCK_STATUS_MODE_BLOCKING_YFINANCE,
+        STOCK_STATUS_MODE_BACKGROUND_HYBRID,
+    }
+)
 DEFAULT_BILIBILI_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -244,6 +252,47 @@ class SummaryContextConfig:
 @dataclass(frozen=True)
 class ConverterConfig:
     min_length: int = 60
+    stock_status_mode: str = STOCK_STATUS_MODE_BLOCKING_YFINANCE
+
+
+def get_stock_status_mode(config: object) -> str:
+    """Return the configured stock mode, defaulting legacy config objects safely."""
+    converter = getattr(config, "converter", None)
+    mode = getattr(converter, "stock_status_mode", STOCK_STATUS_MODE_BLOCKING_YFINANCE)
+    return (
+        mode
+        if mode in SUPPORTED_STOCK_STATUS_MODES
+        else STOCK_STATUS_MODE_BLOCKING_YFINANCE
+    )
+
+
+def _load_converter_config(raw_converter: dict) -> ConverterConfig:
+    if not isinstance(raw_converter, dict):
+        raise ValueError("converter 配置必须是 TOML 表")
+
+    allowed_fields = {"min_length", "stock_status_mode"}
+    unknown_fields = sorted(set(raw_converter) - allowed_fields)
+    if unknown_fields:
+        raise ValueError(f"converter 包含未知字段: {', '.join(unknown_fields)}")
+
+    min_length = raw_converter.get("min_length", ConverterConfig.min_length)
+    if not isinstance(min_length, int) or isinstance(min_length, bool):
+        raise ValueError("converter.min_length 必须是整数")
+
+    stock_status_mode = raw_converter.get(
+        "stock_status_mode", ConverterConfig.stock_status_mode
+    )
+    if not isinstance(stock_status_mode, str):
+        raise ValueError("converter.stock_status_mode 必须是字符串")
+    stock_status_mode = stock_status_mode.strip().lower()
+    if stock_status_mode not in SUPPORTED_STOCK_STATUS_MODES:
+        supported = ", ".join(sorted(SUPPORTED_STOCK_STATUS_MODES))
+        raise ValueError("converter.stock_status_mode 必须是以下值之一: " + supported)
+
+    return ConverterConfig(
+        min_length=min_length,
+        stock_status_mode=stock_status_mode,
+    )
 
 
 @dataclass(frozen=True)
@@ -1560,7 +1609,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         fancy_html=fancy_html_config,
         summary_presets=summary_presets,
         summary_context=summary_context,
-        converter=ConverterConfig(**raw.get("converter", {})),
+        converter=_load_converter_config(raw.get("converter", {})),
         rag=rag_config,
         feishu=feishu_config,
         monitor=monitor_config,

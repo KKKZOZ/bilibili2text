@@ -99,6 +99,9 @@ profile = "openrouter-main"
 
 [converter]
 min_length = 60
+# blocking_yfinance（默认）：全部市场使用 yfinance，4 worker 并发查询，最多同步等待 2 分钟后再导出。
+# background_hybrid：A 股优先 baostock，4 worker 限时并行获取，随后在后台刷新导出图片。
+stock_status_mode = "blocking_yfinance"
 
 [rag]
 enabled = false

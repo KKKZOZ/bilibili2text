@@ -203,7 +203,9 @@ def test_fetch_stock_daily_status_uses_as_of_date(monkeypatch) -> None:
     )
 
     assert fetch_stock_daily_status(
-        ["600000.SH"], as_of_date="2026-02-05 21:00:00"
+        ["600000.SH"],
+        as_of_date="2026-02-05 21:00:00",
+        prefer_baostock_for_a_shares=True,
     ) == [status]
     assert captured["symbol"] == "600000.SH"
     assert str(captured["as_of_date"]) == "2026-02-05"
@@ -231,7 +233,12 @@ def test_fetch_stock_daily_status_hides_stale_a_share_after_market_close(
     )
 
     assert (
-        fetch_stock_daily_status(["600000.SH"], as_of_date="2026-05-06 16:30:00") == []
+        fetch_stock_daily_status(
+            ["600000.SH"],
+            as_of_date="2026-05-06 16:30:00",
+            prefer_baostock_for_a_shares=True,
+        )
+        == []
     )
 
 
@@ -259,6 +266,7 @@ def test_fetch_stock_daily_status_keeps_previous_trade_day_before_market_close(
     assert fetch_stock_daily_status(
         ["600000.SH"],
         as_of_date="2026-05-06 14:30:00",
+        prefer_baostock_for_a_shares=True,
     ) == [status]
 
 
@@ -286,6 +294,7 @@ def test_fetch_stock_daily_status_keeps_previous_trade_day_on_weekend(
     assert fetch_stock_daily_status(
         ["600000.SH"],
         as_of_date="2026-05-09 16:30:00",
+        prefer_baostock_for_a_shares=True,
     ) == [status]
 
 
@@ -340,11 +349,52 @@ def test_fetch_status_prefers_baostock_for_a_shares_and_yfinance_for_hk(
         == hk_status
     )
     assert (
-        _fetch_status_for_symbol("600000.SH", _parse_as_of_date("2026-05-06"))
+        _fetch_status_for_symbol(
+            "600000.SH",
+            _parse_as_of_date("2026-05-06"),
+            prefer_baostock_for_a_shares=True,
+        )
         == a_share_status
     )
     assert yfinance_calls == [("00700.HK", "2026-05-06")]
     assert baostock_calls == [("600000.SH", "2026-05-06")]
+
+
+def test_fetch_status_uses_yfinance_for_a_shares_by_default(monkeypatch) -> None:
+    yfinance_calls = []
+    a_share_status = _baostock_row_to_status(
+        "600000.SH",
+        {
+            "date": "2026-05-06",
+            "close": "9.1800",
+            "preclose": "9.2700",
+            "pctChg": "-0.970900",
+            "peTTM": "6.080899",
+        },
+        {"code_name": "浦发银行"},
+        {"totalShare": "33305838300.00"},
+    )
+
+    def fake_yfinance(symbol, as_of_date):
+        yfinance_calls.append((symbol, str(as_of_date)))
+        return a_share_status
+
+    monkeypatch.setattr(
+        "b2t.stock_status._fetch_yfinance_status_for_symbol",
+        fake_yfinance,
+    )
+    monkeypatch.setattr(
+        "b2t.stock_status._fetch_baostock_status_for_symbol",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("default mode must not call baostock")
+        ),
+    )
+
+    assert (
+        _fetch_status_for_symbol("600000.SH", _parse_as_of_date("2026-05-06"))
+        == a_share_status
+    )
+    assert yfinance_calls == [("600000.SH", "2026-05-06")]
 
 
 def test_tickflow_daily_row_uses_latest_row_before_as_of_date() -> None:
