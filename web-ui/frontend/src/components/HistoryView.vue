@@ -739,10 +739,14 @@
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  {{ resourceDisplayLabel(historyDetail.bvid, historyDetail.page) }}
+                  {{
+                    resourceDisplayLabel(historyDetail.bvid, historyDetail.page)
+                  }}
                 </a>
                 <span v-else class="detail-bvid">
-                  {{ resourceDisplayLabel(historyDetail.bvid, historyDetail.page) }}
+                  {{
+                    resourceDisplayLabel(historyDetail.bvid, historyDetail.page)
+                  }}
                 </span>
                 <span v-if="historyDetail.author" class="detail-author-tag">
                   <User :size="12" />
