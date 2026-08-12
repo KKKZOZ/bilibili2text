@@ -53,7 +53,27 @@ def test_append_comment_summary_adds_fixed_comment_stats(
     monkeypatch.setattr(
         llm_module,
         "collect_stream_result",
-        lambda stream: ("", "## 精选评论观点\n\n- 评论观点"),
+        lambda stream: (
+            "",
+            "\n".join(
+                (
+                    "## 精选评论观点",
+                    "",
+                    "### 舆情统计",
+                    "有效评论：4",
+                    "正面：2（50.0%）",
+                    "负面：1（25.0%）",
+                    "中性：1（25.0%）",
+                    "已过滤：1",
+                    "",
+                    "### 情绪倾向",
+                    "评论区整体积极，也有少量不同声音。",
+                    "",
+                    "### 高频观点",
+                    "- 评论观点",
+                )
+            ),
+        ),
     )
     monkeypatch.setattr(
         llm_module,
@@ -72,7 +92,14 @@ def test_append_comment_summary_adds_fixed_comment_stats(
     assert "- 视频总评论数: 353" in output
     assert "- 本次总结评论数: 5（主评论 2，子评论 3）" in output
     assert "- UP主回复评论数: 1" in output
+    assert "- 有效评论数: 4" in output
+    assert "- 已过滤评论数: 1" in output
+    assert "- 正面评论: 2（50.0%）" in output
+    assert "- 负面评论: 1（25.0%）" in output
+    assert "- 中性评论: 1（25.0%）" in output
+    assert "### 舆情统计" not in output
     assert "- 评论观点" in output
+    assert output.index("### 高频观点") < output.index("### 情绪倾向")
 
 
 def test_transcript_and_comment_summaries_run_concurrently(

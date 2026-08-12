@@ -36,6 +36,15 @@ _BVID_PREFIX_RE = re.compile(r"^(BV[0-9A-Za-z]{10})[_-]?", re.IGNORECASE)
 _COMMENT_TOTAL_RE = re.compile(r"^- 评论区总数:\s*(\d+)\s*$", re.MULTILINE)
 _COMMENT_FETCHED_RE = re.compile(r"^- 已抓取主评论:\s*(\d+)\s*$", re.MULTILINE)
 _COMMENT_FETCHED_REPLIES_RE = re.compile(r"^- 已抓取子评论:\s*(\d+)\s*$", re.MULTILINE)
+_COMMENT_SENTIMENT_SECTION_RE = re.compile(
+    r"^###\s*舆情统计\s*$\n?(.*?)(?=^#{2,3}\s|\Z)",
+    re.MULTILINE | re.DOTALL,
+)
+_COMMENT_EMOTION_SECTION_RE = re.compile(
+    r"^###\s*情绪倾向\s*$\n?(.*?)(?=^#{2,3}\s|\Z)",
+    re.MULTILINE | re.DOTALL,
+)
+_COMMENT_SENTIMENT_FIELDS = ("有效评论", "正面", "负面", "中性", "已过滤")
 
 
 def validate_summary_prompt_template(template: str) -> str:
@@ -279,7 +288,11 @@ def summarize_comment_viewpoints(
         "- 固定输出 `### 舆情统计` 小节，依次列出 `有效评论`、`正面`、`负面`、"
         "`中性`、`已过滤` 的条数；正面、负面、中性同时给出占有效评论的百分比，"
         "保留 1 位小数。必须满足 正面 + 负面 + 中性 = 有效评论。有效评论为 0 时"
-        "百分比均写 `0.0%`。\n"
+        "百分比均写 `0.0%`。该小节会在后处理中合并到评论统计，不要在其他位置"
+        "重复这些数据。\n"
+        "- 在输出末尾固定添加 `### 情绪倾向` 小节，用自然语言概括评论区的整体情绪、"
+        "典型表达和少数不同声音；保留分析性叙述，不要在该小节重复正面、负面、"
+        "中性的统计数字。\n"
         "- 舆情数量只能依据本次提供的评论逐条统计，不得依据平台显示的评论区总数"
         "推算；无法可靠完成统计时应明确说明，不得编造数量。\n"
         "- 重点关注标记为 `UP主回复` 的内容。\n"
@@ -303,7 +316,43 @@ def summarize_comment_viewpoints(
     return summary.strip()
 
 
-def _extract_comment_summary_stats(comments_markdown: str) -> str:
+def _extract_sentiment_stats(comment_summary: str) -> dict[str, str]:
+    section_match = _COMMENT_SENTIMENT_SECTION_RE.search(comment_summary)
+    if not section_match:
+        return {}
+
+    fields: dict[str, str] = {}
+    for line in section_match.group(1).splitlines():
+        normalized = line.strip().lstrip("-* ").replace("**", "")
+        for field in _COMMENT_SENTIMENT_FIELDS:
+            match = re.match(rf"^{field}\s*[：:]\s*(.+?)\s*$", normalized)
+            if match:
+                fields[field] = match.group(1)
+                break
+    return fields
+
+
+def _remove_sentiment_stats_section(comment_summary: str) -> str:
+    return _COMMENT_SENTIMENT_SECTION_RE.sub("", comment_summary).strip()
+
+
+def _move_emotion_section_to_end(comment_summary: str) -> str:
+    section_match = _COMMENT_EMOTION_SECTION_RE.search(comment_summary)
+    if not section_match:
+        return comment_summary.strip()
+
+    emotion_body = section_match.group(1).strip()
+    remaining = _COMMENT_EMOTION_SECTION_RE.sub("", comment_summary).strip()
+    emotion_section = "### 情绪倾向"
+    if emotion_body:
+        emotion_section = f"{emotion_section}\n\n{emotion_body}"
+    return f"{remaining}\n\n{emotion_section}".strip()
+
+
+def _extract_comment_summary_stats(
+    comments_markdown: str,
+    sentiment_stats: dict[str, str] | None = None,
+) -> str:
     total_match = _COMMENT_TOTAL_RE.search(comments_markdown)
     fetched_match = _COMMENT_FETCHED_RE.search(comments_markdown)
     fetched_replies_match = _COMMENT_FETCHED_REPLIES_RE.search(comments_markdown)
@@ -318,23 +367,34 @@ def _extract_comment_summary_stats(comments_markdown: str) -> str:
         summarized_count = "未知"
     up_reply_count = comments_markdown.count("**UP主回复**")
 
-    return "\n".join(
-        (
-            "评论统计：",
-            "",
-            f"- 视频总评论数: {total_count}",
-            f"- 本次总结评论数: {summarized_count}（主评论 {fetched_main_count}，子评论 {fetched_reply_count}）",
-            f"- UP主回复评论数: {up_reply_count}",
-        )
-    )
+    lines = [
+        "评论统计：",
+        "",
+        f"- 视频总评论数: {total_count}",
+        f"- 本次总结评论数: {summarized_count}（主评论 {fetched_main_count}，子评论 {fetched_reply_count}）",
+        f"- UP主回复评论数: {up_reply_count}",
+    ]
+    sentiment_stats = sentiment_stats or {}
+    if "有效评论" in sentiment_stats:
+        lines.append(f"- 有效评论数: {sentiment_stats['有效评论']}")
+    if "已过滤" in sentiment_stats:
+        lines.append(f"- 已过滤评论数: {sentiment_stats['已过滤']}")
+
+    for field in ("正面", "负面", "中性"):
+        if field in sentiment_stats:
+            lines.append(f"- {field}评论: {sentiment_stats[field]}")
+    return "\n".join(lines)
 
 
 def _prepend_comment_summary_stats(
     comment_summary: str,
     comments_markdown: str,
 ) -> str:
-    stats = _extract_comment_summary_stats(comments_markdown)
-    stripped = comment_summary.strip()
+    sentiment_stats = _extract_sentiment_stats(comment_summary)
+    stats = _extract_comment_summary_stats(comments_markdown, sentiment_stats)
+    stripped = _move_emotion_section_to_end(
+        _remove_sentiment_stats_section(comment_summary)
+    )
     heading = "## 精选评论观点"
     if stripped.startswith(heading):
         return stripped.replace(heading, f"{heading}\n\n{stats}", 1)
