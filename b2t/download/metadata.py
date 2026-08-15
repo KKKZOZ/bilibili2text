@@ -9,6 +9,11 @@ from datetime import datetime
 
 import httpx
 
+from b2t.download.bilibili_categories import (
+    get_bilibili_parent_tid,
+    get_bilibili_parent_tname,
+    get_bilibili_tname,
+)
 from b2t.download.platform import PlatformMetadata
 
 logger = logging.getLogger(__name__)
@@ -26,9 +31,25 @@ class VideoMetadata:
     pubdate_timestamp: int  # Unix timestamp
     description: str
     aid: int = 0
+    tid: int = 0
+
+    @property
+    def tname(self) -> str:
+        """Resolve the video's partition name from the local taxonomy."""
+        return get_bilibili_tname(self.tid)
+
+    @property
+    def parent_tid(self) -> int:
+        """Resolve the video's parent partition ID from the local taxonomy."""
+        return get_bilibili_parent_tid(self.tid)
+
+    @property
+    def parent_tname(self) -> str:
+        """Resolve the video's parent partition name from the local taxonomy."""
+        return get_bilibili_parent_tname(self.tid)
 
     @classmethod
-    def from_platform_metadata(cls, pm: PlatformMetadata) -> "VideoMetadata":
+    def from_platform_metadata(cls, pm: PlatformMetadata) -> VideoMetadata:
         """Create a VideoMetadata-compatible object from PlatformMetadata.
 
         Uses the platform-prefixed ID as bvid for backward compatibility
@@ -110,6 +131,7 @@ async def get_video_metadata_async(bvid: str) -> VideoMetadata:
             pubdate_timestamp=pubdate_timestamp,
             description=video_data.get("desc", ""),
             aid=int(video_data.get("aid", 0) or 0),
+            tid=int(video_data.get("tid", 0) or 0),
         )
 
         logger.info(

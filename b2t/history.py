@@ -21,6 +21,14 @@ from b2t.storage.base import (
 _DB_FILENAME = "b2t_history.db"
 _RUN_ID_SUFFIX_PATTERN = re.compile(r"^-[0-9a-f]{8}(?:_|$)", re.IGNORECASE)
 _MULTIPART_TITLE_PATTERN = re.compile(r"^p([1-9][0-9]*)_(.+)$", re.IGNORECASE)
+_BILIBILI_BVID_PATTERN = re.compile(r"^BV[0-9A-Za-z]{10}$", re.IGNORECASE)
+_HISTORY_PLATFORM_SQL: dict[str, str] = {
+    "bilibili": "(record_type = 'transcription' AND length(bvid) = 12 AND lower(substr(bvid, 1, 2)) = 'bv')",
+    "xiaoyuzhou": "(record_type = 'transcription' AND instr(lower(bvid), 'xiaoyuzhou_') = 1)",
+    "ximalaya": "(record_type = 'transcription' AND instr(lower(bvid), 'ximalaya_') = 1)",
+    "upload": "(record_type = 'transcription' AND instr(lower(bvid), 'upload-') = 1)",
+    "knowledge_base": "record_type = 'rag_query'",
+}
 
 _SCHEMA_SQL = """\
 CREATE TABLE IF NOT EXISTS transcription_runs (
@@ -30,6 +38,7 @@ CREATE TABLE IF NOT EXISTS transcription_runs (
     title         TEXT    NOT NULL DEFAULT '',
     author        TEXT    NOT NULL DEFAULT '',
     pubdate       TEXT    NOT NULL DEFAULT '',
+    tid           INTEGER NOT NULL DEFAULT 0,
     created_at    TEXT    NOT NULL,
     has_summary   INTEGER NOT NULL DEFAULT 0,
     file_count    INTEGER NOT NULL DEFAULT 0,
@@ -82,6 +91,7 @@ class HistoryItem:
     has_summary: bool
     file_count: int
     record_type: str = "transcription"  # "transcription" | "rag_query"
+    tid: int = 0
 
 
 @dataclass(frozen=True)
@@ -112,6 +122,7 @@ class HistoryDetail:
     record_type: str = "transcription"
     fancy_html_status: str = "idle"
     fancy_html_error: str = ""
+    tid: int = 0
 
 
 @dataclass(frozen=True)
@@ -203,6 +214,11 @@ class HistoryDB:
                 "ALTER TABLE transcription_runs "
                 "ADD COLUMN fancy_html_error TEXT NOT NULL DEFAULT ''"
             )
+        if "tid" not in existing_run_columns:
+            conn.execute(
+                "ALTER TABLE transcription_runs "
+                "ADD COLUMN tid INTEGER NOT NULL DEFAULT 0"
+            )
 
     def record_run(
         self,
@@ -212,6 +228,7 @@ class HistoryDB:
         title: str,
         author: str = "",
         pubdate: str = "",
+        tid: int = 0,
         created_at: str | None = None,
         has_summary: bool = False,
         artifacts: list[HistoryArtifact] | None = None,
@@ -271,15 +288,19 @@ class HistoryDB:
                 """\
                 INSERT INTO transcription_runs
                     (
-                        run_id, bvid, title, author, pubdate, created_at,
+                        run_id, bvid, title, author, pubdate, tid, created_at,
                         has_summary, file_count, record_type, fancy_html_status, fancy_html_error
                     )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(run_id) DO UPDATE SET
                     bvid        = excluded.bvid,
                     title       = excluded.title,
                     author      = excluded.author,
                     pubdate     = excluded.pubdate,
+                    tid         = CASE
+                        WHEN excluded.tid > 0 THEN excluded.tid
+                        ELSE transcription_runs.tid
+                    END,
                     created_at  = excluded.created_at,
                     has_summary = excluded.has_summary,
                     file_count  = excluded.file_count,
@@ -293,6 +314,7 @@ class HistoryDB:
                     title,
                     author,
                     pubdate,
+                    tid,
                     created_at,
                     int(has_summary),
                     len(artifact_list),
@@ -353,12 +375,15 @@ class HistoryDB:
         page_size: int = 20,
         search: str = "",
         record_type: str = "",
+        platforms: tuple[str, ...] = (),
+        category_tids: tuple[int, ...] = (),
+        authors: tuple[str, ...] = (),
     ) -> HistoryPage:
-        """Paginated listing with optional search on title/bvid/author."""
+        """Paginated listing with optional search and metadata filters."""
         conn = self._conn()
 
         conditions: list[str] = []
-        params: list[str] = []
+        params: list[object] = []
         query = search.strip()
         if query:
             conditions.append("(title LIKE ? OR bvid LIKE ? OR author LIKE ?)")
@@ -367,6 +392,30 @@ class HistoryDB:
         if record_type.strip():
             conditions.append("record_type = ?")
             params.append(record_type.strip())
+        normalized_platforms = tuple(
+            dict.fromkeys(
+                platform.strip().lower()
+                for platform in platforms
+                if platform.strip().lower() in _HISTORY_PLATFORM_SQL
+            )
+        )
+        if normalized_platforms:
+            platform_conditions = [
+                _HISTORY_PLATFORM_SQL[platform] for platform in normalized_platforms
+            ]
+            conditions.append(f"({' OR '.join(platform_conditions)})")
+        normalized_tids = tuple(dict.fromkeys(tid for tid in category_tids if tid > 0))
+        if normalized_tids:
+            placeholders = ",".join("?" * len(normalized_tids))
+            conditions.append(f"tid IN ({placeholders})")
+            params.extend(normalized_tids)
+        normalized_authors = tuple(
+            dict.fromkeys(author.strip() for author in authors if author.strip())
+        )
+        if normalized_authors:
+            placeholders = ",".join("?" * len(normalized_authors))
+            conditions.append(f"author IN ({placeholders})")
+            params.extend(normalized_authors)
 
         where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
 
@@ -379,7 +428,7 @@ class HistoryDB:
         offset = (max(1, page) - 1) * page_size
         rows = conn.execute(
             f"""\
-            SELECT run_id, bvid, title, author, pubdate, created_at, has_summary, file_count, record_type
+            SELECT run_id, bvid, title, author, pubdate, tid, created_at, has_summary, file_count, record_type
             FROM transcription_runs
             {where}
             ORDER BY created_at DESC
@@ -399,6 +448,7 @@ class HistoryDB:
                 has_summary=bool(r["has_summary"]),
                 file_count=r["file_count"],
                 record_type=r["record_type"] or "transcription",
+                tid=int(r["tid"] or 0),
             )
             for r in rows
         ]
@@ -417,7 +467,7 @@ class HistoryDB:
         run_row = conn.execute(
             """\
             SELECT
-                run_id, bvid, title, author, pubdate, created_at, has_summary,
+                run_id, bvid, title, author, pubdate, tid, created_at, has_summary,
                 record_type, fancy_html_status, fancy_html_error
             FROM transcription_runs
             WHERE run_id = ?
@@ -462,6 +512,7 @@ class HistoryDB:
             record_type=run_row["record_type"] or "transcription",
             fancy_html_status=run_row["fancy_html_status"] or "idle",
             fancy_html_error=run_row["fancy_html_error"] or "",
+            tid=int(run_row["tid"] or 0),
         )
 
     def update_run_fancy_html_status(
@@ -481,6 +532,48 @@ class HistoryDB:
                 """,
                 (status.strip() or "idle", error.strip(), run_id),
             )
+
+    def list_bvids_missing_tid(self) -> list[str]:
+        """List distinct Bilibili video IDs whose history rows lack a tid."""
+        rows = (
+            self._conn()
+            .execute(
+                """\
+            SELECT bvid
+            FROM transcription_runs
+            WHERE tid <= 0 AND record_type = 'transcription'
+            GROUP BY lower(bvid)
+            ORDER BY min(created_at) ASC
+            """
+            )
+            .fetchall()
+        )
+        return [
+            bvid
+            for row in rows
+            if (bvid := str(row["bvid"] or "").strip())
+            and _BILIBILI_BVID_PATTERN.fullmatch(bvid)
+        ]
+
+    def update_tid_for_bvid(self, bvid: str, tid: int) -> int:
+        """Fill a positive tid into every missing history row for one BV ID."""
+        normalized_bvid = bvid.strip()
+        if not _BILIBILI_BVID_PATTERN.fullmatch(normalized_bvid):
+            raise ValueError(f"Invalid Bilibili BV ID: {bvid}")
+        if tid <= 0:
+            raise ValueError("tid must be positive")
+
+        conn = self._conn()
+        with conn:
+            cursor = conn.execute(
+                """\
+                UPDATE transcription_runs
+                SET tid = ?
+                WHERE lower(bvid) = lower(?) AND tid <= 0
+                """,
+                (tid, normalized_bvid),
+            )
+        return max(0, cursor.rowcount)
 
     def upsert_stock_statuses(
         self,
@@ -569,6 +662,61 @@ class HistoryDB:
             "SELECT DISTINCT author FROM transcription_runs WHERE author != '' ORDER BY author"
         ).fetchall()
         return [str(r["author"]) for r in rows]
+
+    def list_history_category_counts(self) -> list[tuple[int, int]]:
+        """Return populated Bilibili tids and their transcription row counts."""
+        rows = (
+            self._conn()
+            .execute(
+                """\
+            SELECT tid, COUNT(*) AS count
+            FROM transcription_runs
+            WHERE record_type = 'transcription' AND tid > 0
+            GROUP BY tid
+            ORDER BY tid ASC
+            """
+            )
+            .fetchall()
+        )
+        return [(int(row["tid"]), int(row["count"])) for row in rows]
+
+    def list_history_author_counts(self) -> list[tuple[str, int]]:
+        """Return populated authors and their transcription row counts."""
+        rows = (
+            self._conn()
+            .execute(
+                """\
+            SELECT author, COUNT(*) AS count
+            FROM transcription_runs
+            WHERE record_type = 'transcription' AND trim(author) != ''
+            GROUP BY author
+            ORDER BY count DESC, author ASC
+            """
+            )
+            .fetchall()
+        )
+        return [
+            (str(row["author"]), int(row["count"]))
+            for row in rows
+            if str(row["author"] or "").strip()
+        ]
+
+    def list_history_platform_counts(self) -> list[tuple[str, int]]:
+        """Return supported history platforms and their row counts."""
+        conn = self._conn()
+        counts: list[tuple[str, int]] = []
+        for platform, condition in _HISTORY_PLATFORM_SQL.items():
+            row = conn.execute(
+                f"""\
+                SELECT COUNT(*) AS count
+                FROM transcription_runs
+                WHERE {condition}
+                """
+            ).fetchone()
+            count = int(row["count"] or 0) if row else 0
+            if count > 0:
+                counts.append((platform, count))
+        return counts
 
     def get_run_ids_for_authors(self, authors: list[str]) -> list[str]:
         """Return all run_ids whose author is in the given list."""
@@ -806,6 +954,7 @@ def record_pipeline_run(
     title: str = "",
     author: str = "",
     pubdate: str = "",
+    tid: int = 0,
     created_at: str | None = None,
     summary_preset: str | None = None,
     summary_profile: str | None = None,
@@ -820,6 +969,7 @@ def record_pipeline_run(
         title: Full resource title, independent of the shortened artifact filename
         author: Video author name
         pubdate: Video publish date (YYYY-MM-DD HH:MM:SS format)
+        tid: Bilibili video partition ID
         created_at: Record creation timestamp (ISO format)
 
     Returns:
@@ -859,6 +1009,8 @@ def record_pipeline_run(
                 pubdate = existing.pubdate
             if not title.strip() and existing.title.strip():
                 record_title = existing.title
+            if tid <= 0:
+                tid = existing.tid
     has_summary = any(artifact.kind in SUMMARY_ARTIFACT_KINDS for artifact in artifacts)
 
     db.record_run(
@@ -867,6 +1019,7 @@ def record_pipeline_run(
         title=record_title,
         author=author,
         pubdate=pubdate,
+        tid=tid,
         created_at=created_at,
         has_summary=has_summary,
         artifacts=artifacts,

@@ -40,7 +40,7 @@ class ProcessRequest(BaseModel):
         description="是否下载并总结支持平台的热门评论",
     )
     comment_limit: int | None = Field(
-        default=500,
+        default=200,
         ge=1,
         le=1000,
         description="下载的主评论数量；每条主评论的子评论全部下载；为空表示下载全部主评论",
@@ -221,6 +221,9 @@ class HistoryItemResponse(BaseModel):
     created_at: str
     has_summary: bool
     file_count: int
+    tid: int = 0
+    tname: str = ""
+    parent_tname: str = ""
     record_type: str = "transcription"
 
 
@@ -230,6 +233,32 @@ class HistoryListResponse(BaseModel):
     page: int
     page_size: int
     has_more: bool
+
+
+class HistoryCategoryFilterOptionResponse(BaseModel):
+    tid: int
+    tname: str
+    parent_tid: int = 0
+    parent_tname: str = ""
+    count: int
+    is_parent: bool = False
+
+
+class HistoryAuthorFilterOptionResponse(BaseModel):
+    author: str
+    count: int
+
+
+class HistoryPlatformFilterOptionResponse(BaseModel):
+    platform: str
+    name: str
+    count: int
+
+
+class HistoryFilterOptionsResponse(BaseModel):
+    platforms: list[HistoryPlatformFilterOptionResponse]
+    categories: list[HistoryCategoryFilterOptionResponse]
+    authors: list[HistoryAuthorFilterOptionResponse]
 
 
 class HistoryDetailArtifactResponse(BaseModel):

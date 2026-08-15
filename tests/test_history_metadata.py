@@ -58,6 +58,7 @@ def test_record_pipeline_run_persists_summary_metadata(tmp_path) -> None:
         bvid="BV1AB411c7mD",
         results=results,
         title=full_title,
+        tid=207,
         summary_preset="key_points",
         summary_profile="openrouter_default",
     )
@@ -66,16 +67,87 @@ def test_record_pipeline_run_persists_summary_metadata(tmp_path) -> None:
     detail = db.get_run_detail(run_id)
     assert detail is not None
     assert detail.title == full_title
+    assert detail.tid == 207
+    assert db.list_runs().items[0].tid == 207
 
     summary_artifacts = [a for a in detail.artifacts if a.kind == "summary"]
     assert len(summary_artifacts) == 1
     assert summary_artifacts[0].summary_preset == "key_points"
     assert summary_artifacts[0].summary_profile == "openrouter_default"
-
     markdown_artifacts = [a for a in detail.artifacts if a.kind == "markdown"]
     assert len(markdown_artifacts) == 1
     assert markdown_artifacts[0].summary_preset == ""
     assert markdown_artifacts[0].summary_profile == ""
+
+
+def test_list_runs_combines_multi_category_and_author_filters(tmp_path) -> None:
+    db = HistoryDB(tmp_path)
+    db.record_run(
+        run_id="finance-target",
+        bvid="BV1Hdgs6ME67",
+        title="目标财经视频",
+        author="目标UP主",
+        tid=207,
+    )
+    db.record_run(
+        run_id="finance-other-author",
+        bvid="BV1AB411c7mD",
+        title="其他财经视频",
+        author="其他UP主",
+        tid=207,
+    )
+    db.record_run(
+        run_id="daily-target-author",
+        bvid="BV1CD411c7mE",
+        title="生活视频",
+        author="目标UP主",
+        tid=21,
+    )
+    db.record_run(
+        run_id="daily-other-selected-author",
+        bvid="BV1EF411c7mF",
+        title="另一个生活视频",
+        author="另一个目标UP主",
+        tid=21,
+    )
+
+    page = db.list_runs(
+        category_tids=(36, 207, 208, 21),
+        authors=("目标UP主", "另一个目标UP主"),
+    )
+
+    assert {item.run_id for item in page.items} == {
+        "finance-target",
+        "daily-target-author",
+        "daily-other-selected-author",
+    }
+
+
+def test_list_runs_filters_multiple_platforms_and_counts_options(tmp_path) -> None:
+    db = HistoryDB(tmp_path)
+    db.record_run(run_id="bili", bvid="BV1Hdgs6ME67", title="B站")
+    db.record_run(
+        run_id="podcast",
+        bvid="xiaoyuzhou_0123456789abcdef01234567",
+        title="小宇宙",
+    )
+    db.record_run(run_id="audio", bvid="ximalaya_123456", title="喜马拉雅")
+    db.record_run(
+        run_id="rag",
+        bvid="rag_20260815_120000",
+        title="知识库查询",
+        record_type="rag_query",
+    )
+
+    page = db.list_runs(platforms=("bilibili", "ximalaya", "knowledge_base"))
+
+    assert {item.run_id for item in page.items} == {"bili", "audio", "rag"}
+    assert db.list_history_platform_counts() == [
+        ("bilibili", 1),
+        ("xiaoyuzhou", 1),
+        ("ximalaya", 1),
+        ("knowledge_base", 1),
+    ]
 
 
 def test_history_artifact_metadata_round_trips_and_links_timeline(tmp_path) -> None:

@@ -4,11 +4,18 @@ import json
 import logging
 from collections.abc import AsyncIterator
 from pathlib import Path
+from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
 from b2t.config import resolve_summarize_model_profile, resolve_summary_preset_name
+from b2t.download.bilibili_categories import (
+    get_bilibili_category_filter_tids,
+    get_bilibili_parent_tid,
+    get_bilibili_parent_tname,
+    get_bilibili_tname,
+)
 from b2t.download.metadata import VideoMetadata
 from b2t.download.yutto_cli import extract_bilibili_page_from_target_id
 from b2t.history import build_history_artifacts
@@ -18,10 +25,14 @@ from backend.dependencies import get_history_db, get_storage_backend
 from backend.download_registry import download_registry
 from backend.event_stream import event_broker, history_channel
 from backend.schemas import (
+    HistoryAuthorFilterOptionResponse,
+    HistoryCategoryFilterOptionResponse,
     HistoryDetailArtifactResponse,
     HistoryDetailResponse,
+    HistoryFilterOptionsResponse,
     HistoryItemResponse,
     HistoryListResponse,
+    HistoryPlatformFilterOptionResponse,
     HistoryRegenerateSummaryRequest,
 )
 from backend.services import _run_summary_only_from_existing
@@ -31,6 +42,13 @@ router = APIRouter()
 CUSTOM_SUMMARY_PRESET_VALUE = "__user_custom__"
 logger = logging.getLogger(__name__)
 _SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+_PLATFORM_NAMES = {
+    "bilibili": "Bilibili",
+    "xiaoyuzhou": "小宇宙",
+    "ximalaya": "喜马拉雅",
+    "upload": "本地上传",
+    "knowledge_base": "知识库查询",
+}
 
 
 def _storage_parent_key(storage_key: str) -> str:
@@ -178,6 +196,9 @@ def list_history(
     page_size: int = Query(default=20, ge=1, le=100),
     search: str = Query(default=""),
     record_type: str = Query(default=""),
+    platform: Annotated[list[str] | None, Query()] = None,
+    category_tid: Annotated[list[int] | None, Query()] = None,
+    author: Annotated[list[str] | None, Query()] = None,
 ) -> HistoryListResponse:
     try:
         db = get_history_db()
@@ -187,8 +208,27 @@ def list_history(
             detail=f"历史数据库初始化失败: {exc}",
         ) from exc
 
+    selected_category_tids = category_tid if isinstance(category_tid, list) else []
+    selected_authors = author if isinstance(author, list) else []
+    selected_platforms = platform if isinstance(platform, list) else []
+    expanded_category_tids = tuple(
+        sorted(
+            {
+                expanded_tid
+                for selected_tid in selected_category_tids
+                if selected_tid > 0
+                for expanded_tid in get_bilibili_category_filter_tids(selected_tid)
+            }
+        )
+    )
     result = db.list_runs(
-        page=page, page_size=page_size, search=search, record_type=record_type
+        page=page,
+        page_size=page_size,
+        search=search,
+        record_type=record_type,
+        platforms=tuple(selected_platforms),
+        category_tids=expanded_category_tids,
+        authors=tuple(selected_authors),
     )
     return HistoryListResponse(
         items=[
@@ -202,6 +242,9 @@ def list_history(
                 created_at=item.created_at,
                 has_summary=item.has_summary,
                 file_count=item.file_count,
+                tid=item.tid,
+                tname=get_bilibili_tname(item.tid),
+                parent_tname=get_bilibili_parent_tname(item.tid),
                 record_type=item.record_type,
             )
             for item in result.items
@@ -210,6 +253,83 @@ def list_history(
         page=result.page,
         page_size=result.page_size,
         has_more=result.has_more,
+    )
+
+
+@router.get("/api/history/filters", response_model=HistoryFilterOptionsResponse)
+def history_filter_options() -> HistoryFilterOptionsResponse:
+    try:
+        db = get_history_db()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"历史数据库初始化失败: {exc}",
+        ) from exc
+
+    category_counts = dict(db.list_history_category_counts())
+    grouped_tids: dict[int, list[int]] = {}
+    standalone_tids: list[int] = []
+    for tid in category_counts:
+        parent_tid = get_bilibili_parent_tid(tid)
+        if parent_tid > 0:
+            grouped_tids.setdefault(parent_tid, []).append(tid)
+        else:
+            standalone_tids.append(tid)
+
+    categories: list[HistoryCategoryFilterOptionResponse] = []
+    consumed_tids: set[int] = set()
+    for parent_tid in sorted(grouped_tids, key=get_bilibili_tname):
+        child_tids = sorted(grouped_tids[parent_tid], key=get_bilibili_tname)
+        group_count = category_counts.get(parent_tid, 0) + sum(
+            category_counts[child_tid] for child_tid in child_tids
+        )
+        categories.append(
+            HistoryCategoryFilterOptionResponse(
+                tid=parent_tid,
+                tname=get_bilibili_tname(parent_tid),
+                count=group_count,
+                is_parent=True,
+            )
+        )
+        consumed_tids.add(parent_tid)
+        for child_tid in child_tids:
+            categories.append(
+                HistoryCategoryFilterOptionResponse(
+                    tid=child_tid,
+                    tname=get_bilibili_tname(child_tid),
+                    parent_tid=parent_tid,
+                    parent_tname=get_bilibili_tname(parent_tid),
+                    count=category_counts[child_tid],
+                )
+            )
+            consumed_tids.add(child_tid)
+
+    categories.extend(
+        HistoryCategoryFilterOptionResponse(
+            tid=tid,
+            tname=get_bilibili_tname(tid),
+            count=category_counts[tid],
+        )
+        for tid in sorted(standalone_tids, key=get_bilibili_tname)
+        if tid not in consumed_tids and get_bilibili_tname(tid)
+    )
+    authors = [
+        HistoryAuthorFilterOptionResponse(author=author, count=count)
+        for author, count in db.list_history_author_counts()
+    ]
+    platforms = [
+        HistoryPlatformFilterOptionResponse(
+            platform=platform,
+            name=_PLATFORM_NAMES[platform],
+            count=count,
+        )
+        for platform, count in db.list_history_platform_counts()
+        if platform in _PLATFORM_NAMES
+    ]
+    return HistoryFilterOptionsResponse(
+        platforms=platforms,
+        categories=categories,
+        authors=authors,
     )
 
 

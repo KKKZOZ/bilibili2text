@@ -1,5 +1,12 @@
 <script setup>
-  import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+  import {
+    computed,
+    nextTick,
+    onBeforeUnmount,
+    onMounted,
+    ref,
+    watch
+  } from 'vue'
   import { useRoute, useRouter } from 'vue-router'
   import { BookMarked, ExternalLink } from 'lucide-vue-next'
   import {
@@ -7,6 +14,7 @@
     ArrowLeft,
     Brain,
     CalendarDays,
+    ChevronDown,
     ChevronLeft,
     ChevronRight,
     ChevronsLeft,
@@ -15,7 +23,9 @@
     FileText,
     LoaderCircle,
     RefreshCw,
+    RotateCcw,
     Search,
+    SlidersHorizontal,
     Trash2,
     User,
     XCircle
@@ -71,7 +81,25 @@
   const historyHasMore = ref(false)
   const historyJumpPage = ref('')
   const historySearch = ref('')
-  const historyRecordType = ref('') // '' | 'transcription' | 'rag_query'
+  const historyPlatforms = ref([])
+  const historyCategoryTids = ref([])
+  const historyAuthors = ref([])
+  const historyPlatformOptions = ref([])
+  const historyCategoryOptions = ref([])
+  const historyAuthorOptions = ref([])
+  const historyPlatformMenuOpen = ref(false)
+  const historyCategoryMenuOpen = ref(false)
+  const historyAuthorMenuOpen = ref(false)
+  const historyPlatformFilterRef = ref(null)
+  const historyCategoryFilterRef = ref(null)
+  const historyAuthorFilterRef = ref(null)
+  const historyPlatformMenuRef = ref(null)
+  const historyCategoryMenuRef = ref(null)
+  const historyAuthorMenuRef = ref(null)
+  const historyPlatformMenuHasMore = ref(false)
+  const historyCategoryMenuHasMore = ref(false)
+  const historyAuthorMenuHasMore = ref(false)
+  const historyFiltersLoading = ref(false)
   const historyLoading = ref(false)
   const historyError = ref('')
   const historyDetail = ref(null)
@@ -232,6 +260,41 @@
   const historyTotalPages = computed(() =>
     Math.max(1, Math.ceil(historyTotal.value / historyPageSize.value))
   )
+  const hasActiveHistoryFilters = computed(
+    () =>
+      historyPlatforms.value.length > 0 ||
+      historyCategoryTids.value.length > 0 ||
+      historyAuthors.value.length > 0
+  )
+  const historyPlatformFilterLabel = computed(() => {
+    if (historyPlatforms.value.length === 0) return '全部平台'
+    if (historyPlatforms.value.length > 1) {
+      return `已选 ${historyPlatforms.value.length} 个平台`
+    }
+    return (
+      historyPlatformOptions.value.find(
+        (option) => option.platform === historyPlatforms.value[0]
+      )?.name || historyPlatforms.value[0]
+    )
+  })
+  const historyCategoryFilterLabel = computed(() => {
+    if (historyCategoryTids.value.length === 0) return '全部分区'
+    if (historyCategoryTids.value.length > 1) {
+      return `已选 ${historyCategoryTids.value.length} 个分区`
+    }
+    const selectedTid = historyCategoryTids.value[0]
+    return (
+      historyCategoryOptions.value.find((option) => option.tid === selectedTid)
+        ?.tname || '已选 1 个分区'
+    )
+  })
+  const historyAuthorFilterLabel = computed(() => {
+    if (historyAuthors.value.length === 0) return '全部 UP 主'
+    if (historyAuthors.value.length > 1) {
+      return `已选 ${historyAuthors.value.length} 位 UP 主`
+    }
+    return historyAuthors.value[0]
+  })
   const showHistorySkeleton = computed(
     () => historyLoading.value && historyItems.value.length === 0
   )
@@ -324,8 +387,15 @@
       })
       const q = historySearch.value.trim()
       if (q) params.set('search', q)
-      if (historyRecordType.value)
-        params.set('record_type', historyRecordType.value)
+      for (const platform of historyPlatforms.value) {
+        params.append('platform', platform)
+      }
+      for (const tid of historyCategoryTids.value) {
+        params.append('category_tid', String(tid))
+      }
+      for (const author of historyAuthors.value) {
+        params.append('author', author)
+      }
       const data = await historyApi.list(params)
       historyItems.value = data.items
       historyTotal.value = data.total
@@ -335,6 +405,28 @@
         err instanceof Error ? err.message : '获取历史记录失败'
     } finally {
       historyLoading.value = false
+    }
+  }
+
+  const loadHistoryFilters = async () => {
+    historyFiltersLoading.value = true
+    try {
+      const data = await historyApi.getFilters()
+      historyPlatformOptions.value = Array.isArray(data.platforms)
+        ? data.platforms
+        : []
+      historyCategoryOptions.value = Array.isArray(data.categories)
+        ? data.categories
+        : []
+      historyAuthorOptions.value = Array.isArray(data.authors)
+        ? data.authors
+        : []
+    } catch {
+      historyPlatformOptions.value = []
+      historyCategoryOptions.value = []
+      historyAuthorOptions.value = []
+    } finally {
+      historyFiltersLoading.value = false
     }
   }
 
@@ -615,8 +707,90 @@
     }, 400)
   }
 
-  const setRecordType = (type) => {
-    historyRecordType.value = type
+  const applyHistoryFilterSelection = (selection, value, checked) => {
+    selection.value = checked
+      ? [...selection.value, value]
+      : selection.value.filter((item) => item !== value)
+    historyPage.value = 1
+    loadHistory()
+  }
+
+  const toggleHistoryPlatform = (platform, checked) => {
+    applyHistoryFilterSelection(historyPlatforms, platform, checked)
+  }
+
+  const toggleHistoryCategory = (tid, checked) => {
+    applyHistoryFilterSelection(historyCategoryTids, tid, checked)
+  }
+
+  const toggleHistoryAuthor = (author, checked) => {
+    applyHistoryFilterSelection(historyAuthors, author, checked)
+  }
+
+  const closeHistoryFilterMenus = () => {
+    historyPlatformMenuOpen.value = false
+    historyCategoryMenuOpen.value = false
+    historyAuthorMenuOpen.value = false
+    historyPlatformMenuHasMore.value = false
+    historyCategoryMenuHasMore.value = false
+    historyAuthorMenuHasMore.value = false
+  }
+
+  const updateHistoryFilterScrollHint = (menu, element) => {
+    const hasMore = Boolean(
+      element &&
+      element.scrollHeight - element.scrollTop - element.clientHeight > 2
+    )
+    if (menu === 'platform') historyPlatformMenuHasMore.value = hasMore
+    if (menu === 'category') historyCategoryMenuHasMore.value = hasMore
+    if (menu === 'author') historyAuthorMenuHasMore.value = hasMore
+  }
+
+  const onHistoryFilterMenuScroll = (menu, event) => {
+    updateHistoryFilterScrollHint(menu, event.currentTarget)
+  }
+
+  const toggleHistoryFilterMenu = (menu) => {
+    const nextOpen =
+      menu === 'platform'
+        ? !historyPlatformMenuOpen.value
+        : menu === 'category'
+          ? !historyCategoryMenuOpen.value
+          : !historyAuthorMenuOpen.value
+    closeHistoryFilterMenus()
+    if (menu === 'platform') historyPlatformMenuOpen.value = nextOpen
+    if (menu === 'category') historyCategoryMenuOpen.value = nextOpen
+    if (menu === 'author') historyAuthorMenuOpen.value = nextOpen
+    if (nextOpen) {
+      nextTick(() => {
+        const element =
+          menu === 'platform'
+            ? historyPlatformMenuRef.value
+            : menu === 'category'
+              ? historyCategoryMenuRef.value
+              : historyAuthorMenuRef.value
+        updateHistoryFilterScrollHint(menu, element)
+      })
+    }
+  }
+
+  const onHistoryFilterPointerDown = (event) => {
+    const target = event.target
+    if (
+      historyPlatformFilterRef.value?.contains(target) ||
+      historyCategoryFilterRef.value?.contains(target) ||
+      historyAuthorFilterRef.value?.contains(target)
+    ) {
+      return
+    }
+    closeHistoryFilterMenus()
+  }
+
+  const resetHistoryFilters = () => {
+    historyPlatforms.value = []
+    historyCategoryTids.value = []
+    historyAuthors.value = []
+    closeHistoryFilterMenus()
     historyPage.value = 1
     loadHistory()
   }
@@ -674,6 +848,7 @@
       }
       // Reload list
       await loadHistory()
+      await loadHistoryFilters()
       deleteConfirmRunId.value = null
     } catch (err) {
       historyError.value = err instanceof Error ? err.message : '删除失败'
@@ -710,11 +885,13 @@
 
   onMounted(() => {
     loadHistory()
+    loadHistoryFilters()
     if (routeRunId.value) {
       loadHistoryDetail(routeRunId.value)
     }
     syncActiveJobEvents()
     window.addEventListener('storage', onActiveJobsStorage)
+    document.addEventListener('pointerdown', onHistoryFilterPointerDown)
   })
 
   watch(routeRunId, (runId) => {
@@ -759,6 +936,7 @@
     stopActiveJobsEvents()
     stopActiveJobsPolling()
     window.removeEventListener('storage', onActiveJobsStorage)
+    document.removeEventListener('pointerdown', onHistoryFilterPointerDown)
   })
 </script>
 
@@ -1062,31 +1240,6 @@
     <article v-else class="panel panel-history">
       <header class="history-list-header">
         <h2>历史记录</h2>
-        <div class="history-type-tabs">
-          <button
-            class="history-type-tab"
-            :class="{ active: historyRecordType === '' }"
-            @click="setRecordType('')"
-          >
-            全部
-          </button>
-          <button
-            class="history-type-tab"
-            :class="{ active: historyRecordType === 'transcription' }"
-            @click="setRecordType('transcription')"
-          >
-            <FileText :size="13" />
-            转录记录
-          </button>
-          <button
-            class="history-type-tab"
-            :class="{ active: historyRecordType === 'rag_query' }"
-            @click="setRecordType('rag_query')"
-          >
-            <Brain :size="13" />
-            知识库查询
-          </button>
-        </div>
         <div class="history-search-row">
           <Search :size="16" />
           <input
@@ -1147,6 +1300,207 @@
             <XCircle :size="16" />
           </button>
         </div>
+      </div>
+
+      <div class="history-filter-bar">
+        <div class="history-filter-heading">
+          <SlidersHorizontal :size="15" />
+          <span>筛选</span>
+        </div>
+        <div ref="historyPlatformFilterRef" class="history-filter-field">
+          <span>平台</span>
+          <button
+            type="button"
+            class="history-filter-trigger"
+            :class="{ active: historyPlatforms.length > 0 }"
+            :disabled="historyFiltersLoading"
+            :aria-expanded="historyPlatformMenuOpen"
+            @click="toggleHistoryFilterMenu('platform')"
+          >
+            <span>{{ historyPlatformFilterLabel }}</span>
+            <ChevronDown :size="15" />
+          </button>
+          <div v-if="historyPlatformMenuOpen" class="history-filter-menu-shell">
+            <div
+              ref="historyPlatformMenuRef"
+              class="history-filter-menu"
+              :class="{
+                'history-filter-menu-has-more': historyPlatformMenuHasMore
+              }"
+              role="group"
+              aria-label="平台筛选"
+              @scroll="onHistoryFilterMenuScroll('platform', $event)"
+            >
+              <label
+                v-for="option in historyPlatformOptions"
+                :key="option.platform"
+                class="history-filter-option"
+              >
+                <input
+                  type="checkbox"
+                  :checked="historyPlatforms.includes(option.platform)"
+                  @change="
+                    toggleHistoryPlatform(
+                      option.platform,
+                      $event.target.checked
+                    )
+                  "
+                />
+                <span>{{ option.name }}</span>
+                <span class="history-filter-option-count">{{
+                  option.count
+                }}</span>
+              </label>
+              <span
+                v-if="historyPlatformOptions.length === 0"
+                class="history-filter-empty"
+              >
+                暂无平台
+              </span>
+            </div>
+            <div
+              v-if="historyPlatformMenuHasMore"
+              class="history-filter-scroll-hint"
+              aria-hidden="true"
+            >
+              <span>向下滚动查看更多</span>
+              <ChevronDown :size="14" />
+            </div>
+          </div>
+        </div>
+        <div ref="historyCategoryFilterRef" class="history-filter-field">
+          <span>分区</span>
+          <button
+            type="button"
+            class="history-filter-trigger"
+            :class="{ active: historyCategoryTids.length > 0 }"
+            :disabled="historyFiltersLoading"
+            :aria-expanded="historyCategoryMenuOpen"
+            @click="toggleHistoryFilterMenu('category')"
+          >
+            <span>{{ historyCategoryFilterLabel }}</span>
+            <ChevronDown :size="15" />
+          </button>
+          <div v-if="historyCategoryMenuOpen" class="history-filter-menu-shell">
+            <div
+              ref="historyCategoryMenuRef"
+              class="history-filter-menu"
+              :class="{
+                'history-filter-menu-has-more': historyCategoryMenuHasMore
+              }"
+              role="group"
+              aria-label="分区筛选"
+              @scroll="onHistoryFilterMenuScroll('category', $event)"
+            >
+              <label
+                v-for="option in historyCategoryOptions"
+                :key="`${option.tid}-${option.is_parent ? 'parent' : 'item'}`"
+                class="history-filter-option"
+                :class="{
+                  'history-filter-option-child': option.parent_tid,
+                  'history-filter-option-parent': option.is_parent
+                }"
+              >
+                <input
+                  type="checkbox"
+                  :checked="historyCategoryTids.includes(option.tid)"
+                  @change="
+                    toggleHistoryCategory(option.tid, $event.target.checked)
+                  "
+                />
+                <span>
+                  {{
+                    option.is_parent ? `${option.tname} · 全部` : option.tname
+                  }}
+                </span>
+                <span class="history-filter-option-count">{{
+                  option.count
+                }}</span>
+              </label>
+              <span
+                v-if="historyCategoryOptions.length === 0"
+                class="history-filter-empty"
+              >
+                暂无分区
+              </span>
+            </div>
+            <div
+              v-if="historyCategoryMenuHasMore"
+              class="history-filter-scroll-hint"
+              aria-hidden="true"
+            >
+              <span>向下滚动查看更多</span>
+              <ChevronDown :size="14" />
+            </div>
+          </div>
+        </div>
+        <div ref="historyAuthorFilterRef" class="history-filter-field">
+          <span>UP 主</span>
+          <button
+            type="button"
+            class="history-filter-trigger"
+            :class="{ active: historyAuthors.length > 0 }"
+            :disabled="historyFiltersLoading"
+            :aria-expanded="historyAuthorMenuOpen"
+            @click="toggleHistoryFilterMenu('author')"
+          >
+            <span>{{ historyAuthorFilterLabel }}</span>
+            <ChevronDown :size="15" />
+          </button>
+          <div v-if="historyAuthorMenuOpen" class="history-filter-menu-shell">
+            <div
+              ref="historyAuthorMenuRef"
+              class="history-filter-menu"
+              :class="{
+                'history-filter-menu-has-more': historyAuthorMenuHasMore
+              }"
+              role="group"
+              aria-label="UP 主筛选"
+              @scroll="onHistoryFilterMenuScroll('author', $event)"
+            >
+              <label
+                v-for="option in historyAuthorOptions"
+                :key="option.author"
+                class="history-filter-option"
+              >
+                <input
+                  type="checkbox"
+                  :checked="historyAuthors.includes(option.author)"
+                  @change="
+                    toggleHistoryAuthor(option.author, $event.target.checked)
+                  "
+                />
+                <span>{{ option.author }}</span>
+                <span class="history-filter-option-count">{{
+                  option.count
+                }}</span>
+              </label>
+              <span
+                v-if="historyAuthorOptions.length === 0"
+                class="history-filter-empty"
+              >
+                暂无 UP 主
+              </span>
+            </div>
+            <div
+              v-if="historyAuthorMenuHasMore"
+              class="history-filter-scroll-hint"
+              aria-hidden="true"
+            >
+              <span>向下滚动查看更多</span>
+              <ChevronDown :size="14" />
+            </div>
+          </div>
+        </div>
+        <button
+          type="button"
+          class="history-filter-reset"
+          :disabled="!hasActiveHistoryFilters"
+          @click="resetHistoryFilters"
+        >
+          <RotateCcw :size="14" />
+          <span>重置</span>
+        </button>
       </div>
 
       <div
@@ -1217,6 +1571,18 @@
               </span>
             </div>
             <div class="history-item-meta">
+              <span
+                v-if="item.parent_tname"
+                class="history-category-tag history-category-tag-parent"
+              >
+                {{ item.parent_tname }}
+              </span>
+              <span
+                v-if="item.tname"
+                class="history-category-tag history-category-tag-child"
+              >
+                {{ item.tname }}
+              </span>
               <span v-if="item.pubdate" class="history-pubdate">
                 <CalendarDays :size="13" />
                 发布时间：{{ item.pubdate }}
@@ -1394,43 +1760,6 @@
     flex-wrap: wrap;
   }
 
-  .history-type-tabs {
-    display: flex;
-    gap: 4px;
-    background: rgba(148, 163, 184, 0.1);
-    border-radius: 10px;
-    padding: 3px;
-  }
-
-  .history-type-tab {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    padding: 5px 12px;
-    border: none;
-    border-radius: 7px;
-    background: transparent;
-    color: var(--text-muted, #64748b);
-    font-size: 0.82rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition:
-      background 0.15s,
-      color 0.15s;
-    white-space: nowrap;
-  }
-
-  .history-type-tab:hover {
-    background: rgba(255, 255, 255, 0.7);
-    color: var(--text-soft, #334155);
-  }
-
-  .history-type-tab.active {
-    background: #fff;
-    color: var(--brand-strong, #0f766e);
-    box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
-  }
-
   .history-record-badge {
     display: inline-flex;
     align-items: center;
@@ -1489,6 +1818,225 @@
     color: var(--text-main);
     height: 38px;
     font-size: 0.9rem;
+  }
+
+  .history-filter-bar {
+    display: grid;
+    grid-template-columns:
+      auto minmax(140px, 0.8fr) minmax(170px, 1fr) minmax(190px, 1.2fr)
+      auto;
+    align-items: end;
+    gap: 12px;
+    margin: 18px -28px 0;
+    padding: 12px 28px;
+    border-top: 1px solid rgba(148, 163, 184, 0.2);
+    border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+    background: #f8fafc;
+  }
+
+  .history-filter-heading {
+    display: inline-flex;
+    align-items: center;
+    align-self: center;
+    gap: 6px;
+    color: #475569;
+    font-size: 0.82rem;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .history-filter-heading svg {
+    color: #0f766e;
+  }
+
+  .history-filter-field {
+    position: relative;
+    display: grid;
+    gap: 5px;
+    min-width: 0;
+  }
+
+  .history-filter-field > span {
+    color: #64748b;
+    font-size: 0.72rem;
+    font-weight: 700;
+  }
+
+  .history-filter-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    min-width: 0;
+    height: 36px;
+    padding: 0 9px 0 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background: #fff;
+    color: #334155;
+    font: inherit;
+    font-size: 0.82rem;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .history-filter-trigger > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .history-filter-trigger svg {
+    flex-shrink: 0;
+    color: #64748b;
+    transition: transform 0.15s ease;
+  }
+
+  .history-filter-trigger[aria-expanded='true'] svg {
+    transform: rotate(180deg);
+  }
+
+  .history-filter-trigger:hover:not(:disabled),
+  .history-filter-trigger.active {
+    border-color: #94a3b8;
+  }
+
+  .history-filter-trigger:focus-visible {
+    border-color: #14b8a6;
+    outline: 3px solid rgba(20, 184, 166, 0.14);
+  }
+
+  .history-filter-trigger:disabled {
+    cursor: wait;
+    opacity: 0.65;
+  }
+
+  .history-filter-menu-shell {
+    position: absolute;
+    z-index: 20;
+    top: calc(100% + 6px);
+    left: 0;
+    width: max(100%, 220px);
+    max-width: min(320px, calc(100vw - 40px));
+  }
+
+  .history-filter-menu {
+    width: 100%;
+    max-height: 280px;
+    overflow-y: auto;
+    padding: 5px;
+    box-sizing: border-box;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background: #fff;
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.16);
+  }
+
+  .history-filter-menu-has-more {
+    padding-bottom: 38px;
+  }
+
+  .history-filter-scroll-hint {
+    position: absolute;
+    right: 1px;
+    bottom: 1px;
+    left: 1px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 3px;
+    height: 45px;
+    padding-bottom: 7px;
+    box-sizing: border-box;
+    border-radius: 0 0 5px 5px;
+    background: linear-gradient(
+      to bottom,
+      rgba(255, 255, 255, 0),
+      rgba(255, 255, 255, 0.96) 48%
+    );
+    color: #64748b;
+    font-size: 0.7rem;
+    font-weight: 600;
+    pointer-events: none;
+  }
+
+  .history-filter-option {
+    display: grid;
+    grid-template-columns: 16px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    min-height: 34px;
+    padding: 5px 7px;
+    border-radius: 4px;
+    color: #334155;
+    font-size: 0.8rem;
+    cursor: pointer;
+  }
+
+  .history-filter-option:hover {
+    background: #f1f5f9;
+  }
+
+  .history-filter-option input {
+    width: 15px;
+    height: 15px;
+    margin: 0;
+    accent-color: #0f766e;
+  }
+
+  .history-filter-option > span:not(.history-filter-option-count) {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .history-filter-option-child {
+    padding-left: 23px;
+  }
+
+  .history-filter-option-parent {
+    font-weight: 700;
+  }
+
+  .history-filter-option-count {
+    color: #94a3b8;
+    font-size: 0.72rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .history-filter-empty {
+    display: block;
+    padding: 9px;
+    color: #94a3b8;
+    font-size: 0.78rem;
+    text-align: center;
+  }
+
+  .history-filter-reset {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    height: 36px;
+    padding: 0 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background: #fff;
+    color: #475569;
+    font-size: 0.78rem;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .history-filter-reset:hover:not(:disabled) {
+    border-color: #94a3b8;
+    background: #f1f5f9;
+  }
+
+  .history-filter-reset:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
   }
 
   /* ─── Skeleton loading ───────────────────────────────────────── */
@@ -1712,6 +2260,31 @@
     gap: 4px;
     font-size: 0.8rem;
     color: var(--text-muted);
+  }
+
+  .history-category-tag {
+    display: inline-flex;
+    align-items: center;
+    min-height: 22px;
+    padding: 2px 7px;
+    border: 1px solid transparent;
+    border-radius: 5px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  .history-category-tag-parent {
+    border-color: #cbd5e1;
+    background: #f8fafc;
+    color: #475569;
+  }
+
+  .history-category-tag-child {
+    border-color: #99f6e4;
+    background: #f0fdfa;
+    color: #0f766e;
   }
 
   .history-author-tag {
@@ -2346,6 +2919,15 @@
   /* ─── Responsive ─────────────────────────────────────────────── */
 
   @media (max-width: 980px) {
+    .history-filter-bar {
+      grid-template-columns: auto repeat(3, minmax(0, 1fr));
+    }
+
+    .history-filter-reset {
+      grid-column: 2 / -1;
+      justify-self: start;
+    }
+
     .history-regenerate-grid {
       grid-template-columns: 1fr;
     }
@@ -2357,19 +2939,24 @@
       align-items: stretch;
     }
 
-    .history-type-tabs {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .history-type-tab {
-      justify-content: center;
-      padding-inline: 8px;
-    }
-
     .history-search-row {
       max-width: none;
       min-width: 0;
+      width: 100%;
+    }
+
+    .history-filter-bar {
+      grid-template-columns: 1fr;
+      margin-inline: -20px;
+      padding-inline: 20px;
+    }
+
+    .history-filter-heading,
+    .history-filter-reset {
+      grid-column: auto;
+    }
+
+    .history-filter-reset {
       width: 100%;
     }
 

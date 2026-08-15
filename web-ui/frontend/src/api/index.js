@@ -75,6 +75,8 @@ export const processApi = {
 export const historyApi = {
   list: (params) =>
     requestJson(`/api/history?${params.toString()}`, {}, '获取历史记录失败'),
+  getFilters: () =>
+    requestJson('/api/history/filters', {}, '获取历史筛选项失败'),
   getDetail: (runId) =>
     requestJson(`/api/history/${encode(runId)}`, {}, '获取详情失败'),
   eventsUrl: (runId) => `/api/history/${encode(runId)}/events`,

@@ -138,6 +138,7 @@ def _resolve_existing_video_metadata(
     author_uid = 0
     description = ""
     aid = 0
+    tid = 0
 
     if not (resolved_title and resolved_author and resolved_pubdate):
         detail = _history_detail_for_existing_results(
@@ -175,6 +176,7 @@ def _resolve_existing_video_metadata(
             author_uid = platform_metadata.author_uid
             description = platform_metadata.description
             aid = platform_metadata.aid
+            tid = platform_metadata.tid
 
     if not (resolved_title or resolved_author or resolved_pubdate):
         return None
@@ -188,6 +190,7 @@ def _resolve_existing_video_metadata(
         pubdate_timestamp=pubdate_timestamp,
         description=description,
         aid=aid,
+        tid=tid,
     )
 
 
@@ -992,6 +995,7 @@ def _record_history(
         author = metadata.author if metadata else ""
         pubdate = metadata.pubdate if metadata else ""
         title = metadata.title if metadata else ""
+        tid = metadata.tid if metadata else 0
         file_results = {
             key: value
             for key, value in results.items()
@@ -1012,6 +1016,7 @@ def _record_history(
             title=title,
             author=author,
             pubdate=pubdate,
+            tid=tid,
             created_at=created_at,
             summary_preset=resolved_preset,
             summary_profile=resolved_profile,

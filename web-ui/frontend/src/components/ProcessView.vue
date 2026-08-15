@@ -73,7 +73,7 @@
   const preferBilibiliSubtitle = ref(true)
   const autoGenerateFancyHtml = ref(false)
   const includeComments = ref(true)
-  const commentLimit = ref(300)
+  const commentLimit = ref(200)
   const downloadAllComments = ref(false)
   const currentSkipSummary = ref(false)
   const isStarting = ref(false)
@@ -225,19 +225,19 @@
     }
     const parsed = Number(commentLimit.value)
     if (!Number.isFinite(parsed)) {
-      return 300
+      return 200
     }
     return Math.min(1000, Math.max(1, Math.floor(parsed)))
   })
 
   const adjustCommentLimit = (delta) => {
     const current = Number(commentLimit.value)
-    const base = Number.isFinite(current) ? Math.floor(current) : 300
+    const base = Number.isFinite(current) ? Math.floor(current) : 200
     commentLimit.value = Math.min(1000, Math.max(1, base + delta))
   }
 
   const normalizeCommentLimitInput = () => {
-    commentLimit.value = normalizedCommentLimit.value ?? 300
+    commentLimit.value = normalizedCommentLimit.value ?? 200
   }
 
   const previewedSummaryPresetText = computed(() =>
@@ -833,29 +833,8 @@
       <article class="panel panel-main">
         <header class="header">
           <h1>bilibili-to-text</h1>
-          <p>
-            {{
-              allowUpload
-                ? isOpenPublic
-                  ? '输入 B 站视频链接，或上传音频/视频生成临时转录和大模型总结。'
-                  : '输入 B 站视频链接，或上传符合命名规范的音频文件，自动生成转录内容和大模型总结。'
-                : '输入 B 站视频链接，自动生成转录内容和大模型总结。'
-            }}
-          </p>
-          <div class="hero-meta">
-            <span class="hero-pill">
-              {{ isRunning ? '处理中' : '准备就绪' }}
-            </span>
+          <div v-if="job.is_ephemeral_upload" class="hero-meta">
             <span class="hero-pill hero-pill-soft">
-              总结{{ enableSummary ? '已开启' : '已关闭' }}
-            </span>
-            <span v-if="enableSummary" class="hero-pill hero-pill-soft">
-              Fancy HTML{{ autoGenerateFancyHtml ? '自动生成' : '手动生成' }}
-            </span>
-            <span
-              v-if="job.is_ephemeral_upload"
-              class="hero-pill hero-pill-soft"
-            >
               临时结果 2 小时后删除
             </span>
           </div>
@@ -918,21 +897,42 @@
                 >支持 Bilibili / 小宇宙 / 喜马拉雅链接，自动下载音频并转录</span
               >
             </div>
-            <label class="switch" for="prefer-bilibili-subtitle">
-              <input
-                id="prefer-bilibili-subtitle"
-                v-model="preferBilibiliSubtitle"
-                type="checkbox"
-              />
-              <span class="switch-track">
-                <span class="switch-thumb"></span>
+            <div class="option-toggle-row">
+              <label class="switch" for="prefer-bilibili-subtitle">
+                <input
+                  id="prefer-bilibili-subtitle"
+                  v-model="preferBilibiliSubtitle"
+                  type="checkbox"
+                />
+                <span class="switch-track">
+                  <span class="switch-thumb"></span>
+                </span>
+                <span class="switch-label">优先使用 B 站字幕</span>
+              </label>
+              <span class="option-help">
+                <button
+                  type="button"
+                  class="option-help-trigger"
+                  aria-label="查看优先使用 B 站字幕说明"
+                  aria-describedby="bilibili-subtitle-help-tooltip"
+                >
+                  <CircleHelp :size="15" aria-hidden="true" />
+                </button>
+                <span
+                  id="bilibili-subtitle-help-tooltip"
+                  class="option-help-tooltip"
+                  role="tooltip"
+                >
+                  仅对 B
+                  站视频生效。开启后会优先读取视频已有字幕，跳过音频转文字步骤，因此处理速度更快、转录成本更低；但转录质量取决于
+                  B 站已有字幕。没有可用字幕或读取失败时，会自动回退到音频转录。
+                </span>
               </span>
-              <span class="switch-label">优先使用 B 站字幕</span>
-            </label>
+            </div>
             <div
               class="summary-preset process-summary-field process-summary-toggle comments-summary-field"
             >
-              <div class="comments-summary-toggle-row">
+              <div class="option-toggle-row">
                 <label class="switch switch-compact" for="include-comments">
                   <input
                     id="include-comments"
@@ -944,21 +944,21 @@
                   </span>
                   <span class="switch-label">总结精选评论</span>
                 </label>
-                <span class="comments-help">
+                <span class="option-help">
                   <button
                     type="button"
-                    class="comments-help-trigger"
+                    class="option-help-trigger"
                     aria-label="查看精选评论下载说明"
                     aria-describedby="comments-help-tooltip"
                   >
-                    <CircleHelp :size="17" aria-hidden="true" />
+                    <CircleHelp :size="15" aria-hidden="true" />
                   </button>
                   <span
                     id="comments-help-tooltip"
-                    class="comments-help-tooltip"
+                    class="option-help-tooltip"
                     role="tooltip"
                   >
-                    支持 B 站和小宇宙。默认按热门排序下载前 300
+                    支持 B 站和小宇宙。默认按热门排序下载前 200
                     条主评论；每条主评论的全部子评论都会下载，UP主回复会加粗。打开“下载全部主评论”后不限制主评论数量。
                   </span>
                 </span>
@@ -1750,28 +1750,39 @@
     gap: 10px;
   }
 
-  .comments-summary-toggle-row {
+  .option-toggle-row {
     display: flex;
     align-items: center;
-    gap: 7px;
+    gap: 3px;
+    min-height: 26px;
   }
 
-  .comments-summary-toggle-row .switch {
+  .option-toggle-row .switch {
+    align-self: center;
     margin-top: 0;
   }
 
-  .comments-help {
+  .option-toggle-row .switch-label {
+    display: inline-flex;
+    align-items: center;
+    min-height: 26px;
+    line-height: 1.25;
+  }
+
+  .option-help {
     position: relative;
     display: inline-flex;
     align-items: center;
+    align-self: center;
+    height: 26px;
   }
 
-  .comments-help-trigger {
+  .option-help-trigger {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 24px;
-    height: 24px;
+    width: 26px;
+    height: 26px;
     padding: 0;
     border: 0;
     border-radius: 50%;
@@ -1780,18 +1791,18 @@
     cursor: help;
   }
 
-  .comments-help-trigger:hover,
-  .comments-help-trigger:focus-visible {
+  .option-help-trigger:hover,
+  .option-help-trigger:focus-visible {
     background: #f1f5f9;
     color: #0f766e;
     outline: none;
   }
 
-  .comments-help-trigger:focus-visible {
+  .option-help-trigger:focus-visible {
     box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.18);
   }
 
-  .comments-help-tooltip {
+  .option-help-tooltip {
     position: absolute;
     left: 50%;
     bottom: calc(100% + 8px);
@@ -1814,8 +1825,8 @@
       transform 0.16s ease;
   }
 
-  .comments-help:hover .comments-help-tooltip,
-  .comments-help:focus-within .comments-help-tooltip {
+  .option-help:hover .option-help-tooltip,
+  .option-help:focus-within .option-help-tooltip {
     opacity: 1;
     transform: translate(-50%, 0);
   }

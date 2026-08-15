@@ -23,7 +23,7 @@ from b2t.download.url_detect import extract_platform_id
 logger = logging.getLogger(__name__)
 
 BILIBILI_VIDEO_COMMENT_TYPE = 1
-DEFAULT_COMMENT_LIMIT = 500
+DEFAULT_COMMENT_LIMIT = 200
 MAX_PAGE_SIZE = 20
 XIAOYUZHOU_PAGE_SIZE = 20
 BILIBILI_WBI_WEB_LOCATION = 1315875

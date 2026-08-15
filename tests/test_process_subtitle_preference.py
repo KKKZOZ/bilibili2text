@@ -6,6 +6,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "web-ui"))
 from backend.routes import process
 from backend.schemas import ProcessRequest
 
+from b2t.download.comments import DEFAULT_COMMENT_LIMIT
+
+
+def test_process_comment_limit_matches_shared_default() -> None:
+    request = ProcessRequest(url="BV1ABcsztEcY")
+
+    assert DEFAULT_COMMENT_LIMIT == 200
+    assert request.comment_limit == DEFAULT_COMMENT_LIMIT
+
 
 def test_process_video_passes_bilibili_subtitle_preference(monkeypatch) -> None:
     captured: dict[str, object] = {}

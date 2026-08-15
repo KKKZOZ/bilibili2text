@@ -1,5 +1,5 @@
 <script setup>
-  import { ref, computed } from 'vue'
+  import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
   import { ragApi, summaryApi } from '../api'
   import { useConversion } from '../composables/useConversion'
   import {
@@ -83,6 +83,7 @@
   const selectedAuthors = ref([])
   const showAuthorFilter = ref(false)
   const authorsLoaded = ref(false)
+  const authorFilterRef = ref(null)
 
   const filterLabel = computed(() =>
     selectedAuthors.value.length === 0
@@ -94,7 +95,9 @@
     if (authorsLoaded.value) return
     try {
       const data = await ragApi.getAuthors()
-      authorList.value = data.authors || []
+      authorList.value = [...(data.authors || [])].sort(
+        (left, right) => right.indexed_run_count - left.indexed_run_count
+      )
       authorsLoaded.value = true
     } catch {}
   }
@@ -111,6 +114,20 @@
   }
 
   const isAuthorSelected = (author) => selectedAuthors.value.includes(author)
+
+  const onDocumentPointerDown = (event) => {
+    if (!showAuthorFilter.value) return
+    if (authorFilterRef.value?.contains(event.target)) return
+    showAuthorFilter.value = false
+  }
+
+  onMounted(() => {
+    document.addEventListener('mousedown', onDocumentPointerDown)
+  })
+
+  onBeforeUnmount(() => {
+    document.removeEventListener('mousedown', onDocumentPointerDown)
+  })
 
   // ─── Index state ──────────────────────────────────────────────────
   const indexStatus = ref(null)
@@ -320,8 +337,18 @@
         </div>
         <div class="filters-row">
           <!-- Author filter -->
-          <div class="author-filter">
-            <button class="author-filter-toggle" @click="toggleAuthorFilter">
+          <div
+            ref="authorFilterRef"
+            class="author-filter"
+            @keydown.esc.stop="showAuthorFilter = false"
+          >
+            <button
+              type="button"
+              class="author-filter-toggle"
+              aria-haspopup="listbox"
+              :aria-expanded="showAuthorFilter ? 'true' : 'false'"
+              @click="toggleAuthorFilter"
+            >
               <Users :size="13" />
               <span>{{ filterLabel }}</span>
               <ChevronDown
