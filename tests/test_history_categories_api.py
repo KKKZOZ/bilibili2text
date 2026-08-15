@@ -85,6 +85,14 @@ def test_history_filter_options_include_category_hierarchy_and_authors(
 
     response = history_routes.history_filter_options()
 
+    assert [option.tid for option in response.categories] == [
+        36,
+        207,
+        208,
+        174,
+        160,
+        21,
+    ]
     categories = {option.tid: option for option in response.categories}
     assert categories[36].tname == "知识"
     assert categories[36].is_parent is True

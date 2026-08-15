@@ -276,22 +276,31 @@ def history_filter_options() -> HistoryFilterOptionsResponse:
         else:
             standalone_tids.append(tid)
 
+    def group_count(tid: int) -> int:
+        return category_counts.get(tid, 0) + sum(
+            category_counts[child_tid] for child_tid in grouped_tids.get(tid, [])
+        )
+
+    top_level_tids = set(standalone_tids) | set(grouped_tids)
+    ordered_top_level_tids = sorted(
+        (tid for tid in top_level_tids if get_bilibili_tname(tid)),
+        key=lambda tid: (-group_count(tid), get_bilibili_tname(tid)),
+    )
+
     categories: list[HistoryCategoryFilterOptionResponse] = []
-    consumed_tids: set[int] = set()
-    for parent_tid in sorted(grouped_tids, key=get_bilibili_tname):
-        child_tids = sorted(grouped_tids[parent_tid], key=get_bilibili_tname)
-        group_count = category_counts.get(parent_tid, 0) + sum(
-            category_counts[child_tid] for child_tid in child_tids
+    for parent_tid in ordered_top_level_tids:
+        child_tids = sorted(
+            grouped_tids.get(parent_tid, []),
+            key=lambda tid: (-category_counts[tid], get_bilibili_tname(tid)),
         )
         categories.append(
             HistoryCategoryFilterOptionResponse(
                 tid=parent_tid,
                 tname=get_bilibili_tname(parent_tid),
-                count=group_count,
-                is_parent=True,
+                count=group_count(parent_tid),
+                is_parent=bool(child_tids),
             )
         )
-        consumed_tids.add(parent_tid)
         for child_tid in child_tids:
             categories.append(
                 HistoryCategoryFilterOptionResponse(
@@ -302,17 +311,6 @@ def history_filter_options() -> HistoryFilterOptionsResponse:
                     count=category_counts[child_tid],
                 )
             )
-            consumed_tids.add(child_tid)
-
-    categories.extend(
-        HistoryCategoryFilterOptionResponse(
-            tid=tid,
-            tname=get_bilibili_tname(tid),
-            count=category_counts[tid],
-        )
-        for tid in sorted(standalone_tids, key=get_bilibili_tname)
-        if tid not in consumed_tids and get_bilibili_tname(tid)
-    )
     authors = [
         HistoryAuthorFilterOptionResponse(author=author, count=count)
         for author, count in db.list_history_author_counts()
