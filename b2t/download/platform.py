@@ -1,14 +1,15 @@
 """Platform abstraction: enum, metadata, and downloader interface."""
 
+import re
+import unicodedata
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-import re
-import unicodedata
-
 
 FILESYSTEM_COMPONENT_MAX_BYTES = 255
+TRANSCRIPTION_TITLE_MAX_LENGTH = 15
+TRANSCRIPTION_ARTIFACT_RESERVED_SUFFIX = "_summary_no_table.png"
 
 
 def truncate_utf8_bytes(text: str, max_bytes: int) -> str:
@@ -67,6 +68,41 @@ def sanitize_filename_component(text: str, max_length: int = 80) -> str:
         cleaned = cleaned[:max_length].rstrip(" .-")
     cleaned = truncate_utf8_bytes(cleaned, FILESYSTEM_COMPONENT_MAX_BYTES).rstrip(" .-")
     return cleaned or "untitled"
+
+
+def build_transcription_artifact_name(
+    name: str,
+    resource_id: str,
+    *,
+    preserve_extension: bool = False,
+) -> str:
+    """Build a transcription filename with a bounded human-readable title."""
+    suffix = Path(name).suffix if preserve_extension else ""
+    stem = name[: -len(suffix)] if suffix else name
+    resource_id = resource_id.strip()
+    if not resource_id:
+        raise ValueError("resource_id must not be empty")
+
+    if stem.lower().startswith(resource_id.lower()) and (
+        len(stem) == len(resource_id) or stem[len(resource_id)] in {"_", "-", " "}
+    ):
+        title = stem[len(resource_id) :].lstrip("_- ")
+    else:
+        title = stem
+
+    if not title:
+        return build_filename_component(resource_id, suffix=suffix)
+
+    safe_title = sanitize_filename_component(
+        title,
+        max_length=TRANSCRIPTION_TITLE_MAX_LENGTH,
+    )
+    return build_filename_component(
+        safe_title,
+        prefix=f"{resource_id}_",
+        suffix=suffix,
+        reserved_suffix=TRANSCRIPTION_ARTIFACT_RESERVED_SUFFIX,
+    )
 
 
 class Platform(Enum):

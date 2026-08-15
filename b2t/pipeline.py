@@ -21,7 +21,7 @@ from b2t.download.comments import (
     write_comments_markdown,
 )
 from b2t.download.metadata import VideoMetadata, get_video_metadata
-from b2t.download.platform import Platform, build_filename_component
+from b2t.download.platform import Platform, build_transcription_artifact_name
 from b2t.download.subtitle import fetch_bilibili_subtitle
 from b2t.download.url_detect import detect_platform
 from b2t.download.yutto import download_audio
@@ -46,7 +46,6 @@ from b2t.summarize.timeline import (
 
 logger = logging.getLogger(__name__)
 
-_LONGEST_DERIVED_ARTIFACT_SUFFIX = "_summary_no_table.png"
 _XIAOYUZHOU_BVID_PREFIX = f"{Platform.XIAOYUZHOU.value}_"
 
 
@@ -72,28 +71,11 @@ def _ensure_bvid_prefixed_name(
     *,
     preserve_extension: bool = False,
 ) -> str:
-    suffix = Path(name).suffix if preserve_extension else ""
-    stem = name[: -len(suffix)] if suffix else name
-    lowered = stem.lower()
-    bvid_lower = bvid.lower()
-    if lowered.startswith(bvid_lower):
-        prefix = stem[: len(bvid)]
-        remainder = stem[len(bvid) :]
-    else:
-        prefix = f"{bvid}_"
-        remainder = stem
-    return build_filename_component(
-        remainder,
-        prefix=prefix,
-        suffix=suffix,
-        reserved_suffix=_LONGEST_DERIVED_ARTIFACT_SUFFIX,
+    return build_transcription_artifact_name(
+        name,
+        bvid,
+        preserve_extension=preserve_extension,
     )
-
-
-def _safe_path_name(name: str) -> str:
-    cleaned = "".join("_" if char in '<>:"/\\|?*' else char for char in name)
-    cleaned = cleaned.strip(" .")
-    return cleaned or "untitled"
 
 
 def run_pipeline(
@@ -290,12 +272,10 @@ def run_pipeline(
             results["_metadata"] = metadata  # Temporarily store metadata for later use
 
         # Create workflow directory
-        if audio_file is None:
-            work_dir_name = (
-                f"{transcription_id}_{_safe_path_name(metadata.title)}"
-                if metadata and metadata.title
-                else transcription_id
-            )
+        if metadata and metadata.title:
+            work_dir_name = metadata.title
+        elif audio_file is None:
+            work_dir_name = transcription_id
         else:
             work_dir_name = audio_file.stem
         work_dir = transcribe_root / _ensure_bvid_prefixed_name(
@@ -389,7 +369,7 @@ def run_pipeline(
                 cancellation_token.raise_if_cancelled()
             # Move audio to work directory
             audio_filename = _ensure_bvid_prefixed_name(
-                audio_file.name,
+                f"{work_dir.name}{audio_file.suffix}",
                 transcription_id,
                 preserve_extension=True,
             )

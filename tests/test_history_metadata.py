@@ -47,6 +47,7 @@ def test_infer_title_moves_multipart_page_to_uppercase_suffix() -> None:
 
 def test_record_pipeline_run_persists_summary_metadata(tmp_path) -> None:
     db = HistoryDB(tmp_path)
+    full_title = "这是一个远远超过十五个字符但历史页面仍应完整展示的视频标题"
     results = _mock_results(
         markdown_key=("BV1AB411c7mD-11111111/BV1AB411c7mD_demo_transcription.md"),
         summary_key="BV1AB411c7mD-22222222/BV1AB411c7mD_demo_summary.md",
@@ -56,6 +57,7 @@ def test_record_pipeline_run_persists_summary_metadata(tmp_path) -> None:
         db=db,
         bvid="BV1AB411c7mD",
         results=results,
+        title=full_title,
         summary_preset="key_points",
         summary_profile="openrouter_default",
     )
@@ -63,6 +65,7 @@ def test_record_pipeline_run_persists_summary_metadata(tmp_path) -> None:
     assert run_id is not None
     detail = db.get_run_detail(run_id)
     assert detail is not None
+    assert detail.title == full_title
 
     summary_artifacts = [a for a in detail.artifacts if a.kind == "summary"]
     assert len(summary_artifacts) == 1

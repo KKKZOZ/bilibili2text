@@ -25,7 +25,7 @@ from b2t.download.comments import (
     write_comments_markdown,
 )
 from b2t.download.metadata import VideoMetadata
-from b2t.download.platform import Platform
+from b2t.download.platform import Platform, build_transcription_artifact_name
 from b2t.history import HistoryArtifact, infer_run_id, record_pipeline_run
 from b2t.storage import (
     SUMMARY_ARTIFACT_KINDS,
@@ -687,6 +687,24 @@ def _run_summary_only_from_existing(
             markdown_artifact,
             work_dir,
         )
+        source_stem = markdown_path.stem
+        if source_stem.lower().endswith("_transcription"):
+            source_stem = source_stem[: -len("_transcription")]
+        naming_source = (
+            f"{metadata.title}{markdown_path.suffix}"
+            if metadata is not None and metadata.title
+            else f"{source_stem}{markdown_path.suffix}"
+        )
+        shortened_markdown_path = markdown_path.with_name(
+            build_transcription_artifact_name(
+                naming_source,
+                transcription_id or bvid,
+                preserve_extension=True,
+            )
+        )
+        if shortened_markdown_path != markdown_path:
+            markdown_path.replace(shortened_markdown_path)
+            markdown_path = shortened_markdown_path
 
         comment_results: dict[str, StoredArtifact] = {}
         comments_markdown_text = ""
@@ -973,6 +991,7 @@ def _record_history(
             )
         author = metadata.author if metadata else ""
         pubdate = metadata.pubdate if metadata else ""
+        title = metadata.title if metadata else ""
         file_results = {
             key: value
             for key, value in results.items()
@@ -990,6 +1009,7 @@ def _record_history(
             db=db,
             bvid=bvid,
             results=file_results,
+            title=title,
             author=author,
             pubdate=pubdate,
             created_at=created_at,

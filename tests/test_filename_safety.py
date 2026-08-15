@@ -2,7 +2,13 @@ import json
 from pathlib import Path
 
 from b2t.config import create_app_config
-from b2t.download.platform import build_filename_component, truncate_utf8_bytes
+from b2t.download.platform import (
+    TRANSCRIPTION_TITLE_MAX_LENGTH,
+    build_filename_component,
+    build_transcription_artifact_name,
+    sanitize_filename_component,
+    truncate_utf8_bytes,
+)
 from b2t.pipeline import run_pipeline
 from b2t.storage.local import LocalStorageBackend
 
@@ -30,8 +36,30 @@ def test_build_filename_component_preserves_prefix_suffix_and_utf8_boundary() ->
     assert filename.startswith(prefix)
     assert filename.endswith(".m4a")
     assert len(filename.encode("utf-8")) <= 255
-    assert len(f"{Path(filename).stem}_summary_no_table.png".encode("utf-8")) <= 255
+    assert len(f"{Path(filename).stem}_summary_no_table.png".encode()) <= 255
     assert truncate_utf8_bytes("中文", 4) == "中"
+
+
+def test_transcription_artifact_name_limits_only_the_title() -> None:
+    resource_id = "BV1Hdgs6ME67"
+    title = (
+        "康师傅控股中报点评：方便面全面低增长，饮料纯靠茶在支撑，百事可乐等已经进入衰退"
+    )
+
+    filename = build_transcription_artifact_name(
+        f"{resource_id}_{title}.m4a",
+        resource_id,
+        preserve_extension=True,
+    )
+
+    expected_title = sanitize_filename_component(
+        title,
+        max_length=TRANSCRIPTION_TITLE_MAX_LENGTH,
+    )
+    assert filename == f"{resource_id}_{expected_title}.m4a"
+    assert f"{Path(filename).stem}_summary_desktop.png" == (
+        "BV1Hdgs6ME67_康师傅控股中报点评-方便面全面_summary_desktop.png"
+    )
 
 
 def test_pipeline_limits_long_utf8_names_without_losing_platform_id_or_extension(
@@ -78,3 +106,6 @@ def test_pipeline_limits_long_utf8_names_without_losing_platform_id_or_extension
     for artifact_path in artifact_paths:
         assert artifact_path.name.startswith(platform_id)
         assert len(artifact_path.name.encode("utf-8")) <= 255
+        title = artifact_path.stem.removeprefix(f"{platform_id}_")
+        title = title.removesuffix("_transcription")
+        assert len(title) <= TRANSCRIPTION_TITLE_MAX_LENGTH

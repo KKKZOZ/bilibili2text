@@ -381,7 +381,8 @@ def test_summary_only_fetches_xiaoyuzhou_metadata_without_redownloading_audio(
 
     def fake_summarize(*args, **kwargs):
         captured["metadata"] = kwargs["metadata"]
-        summary_path = Path(args[0]).with_name("xiaoyuzhou_episode-1_summary.md")
+        captured["markdown_name"] = Path(args[0]).name
+        summary_path = Path(args[0]).with_name(f"{Path(args[0]).stem}_summary.md")
         summary_path.write_text("# 总结\n", encoding="utf-8")
         return summary_path
 
@@ -413,6 +414,10 @@ def test_summary_only_fetches_xiaoyuzhou_metadata_without_redownloading_audio(
     assert isinstance(metadata, VideoMetadata)
     assert metadata.author == "wong永庆"
     assert metadata.pubdate == "2026-07-19 23:54:05"
+    assert captured["markdown_name"] == "xiaoyuzhou_episode-1_投资实战派 — E191 AI.md"
+    assert results["summary"].filename == (
+        "xiaoyuzhou_episode-1_投资实战派 — E191 AI_summary.md"
+    )
     assert isinstance(results["_metadata"], VideoMetadata)
     assert services_module._should_refresh_existing_summary_metadata(
         bvid="xiaoyuzhou_episode-1",

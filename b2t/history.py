@@ -803,6 +803,7 @@ def record_pipeline_run(
     db: HistoryDB,
     bvid: str,
     results: Mapping[str, StoredArtifact],
+    title: str = "",
     author: str = "",
     pubdate: str = "",
     created_at: str | None = None,
@@ -816,6 +817,7 @@ def record_pipeline_run(
         db: History database instance
         bvid: Bilibili video BV ID
         results: Mapping of artifact keys to StoredArtifact
+        title: Full resource title, independent of the shortened artifact filename
         author: Video author name
         pubdate: Video publish date (YYYY-MM-DD HH:MM:SS format)
         created_at: Record creation timestamp (ISO format)
@@ -831,7 +833,7 @@ def record_pipeline_run(
         return None
 
     run_id = infer_run_id(markdown.storage_key, bvid=bvid)
-    title = infer_title(markdown.filename, bvid=bvid)
+    record_title = title.strip() or infer_title(markdown.filename, bvid=bvid)
     artifacts = build_history_artifacts(
         file_results,
         summary_preset=summary_preset,
@@ -855,12 +857,14 @@ def record_pipeline_run(
                 author = existing.author
             if not pubdate.strip():
                 pubdate = existing.pubdate
+            if not title.strip() and existing.title.strip():
+                record_title = existing.title
     has_summary = any(artifact.kind in SUMMARY_ARTIFACT_KINDS for artifact in artifacts)
 
     db.record_run(
         run_id=run_id,
         bvid=bvid,
-        title=title,
+        title=record_title,
         author=author,
         pubdate=pubdate,
         created_at=created_at,
