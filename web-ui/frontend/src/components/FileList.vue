@@ -139,16 +139,6 @@
     kind === 'summary_no_table_png' ||
     kind === 'summary_table_png'
 
-  const resolveSummaryVariantLabel = (kind) =>
-    ({
-      summary_no_table: '无表格',
-      summary_fancy_html: 'Fancy HTML',
-      summary_table_md: '表格',
-      summary_table_png: '表格',
-      summary_table_pdf: '表格',
-      summary_timeline: '时间线'
-    })[kind] || ''
-
   const resolveSummaryProfileLabel = (profileName) => {
     const effectiveName = (profileName || '').trim()
     if (!effectiveName) {
@@ -292,8 +282,7 @@
           kind === 'summary_no_table_png' ||
           kind === 'summary_fancy_html',
         primaryTargetFormat: kind === 'summary_no_table' ? 'md_no_table' : '',
-        derivedFromSummary: isDerivedFromSummary,
-        variantLabel: resolveSummaryVariantLabel(kind)
+        derivedFromSummary: isDerivedFromSummary
       }
     }
 
@@ -785,49 +774,51 @@
           <div class="all-download-main">
             <div class="all-download-title-row">
               <p class="all-download-name">{{ item.displayName }}</p>
-              <button
-                v-if="canDeleteMarkdownArtifact(item)"
-                class="all-download-delete-icon"
-                type="button"
-                :disabled="isDeleting(item)"
-                :title="
-                  item.kind === 'summary_fancy_html'
-                    ? '删除该 Fancy HTML'
-                    : '删除该总结'
-                "
-                :aria-label="
-                  item.kind === 'summary_fancy_html'
-                    ? '删除该 Fancy HTML'
-                    : '删除该总结'
-                "
-                @click="requestDeleteArtifact(item)"
-              >
-                <LoaderCircle v-if="isDeleting(item)" :size="14" class="spin" />
-                <Trash2 v-else :size="14" />
-              </button>
+              <div class="all-download-title-meta">
+                <span class="all-download-format">{{ item.fileType }}</span>
+                <button
+                  v-if="canDeleteMarkdownArtifact(item)"
+                  class="all-download-delete-icon"
+                  type="button"
+                  :disabled="isDeleting(item)"
+                  :title="
+                    item.kind === 'summary_fancy_html'
+                      ? '删除该 Fancy HTML'
+                      : '删除该总结'
+                  "
+                  :aria-label="
+                    item.kind === 'summary_fancy_html'
+                      ? '删除该 Fancy HTML'
+                      : '删除该总结'
+                  "
+                  @click="requestDeleteArtifact(item)"
+                >
+                  <LoaderCircle
+                    v-if="isDeleting(item)"
+                    :size="14"
+                    class="spin"
+                  />
+                  <Trash2 v-else :size="14" />
+                </button>
+              </div>
             </div>
-            <div class="all-download-tags">
-              <span class="all-download-format">{{ item.fileType }}</span>
-              <span v-if="item.variantLabel" class="all-download-variant">
-                {{ item.variantLabel }}
-              </span>
-              <template
-                v-if="
-                  item.presetLabel &&
-                  (!item.derivedFromSummary || !item.parentSummaryRowId)
-                "
-              >
-                <span class="all-download-tag-label">总结模板</span>
-                <strong class="summary-context-preset">{{
-                  item.presetLabel
+            <div
+              v-if="
+                item.presetLabel &&
+                (!item.derivedFromSummary || !item.parentSummaryRowId)
+              "
+              class="all-download-tags"
+            >
+              <span class="all-download-tag-label">总结模板</span>
+              <strong class="summary-context-preset">{{
+                item.presetLabel
+              }}</strong>
+              <template v-if="item.modelProfileLabel">
+                <i aria-hidden="true"></i>
+                <span class="all-download-tag-label">模型</span>
+                <strong class="summary-context-profile">{{
+                  item.modelProfileLabel
                 }}</strong>
-                <template v-if="item.modelProfileLabel">
-                  <i aria-hidden="true"></i>
-                  <span class="all-download-tag-label">模型</span>
-                  <strong class="summary-context-profile">{{
-                    item.modelProfileLabel
-                  }}</strong>
-                </template>
               </template>
             </div>
           </div>
@@ -994,6 +985,13 @@
     font-size: 0.76rem;
   }
 
+  .all-download-title-meta {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 6px;
+  }
+
   .all-download-name {
     flex: 1;
     min-width: 0;
@@ -1033,24 +1031,11 @@
     cursor: not-allowed;
   }
 
-  .all-download-format,
-  .all-download-variant {
-    display: inline-flex;
-    align-items: center;
-    min-height: 22px;
-    padding: 0 7px;
-    border: 1px solid #b9dceb;
-    border-radius: 5px;
-    background: #eff8fc;
-    color: #17617f;
+  .all-download-format {
+    color: #7b8a9a;
     font-size: 0.7rem;
     font-weight: 700;
-  }
-
-  .all-download-variant {
-    border-color: #ccc8e6;
-    background: #f5f3fb;
-    color: #5c5386;
+    text-transform: uppercase;
   }
 
   .all-download-tags strong {

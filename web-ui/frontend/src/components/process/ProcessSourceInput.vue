@@ -3,6 +3,7 @@
   import {
     FileAudio2,
     FileVideo2,
+    Infinity as InfinityIcon,
     Link2,
     Minus,
     Plus,
@@ -166,52 +167,63 @@
         </div>
         <div v-if="includeComments" class="comments-options">
           <span class="comments-options-label">主评论数量</span>
-          <div
-            class="comment-range-segments"
-            role="group"
-            aria-label="主评论下载范围"
-          >
-            <button
-              type="button"
-              class="comment-range-segment"
-              :class="{ active: !downloadAllComments }"
-              @click="emit('update:downloadAllComments', false)"
+          <div class="comment-range-control">
+            <div
+              class="comment-range-segments"
+              role="group"
+              aria-label="主评论下载范围"
             >
-              指定数量
-            </button>
-            <button
-              type="button"
-              class="comment-range-segment"
-              :class="{ active: downloadAllComments }"
-              @click="emit('update:downloadAllComments', true)"
-            >
-              全部
-            </button>
-          </div>
-          <div v-if="!downloadAllComments" class="comment-limit-stepper">
-            <button
-              type="button"
-              aria-label="减少主评论数量"
-              @click="adjustCommentLimit(-10)"
-            >
-              <Minus :size="15" />
-            </button>
-            <input
-              :value="commentLimit"
-              type="number"
-              min="1"
-              max="1000"
-              aria-label="主评论数量"
-              @change="setCommentLimit($event.target.value)"
-            />
-            <span>条</span>
-            <button
-              type="button"
-              aria-label="增加主评论数量"
-              @click="adjustCommentLimit(10)"
-            >
-              <Plus :size="15" />
-            </button>
+              <button
+                type="button"
+                class="comment-range-segment"
+                :class="{ active: !downloadAllComments }"
+                :disabled="disabled"
+                @click="emit('update:downloadAllComments', false)"
+              >
+                指定数量
+              </button>
+              <button
+                type="button"
+                class="comment-range-segment"
+                :class="{ active: downloadAllComments }"
+                :disabled="disabled"
+                @click="emit('update:downloadAllComments', true)"
+              >
+                全部
+              </button>
+            </div>
+            <div v-if="!downloadAllComments" class="comment-limit-stepper">
+              <button
+                type="button"
+                :disabled="disabled"
+                aria-label="减少主评论数量"
+                @click="adjustCommentLimit(-10)"
+              >
+                <Minus :size="15" />
+              </button>
+              <input
+                :value="commentLimit"
+                type="number"
+                min="1"
+                max="1000"
+                :disabled="disabled"
+                aria-label="主评论数量"
+                @change="setCommentLimit($event.target.value)"
+              />
+              <span>条</span>
+              <button
+                type="button"
+                :disabled="disabled"
+                aria-label="增加主评论数量"
+                @click="adjustCommentLimit(10)"
+              >
+                <Plus :size="15" />
+              </button>
+            </div>
+            <div v-else class="comment-all-state">
+              <InfinityIcon :size="16" />
+              <span>不限数量</span>
+            </div>
           </div>
         </div>
       </div>
@@ -404,85 +416,133 @@
   }
 
   .comments-options {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: 92px minmax(0, 330px);
     align-items: center;
-    gap: 10px;
-    padding: 10px;
-    border: 1px solid #cbd5e1;
-    border-radius: 8px;
-    background: rgba(248, 250, 252, 0.78);
+    gap: 9px 12px;
   }
 
   .comments-options-label {
-    color: #475569;
-    font-size: 0.82rem;
+    color: var(--text-soft);
+    font-size: 0.86rem;
     font-weight: 700;
+  }
+
+  .comment-range-control {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 142px;
+    align-items: stretch;
+    height: 42px;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    background: #fff;
   }
 
   .comment-range-segments {
-    display: inline-grid;
-    grid-template-columns: repeat(2, max-content);
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 2px;
     padding: 3px;
-    border: 1px solid #cbd5e1;
-    border-radius: 7px;
-    background: #e2e8f0;
+    border-right: 1px solid var(--line);
+    background: #f1f4f7;
   }
 
   .comment-range-segment {
-    min-height: 30px;
-    padding: 0 11px;
+    min-width: 0;
+    padding: 0 8px;
     border: 0;
-    border-radius: 5px;
+    border-radius: 4px;
     background: transparent;
     color: #64748b;
-    font-size: 0.82rem;
+    font-size: 0.8rem;
     font-weight: 700;
     cursor: pointer;
+    white-space: nowrap;
   }
 
   .comment-range-segment.active {
     background: #fff;
-    color: #0f766e;
-    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+    color: var(--brand-strong);
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
+  }
+
+  .comment-range-segment:focus-visible,
+  .comment-limit-stepper button:focus-visible,
+  .comment-limit-stepper input:focus-visible {
+    position: relative;
+    z-index: 1;
+    outline: 2px solid rgba(15, 143, 131, 0.35);
+    outline-offset: -2px;
+  }
+
+  .comment-range-segment:disabled,
+  .comment-limit-stepper button:disabled,
+  .comment-limit-stepper input:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
   }
 
   .comment-limit-stepper {
-    display: inline-flex;
+    display: flex;
     align-items: center;
-    height: 38px;
-    overflow: hidden;
-    border: 1px solid #cbd5e1;
-    border-radius: 7px;
-    background: #fff;
+    min-width: 0;
   }
 
   .comment-limit-stepper button {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 34px;
+    width: 30px;
     height: 100%;
     padding: 0;
     border: 0;
-    background: #f8fafc;
+    background: transparent;
     color: #64748b;
     cursor: pointer;
   }
 
   .comment-limit-stepper input {
+    min-width: 0;
     width: 58px;
     height: 100%;
     border: 0;
     outline: 0;
-    text-align: right;
+    appearance: textfield;
+    font: inherit;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+  }
+
+  .comment-limit-stepper input::-webkit-inner-spin-button,
+  .comment-limit-stepper input::-webkit-outer-spin-button {
+    margin: 0;
+    appearance: none;
   }
 
   .comment-limit-stepper span {
-    padding-right: 8px;
+    padding-right: 3px;
     color: #64748b;
     font-size: 0.78rem;
+  }
+
+  .comment-limit-stepper button:hover:not(:disabled) {
+    background: var(--brand-soft);
+    color: var(--brand-strong);
+  }
+
+  .comment-all-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    color: #64748b;
+    font-size: 0.78rem;
+    font-weight: 700;
+  }
+
+  .comment-all-state svg {
+    color: var(--brand);
   }
 
   @media (max-width: 640px) {
@@ -501,8 +561,12 @@
       padding: 0 12px;
     }
 
-    .comments-options-label {
-      width: 100%;
+    .comments-options {
+      grid-template-columns: 1fr;
+    }
+
+    .comment-range-control {
+      grid-template-columns: minmax(0, 1fr) 136px;
     }
   }
 </style>
