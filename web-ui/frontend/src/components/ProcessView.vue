@@ -7,6 +7,7 @@
   import ProcessJobOutput from './process/ProcessJobOutput.vue'
   import ProcessSourceInput from './process/ProcessSourceInput.vue'
   import ProcessSummaryConfig from './process/ProcessSummaryConfig.vue'
+  import ProcessVideoMetadata from './process/ProcessVideoMetadata.vue'
   import { ApiError, processApi, subscribeSse } from '../api'
   import { usePublicCredentials } from '../composables/usePublicCredentials'
   import { useRuntimeFeatures } from '../composables/useRuntimeFeatures'
@@ -100,6 +101,14 @@
     author: '',
     pubdate: '',
     bvid: '',
+    title: '',
+    duration_seconds: 0,
+    tname: '',
+    parent_tname: '',
+    comment_status: 'disabled',
+    comment_limit: 200,
+    comment_count: 0,
+    comment_reply_count: 0,
     history_run_id: '',
     is_ephemeral_upload: false,
     expires_at: ''
@@ -181,6 +190,11 @@
   const isUploadMode = computed(
     () => allowUpload.value && inputMode.value === 'upload'
   )
+  const inputBvid = computed(() => {
+    const currentBvid = String(job.value.bvid || '').trim()
+    if (currentBvid) return currentBvid
+    return String(url.value || '').match(/BV[0-9A-Za-z]{10}/i)?.[0] || ''
+  })
 
   watch(
     allowUpload,
@@ -280,6 +294,13 @@
       payload.pubdate || '',
       payload.bvid || '',
       payload.title || '',
+      payload.duration_seconds || 0,
+      payload.tname || '',
+      payload.parent_tname || '',
+      payload.comment_status || '',
+      payload.comment_limit ?? '',
+      payload.comment_count || 0,
+      payload.comment_reply_count || 0,
       payload.history_run_id || '',
       payload.is_ephemeral_upload ? '1' : '0',
       payload.expires_at || ''
@@ -320,6 +341,14 @@
       author: '',
       pubdate: '',
       bvid: '',
+      title: '',
+      duration_seconds: 0,
+      tname: '',
+      parent_tname: '',
+      comment_status: 'disabled',
+      comment_limit: 200,
+      comment_count: 0,
+      comment_reply_count: 0,
       history_run_id: '',
       is_ephemeral_upload: false,
       expires_at: ''
@@ -621,17 +650,12 @@
 </script>
 
 <template>
-  <div>
+  <div class="process-page">
     <section class="layout">
       <article class="panel panel-main">
-        <header class="header">
-          <h1>bilibili-to-text</h1>
-          <div v-if="job.is_ephemeral_upload" class="hero-meta">
-            <span class="hero-pill hero-pill-soft">
-              临时结果 2 小时后删除
-            </span>
-          </div>
-        </header>
+        <div v-if="job.is_ephemeral_upload" class="hero-meta">
+          <span class="hero-pill">临时结果 2 小时后删除</span>
+        </div>
 
         <form class="form" @submit.prevent="submit">
           <ProcessSourceInput
@@ -707,7 +731,16 @@
         </InlineNotice>
       </article>
 
-      <ProgressPanel :job="job" :skip-summary="shouldSkipSummary" />
+      <aside class="process-sidebar">
+        <ProgressPanel :job="job" :skip-summary="shouldSkipSummary" />
+        <ProcessVideoMetadata
+          v-if="!isUploadMode"
+          :job="job"
+          :source-bvid="inputBvid"
+          :include-comments="includeComments"
+          :comment-limit="downloadAllComments ? 0 : normalizedCommentLimit"
+        />
+      </aside>
     </section>
 
     <ProcessJobOutput
@@ -721,53 +754,49 @@
 
 <style scoped>
   .layout {
-    position: relative;
-    z-index: 3;
     display: grid;
-    grid-template-columns: minmax(0, 1.16fr) minmax(320px, 0.84fr);
-    gap: 20px;
-    max-width: 1160px;
+    grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.65fr);
+    gap: 16px;
+    max-width: 1220px;
     margin: 0 auto;
   }
 
   .panel-main {
-    position: relative;
-    z-index: 2;
-    padding: 24px 40px 40px;
+    padding: 28px;
   }
 
-  .header h1 {
-    margin: 8px 0 10px;
-    font-size: clamp(1.8rem, 3vw, 2.5rem);
-    font-weight: 800;
-    line-height: 1.1;
-    letter-spacing: 0;
+  .process-sidebar {
+    position: sticky;
+    top: 92px;
+    align-self: start;
+    display: grid;
+    gap: 16px;
   }
 
   .hero-meta {
     display: flex;
     flex-wrap: wrap;
     gap: 10px;
-    margin-top: 18px;
+    margin-bottom: 18px;
   }
 
   .hero-pill {
     display: inline-flex;
     align-items: center;
-    min-height: 30px;
-    padding: 0 14px;
-    border: 1px solid rgba(203, 213, 225, 0.6);
-    border-radius: 999px;
-    background: rgba(248, 250, 252, 0.7);
-    color: #475569;
-    font-size: 0.82rem;
-    font-weight: 600;
+    min-height: 28px;
+    padding: 0 10px;
+    border: 1px solid #fcd34d;
+    border-radius: 5px;
+    background: #fffbeb;
+    color: #92400e;
+    font-size: 0.76rem;
+    font-weight: 700;
   }
 
   .form {
     display: grid;
     gap: 18px;
-    margin-top: 32px;
+    margin-top: 0;
   }
 
   .new-job-hint {
@@ -804,6 +833,10 @@
     .panel-main {
       padding: 24px;
     }
+
+    .process-sidebar {
+      position: static;
+    }
   }
 
   @media (max-width: 640px) {
@@ -811,8 +844,8 @@
       padding: 20px;
     }
 
-    .header h1 {
-      font-size: 1.7rem;
+    .layout {
+      gap: 12px;
     }
   }
 </style>

@@ -77,7 +77,7 @@
     padding: 12px 14px;
     border: 1px solid #bae6fd;
     border-radius: 8px;
-    background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
+    background: #f7fbfd;
     cursor: pointer;
   }
 
@@ -138,7 +138,7 @@
   .active-job-progress div {
     height: 100%;
     border-radius: inherit;
-    background: linear-gradient(90deg, #0ea5e9, #14b8a6);
+    background: var(--brand);
     transition: width 0.6s ease;
   }
 

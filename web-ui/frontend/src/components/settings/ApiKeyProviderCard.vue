@@ -9,6 +9,7 @@
     maskedKey: { type: String, default: '' },
     modelValue: { type: String, default: '' },
     testing: Boolean,
+    testPassed: Boolean,
     error: { type: String, default: '' },
     success: { type: String, default: '' },
     fieldId: { type: String, required: true },
@@ -35,10 +36,12 @@
         {{ configured ? '已配置' : '未配置' }}
       </strong>
     </div>
-    <p v-if="configured && maskedKey" class="status-note">
-      已保存 Key：<code>{{ maskedKey }}</code>
-    </p>
-    <slot name="status-note"></slot>
+    <div class="status-notes">
+      <p v-if="configured && maskedKey" class="status-note">
+        已保存 Key：<code>{{ maskedKey }}</code>
+      </p>
+      <slot name="status-note"></slot>
+    </div>
     <label :for="fieldId">{{ title }} API Key</label>
     <div class="field-row">
       <KeyRound :size="16" />
@@ -55,24 +58,36 @@
       <button class="submit" type="button" @click="emit('save')">
         {{ configured ? '更新' : '保存' }}
       </button>
-      <button type="button" :disabled="testing" @click="emit('test')">
-        {{ testing ? '测试中' : '测试连接' }}
+      <button
+        type="button"
+        :class="{ 'test-passed': testPassed }"
+        :disabled="testing"
+        @click="emit('test')"
+      >
+        <CheckCircle2 v-if="testPassed" :size="14" />
+        {{ testing ? '测试中' : testPassed ? '连接正常' : '测试连接' }}
       </button>
       <button type="button" :disabled="!configured" @click="emit('clear')">
         清除
       </button>
     </div>
-    <InlineNotice v-if="error">{{ error }}</InlineNotice>
-    <InlineNotice v-if="success" kind="success">{{ success }}</InlineNotice>
+    <div class="provider-notices">
+      <InlineNotice v-if="error">{{ error }}</InlineNotice>
+      <InlineNotice v-if="success" kind="success">{{ success }}</InlineNotice>
+    </div>
   </div>
 </template>
 
 <style scoped>
   .provider-section {
+    display: grid;
+    grid-row: span 8;
+    grid-template-rows: subgrid;
     padding: 22px;
     border: 1px solid var(--line);
     border-radius: 8px;
-    background: rgba(255, 255, 255, 0.62);
+    background: #fff;
+    box-shadow: var(--panel-shadow);
   }
 
   h3 {
@@ -149,6 +164,10 @@
     border-radius: 8px;
     background: #fff;
   }
+  .field-row:focus-within {
+    border-color: var(--brand);
+    box-shadow: 0 0 0 3px rgba(15, 143, 131, 0.1);
+  }
   .field-row svg {
     flex: 0 0 auto;
     color: #64748b;
@@ -167,6 +186,10 @@
     margin-top: 12px;
   }
   .actions button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
     min-height: 36px;
     padding: 0 13px;
     border: 1px solid var(--line);
@@ -182,8 +205,19 @@
     background: var(--brand);
     color: #fff;
   }
+  .actions .test-passed {
+    border-color: #86efac;
+    background: #f0fdf4;
+    color: #166534;
+  }
   .actions button:disabled {
     cursor: not-allowed;
     opacity: 0.5;
+  }
+
+  @media (max-width: 900px) {
+    .provider-section {
+      display: block;
+    }
   }
 </style>

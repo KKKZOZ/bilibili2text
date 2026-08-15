@@ -73,6 +73,13 @@ class JobState:
     pubdate: str | None = None
     bvid: str | None = None
     title: str | None = None
+    duration_seconds: int = 0
+    tname: str | None = None
+    parent_tname: str | None = None
+    comment_status: str = "disabled"
+    comment_limit: int = 200
+    comment_count: int = 0
+    comment_reply_count: int = 0
     history_run_id: str | None = None
     is_ephemeral_upload: bool = False
     expires_at: str | None = None
@@ -155,6 +162,13 @@ class JobPatch:
     pubdate: str | None = None
     bvid: str | None = None
     title: str | None = None
+    duration_seconds: int | None = None
+    tname: str | None = None
+    parent_tname: str | None = None
+    comment_status: str | None = None
+    comment_limit: int | None = None
+    comment_count: int | None = None
+    comment_reply_count: int | None = None
     history_run_id: str | None = None
     is_ephemeral_upload: bool | None = None
     expires_at: str | None = None

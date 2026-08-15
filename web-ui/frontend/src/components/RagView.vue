@@ -271,8 +271,8 @@
   .rag-root {
     display: flex;
     flex-direction: column;
-    gap: 20px;
-    max-width: 800px;
+    gap: 16px;
+    max-width: 1060px;
     margin: 0 auto;
   }
 
@@ -281,7 +281,11 @@
     flex-direction: column;
     align-items: center;
     gap: 10px;
-    padding: 40px 24px;
+    min-height: 240px;
+    padding: 44px 24px;
+    border: 1px dashed #cbd5df;
+    border-radius: 8px;
+    background: #f8fafb;
     color: var(--text-muted);
     text-align: center;
   }

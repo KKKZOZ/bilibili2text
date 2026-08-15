@@ -165,6 +165,35 @@ def _run_job(
         _cleanup_upload_temp_dir(upload_temp_dir)
         return
 
+    def _metadata_ready(metadata) -> None:
+        metadata_bvid = str(getattr(metadata, "bvid", "") or "").strip()
+        _update_job(
+            job_id,
+            bvid=metadata_bvid or bvid,
+            title=str(getattr(metadata, "title", "") or ""),
+            author=str(getattr(metadata, "author", "") or ""),
+            pubdate=str(getattr(metadata, "pubdate", "") or ""),
+            duration_seconds=int(getattr(metadata, "duration_seconds", 0) or 0),
+            tname=str(getattr(metadata, "tname", "") or ""),
+            parent_tname=str(getattr(metadata, "parent_tname", "") or ""),
+        )
+
+    def _comment_status(status: str, fetched_count: int, reply_count: int) -> None:
+        _update_job(
+            job_id,
+            comment_status=status,
+            comment_count=fetched_count,
+            comment_reply_count=reply_count,
+        )
+
+    _update_job(
+        job_id,
+        comment_status=(
+            "pending" if include_comments and not normalized_audio_path else "disabled"
+        ),
+        comment_limit=0 if comment_limit is None else comment_limit,
+    )
+
     if bvid is not None and not ephemeral_upload:
         _update_job(job_id, bvid=bvid)
 
@@ -184,6 +213,8 @@ def _run_job(
             auto_generate_fancy_html=auto_generate_fancy_html,
             include_comments=include_comments,
             comment_limit=comment_limit,
+            metadata_callback=_metadata_ready,
+            comment_status_callback=_comment_status,
             cancellation_token=cancellation_token,
         )
     ):
@@ -260,6 +291,8 @@ def _run_job(
                     prefer_bilibili_subtitle=False,
                     include_comments=False,
                     progress_callback=_progress,
+                    metadata_callback=_metadata_ready,
+                    comment_status_callback=_comment_status,
                     bilibili_subtitle_used_callback=lambda: _update_job(
                         job_id,
                         used_bilibili_subtitle=True,
@@ -280,6 +313,8 @@ def _run_job(
                     include_comments=include_comments,
                     comment_limit=comment_limit,
                     progress_callback=_progress,
+                    metadata_callback=_metadata_ready,
+                    comment_status_callback=_comment_status,
                     bilibili_subtitle_used_callback=lambda: _update_job(
                         job_id,
                         used_bilibili_subtitle=True,
@@ -378,6 +413,13 @@ def _run_job(
         if metadata:
             metadata_fields["author"] = metadata.author
             metadata_fields["pubdate"] = metadata.pubdate
+            metadata_fields["duration_seconds"] = int(
+                getattr(metadata, "duration_seconds", 0) or 0
+            )
+            metadata_fields["tname"] = str(getattr(metadata, "tname", "") or "")
+            metadata_fields["parent_tname"] = str(
+                getattr(metadata, "parent_tname", "") or ""
+            )
             if getattr(metadata, "title", None):
                 metadata_fields["title"] = metadata.title
         if bvid and not ephemeral_upload:

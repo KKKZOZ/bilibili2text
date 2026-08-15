@@ -94,11 +94,11 @@
 
 <style scoped>
   .search-panel {
-    padding: clamp(20px, 4vw, 36px) clamp(20px, 4vw, 40px);
+    padding: 28px;
   }
 
   header {
-    margin-bottom: 22px;
+    margin-bottom: 18px;
   }
 
   .header-badge {
@@ -116,7 +116,7 @@
 
   h1 {
     margin: 0 0 6px;
-    font-size: clamp(1.2rem, 2.5vw, 1.5rem);
+    font-size: 1.15rem;
   }
 
   header p {
@@ -135,13 +135,13 @@
   .textarea-wrap {
     position: relative;
     border: 1.5px solid var(--line);
-    border-radius: 14px;
-    background: rgba(255, 255, 255, 0.9);
+    border-radius: 7px;
+    background: #fff;
   }
 
   .textarea-wrap:focus-within {
     border-color: var(--brand);
-    box-shadow: 0 0 0 4px rgba(13, 148, 136, 0.1);
+    box-shadow: 0 0 0 3px rgba(15, 143, 131, 0.1);
   }
 
   textarea {
@@ -150,7 +150,7 @@
     resize: none;
     padding: 14px 16px 32px;
     border: none;
-    border-radius: 14px;
+    border-radius: 7px;
     outline: none;
     background: transparent;
     color: var(--text-main);
@@ -182,5 +182,15 @@
     align-self: flex-end;
     min-width: 130px;
     margin: 0;
+  }
+
+  @media (max-width: 640px) {
+    .search-panel {
+      padding: 20px;
+    }
+
+    .search-submit {
+      width: 100%;
+    }
   }
 </style>

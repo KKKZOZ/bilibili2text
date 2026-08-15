@@ -98,15 +98,14 @@
     padding: 14px 16px;
     border: 1px solid var(--line);
     border-radius: 8px;
-    background: rgba(255, 255, 255, 0.82);
+    background: #fff;
     color: inherit;
     text-decoration: none;
   }
 
   .source-card:hover:not(.no-link) {
     border-color: var(--brand);
-    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.1);
-    transform: translateY(-2px);
+    box-shadow: 0 3px 10px rgba(15, 23, 42, 0.08);
   }
 
   .source-card-top {

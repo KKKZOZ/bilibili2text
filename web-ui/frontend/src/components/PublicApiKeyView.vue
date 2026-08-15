@@ -26,6 +26,7 @@
   const aliyunError = ref('')
   const aliyunSuccess = ref('')
   const isTestingAliyun = ref(false)
+  const aliyunTestPassed = ref(false)
 
   // DeepSeek key state
   const deepseekKeyInput = ref('')
@@ -34,6 +35,7 @@
   const deepseekError = ref('')
   const deepseekSuccess = ref('')
   const isTestingDeepseek = ref(false)
+  const deepseekTestPassed = ref(false)
 
   // Custom OpenAI-compatible LLM state
   const customLlmBaseUrlInput = ref('')
@@ -46,6 +48,7 @@
   const customLlmError = ref('')
   const customLlmSuccess = ref('')
   const isTestingCustomLlm = ref(false)
+  const customLlmTestPassed = ref(false)
 
   const summaryTemplateInput = ref('')
   const summaryTemplateConfigured = ref(false)
@@ -142,27 +145,32 @@
     storageKey,
     setError,
     setSuccess,
-    setTesting
+    setTesting,
+    setTestPassed
   }) => {
     const apiKey = inputValue.trim() || getSavedProviderApiKey(storageKey)
     if (!apiKey) {
       setError('请输入 API Key，或先保存已有 Key')
       setSuccess('')
+      setTestPassed(false)
       return
     }
     const validationError = validateKey(apiKey, label)
     if (validationError) {
       setError(validationError)
       setSuccess('')
+      setTestPassed(false)
       return
     }
     setError('')
     setSuccess('')
+    setTestPassed(false)
     setTesting(true)
     try {
       await openPublicApi.testProvider(provider, apiKey)
-      setSuccess('测试连接成功。')
+      setTestPassed(true)
     } catch (err) {
+      setTestPassed(false)
       const message = err instanceof Error ? err.message : '测试连接失败'
       setError(`测试连接失败：${message}`)
     } finally {
@@ -179,6 +187,7 @@
     if (validationError) {
       customLlmError.value = validationError
       customLlmSuccess.value = ''
+      customLlmTestPassed.value = false
       return
     }
     customLlmError.value = ''
@@ -231,10 +240,12 @@
     if (validationError) {
       customLlmError.value = validationError
       customLlmSuccess.value = ''
+      customLlmTestPassed.value = false
       return
     }
     customLlmError.value = ''
     customLlmSuccess.value = ''
+    customLlmTestPassed.value = false
     isTestingCustomLlm.value = true
     try {
       await openPublicApi.testCustomLlm({
@@ -242,8 +253,9 @@
         apiKey,
         model
       })
-      customLlmSuccess.value = '测试连接成功。'
+      customLlmTestPassed.value = true
     } catch (err) {
+      customLlmTestPassed.value = false
       const message = err instanceof Error ? err.message : '测试连接失败'
       customLlmError.value = `测试连接失败：${message}`
     } finally {
@@ -265,6 +277,9 @@
       },
       setTesting: (value) => {
         isTestingAliyun.value = value
+      },
+      setTestPassed: (value) => {
+        aliyunTestPassed.value = value
       }
     })
 
@@ -309,6 +324,9 @@
       },
       setTesting: (value) => {
         isTestingDeepseek.value = value
+      },
+      setTestPassed: (value) => {
+        deepseekTestPassed.value = value
       }
     })
 
@@ -419,17 +437,31 @@
       summaryTemplateInput.value = template || ''
     }
   })
+
+  watch(aliyunKeyInput, () => {
+    aliyunTestPassed.value = false
+  })
+
+  watch(deepseekKeyInput, () => {
+    deepseekTestPassed.value = false
+  })
+
+  watch(
+    [customLlmBaseUrlInput, customLlmModelInput, customLlmApiKeyInput],
+    () => {
+      customLlmTestPassed.value = false
+    }
+  )
 </script>
 
 <template>
   <section class="settings-layout">
-    <article class="panel panel-settings">
+    <article class="panel-settings">
       <header class="settings-header">
         <div class="settings-badge">
           <Shield :size="14" />
           <span>open-public</span>
         </div>
-        <h2>API Key 配置</h2>
         <p>
           语音识别（ASR）需要<strong>阿里云 DashScope</strong> API
           Key，<strong>必须配置</strong>。如需使用 DeepSeek 模型进行 LLM
@@ -457,6 +489,7 @@
           :configured="aliyunConfigured"
           :masked-key="aliyunMaskedKey"
           :testing="isTestingAliyun"
+          :test-passed="aliyunTestPassed"
           :error="aliyunError"
           :success="aliyunSuccess"
           required
@@ -483,6 +516,7 @@
           :configured="deepseekConfigured"
           :masked-key="deepseekMaskedKey"
           :testing="isTestingDeepseek"
+          :test-passed="deepseekTestPassed"
           :error="deepseekError"
           :success="deepseekSuccess"
           @save="saveDeepseekKey"
@@ -515,6 +549,7 @@
         :model="customLlmModelInput"
         :api-key="customLlmApiKeyInput"
         :testing="isTestingCustomLlm"
+        :test-passed="customLlmTestPassed"
         :error="customLlmError"
         :success="customLlmSuccess"
         @update:base-url="customLlmBaseUrlInput = $event"
@@ -541,16 +576,13 @@
 
 <style scoped>
   .settings-layout {
-    position: relative;
-    z-index: 2;
-    max-width: 980px;
+    max-width: 1120px;
     margin: 0 auto;
   }
 
   .panel-settings {
     display: grid;
-    gap: 18px;
-    padding: 28px;
+    gap: 16px;
   }
 
   .settings-header {
@@ -558,13 +590,8 @@
     gap: 8px;
   }
 
-  .settings-header h2,
   .settings-header p {
     margin: 0;
-  }
-
-  .settings-header h2 {
-    font-size: 1.3rem;
   }
 
   .settings-header p {
@@ -591,7 +618,7 @@
     align-items: flex-start;
     gap: 9px;
     padding: 12px 14px;
-    border: 1px solid #bae6fd;
+    border: 1px solid #bfdbfe;
     border-radius: 8px;
     background: #f0f9ff;
     color: #075985;
@@ -607,7 +634,9 @@
   .provider-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 18px;
+    grid-template-rows: repeat(8, auto);
+    column-gap: 18px;
+    row-gap: 0;
   }
 
   .provider-fallback-note {
@@ -616,13 +645,11 @@
     font-size: 0.8rem;
   }
 
-  @media (max-width: 720px) {
-    .panel-settings {
-      padding: 20px;
-    }
-
+  @media (max-width: 900px) {
     .provider-grid {
       grid-template-columns: 1fr;
+      grid-template-rows: none;
+      row-gap: 18px;
     }
   }
 </style>

@@ -1,5 +1,6 @@
 <script setup>
   import ToggleSwitch from '../common/ToggleSwitch.vue'
+  import HelpTooltip from '../common/HelpTooltip.vue'
   import SummaryPresetPicker from '../common/SummaryPresetPicker.vue'
   import SummaryProfileSelect from '../common/SummaryProfileSelect.vue'
 
@@ -43,20 +44,24 @@
       <p>
         选择模型配置与总结模板，生成更符合用途的总结内容。
         <template v-if="isOpenPublic">
-          选择“用户自定义”时，会使用你在 API Key 页面保存的模板。
+          选择“用户自定义”时，会使用在 API Key 页面保存的模板。
         </template>
       </p>
     </div>
-    <ToggleSwitch
-      id="auto-generate-fancy-html"
-      :model-value="autoGenerateFancyHtml"
-      label="总结完成后自动生成 Fancy HTML"
-      compact
-      @update:model-value="emit('update:autoGenerateFancyHtml', $event)"
-    />
-    <p class="preset-hint">
-      总结文件会先显示，Fancy HTML 稍后在后台生成并自动加入列表。
-    </p>
+    <div class="option-toggle-row">
+      <ToggleSwitch
+        id="auto-generate-fancy-html"
+        :model-value="autoGenerateFancyHtml"
+        label="生成 Fancy HTML"
+        compact
+        @update:model-value="emit('update:autoGenerateFancyHtml', $event)"
+      />
+      <HelpTooltip id="fancy-html-help-tooltip" label="查看 Fancy HTML 说明">
+        Fancy HTML
+        是由总结内容生成的独立网页版本，提供更适合阅读和分享的排版。开启后会在后台生成，不影响
+        Markdown 总结先行显示。
+      </HelpTooltip>
+    </div>
     <SummaryProfileSelect
       id="summary-profile-select"
       :model-value="selectedProfile"
@@ -85,16 +90,9 @@
 <style scoped>
   .process-summary-config {
     display: grid;
-    gap: 16px;
-    padding: 24px;
-    border: 1px solid rgba(255, 255, 255, 0.6);
-    border-radius: 20px;
-    background: linear-gradient(
-      180deg,
-      rgba(255, 255, 255, 0.7),
-      rgba(248, 253, 255, 0.5)
-    );
-    box-shadow: 0 8px 24px -8px rgba(15, 23, 42, 0.05);
+    gap: 14px;
+    padding: 18px 0 0;
+    border-top: 1px solid var(--line);
   }
 
   .process-summary-head {
@@ -108,18 +106,18 @@
   }
 
   .process-summary-head h3 {
-    font-size: 1.15rem;
+    font-size: 1rem;
   }
 
   .process-summary-head p {
-    color: #475569;
-    font-size: 0.88rem;
+    color: var(--text-muted);
+    font-size: 0.82rem;
     line-height: 1.55;
   }
 
-  @media (max-width: 640px) {
-    .process-summary-config {
-      padding: 18px;
-    }
+  .option-toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 3px;
   }
 </style>

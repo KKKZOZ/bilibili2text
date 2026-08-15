@@ -34,7 +34,9 @@
   .toggle-switch {
     display: inline-flex;
     align-items: center;
+    justify-self: start;
     gap: 12px;
+    width: fit-content;
     min-height: 26px;
     cursor: pointer;
     user-select: none;
@@ -71,8 +73,8 @@
   }
 
   input:checked + .toggle-track {
-    border-color: #14b8a6;
-    background: linear-gradient(135deg, #14b8a6, #0ea5e9);
+    border-color: var(--brand);
+    background: var(--brand);
   }
 
   input:checked + .toggle-track .toggle-thumb {

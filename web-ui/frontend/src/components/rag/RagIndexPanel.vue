@@ -127,7 +127,8 @@
     overflow: hidden;
     border: 1px solid var(--line);
     border-radius: 8px;
-    background: rgba(255, 255, 255, 0.6);
+    background: #fff;
+    box-shadow: var(--panel-shadow);
   }
 
   button {
@@ -185,7 +186,8 @@
     min-width: 120px;
     padding: 10px 14px;
     border-radius: 8px;
-    background: var(--brand-soft);
+    border: 1px solid #dce9e6;
+    background: #f6fbfa;
   }
   .stats-grid > div svg {
     color: var(--brand);

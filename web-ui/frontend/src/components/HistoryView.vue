@@ -700,7 +700,6 @@
       :presets="historyPresetOptions"
       :regenerate-loading="regenerateLoading"
       :requires-api-key="requiresApiKey"
-      :duplicate-summary="isSelectedSummaryAlreadyGenerated"
       :regenerate-error="regenerateError"
       :regenerate-success="regenerateSuccess"
       :rag-answer-html="renderedRagAnswer"
@@ -721,9 +720,8 @@
     />
 
     <!-- List View -->
-    <article v-else class="panel panel-history">
+    <article v-else class="history-workspace">
       <header class="history-list-header">
-        <h2>历史记录</h2>
         <div class="history-search-row">
           <Search :size="16" />
           <input
@@ -813,27 +811,16 @@
 
 <style scoped>
   .history-layout {
-    position: relative;
-    z-index: 2;
-    max-width: 1160px;
+    max-width: 1220px;
     margin: 0 auto;
-  }
-
-  .panel-history {
-    padding: 28px;
   }
 
   .history-list-header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-end;
     gap: 12px;
-    flex-wrap: wrap;
-  }
-
-  .history-list-header h2 {
-    margin: 0;
-    font-size: 1.2rem;
+    margin-bottom: 12px;
   }
 
   .history-search-row {
@@ -841,10 +828,10 @@
     align-items: center;
     gap: 8px;
     width: min(320px, 100%);
-    min-height: 38px;
+    min-height: 40px;
     padding: 0 12px;
     border: 1px solid #cbd5e1;
-    border-radius: 8px;
+    border-radius: 6px;
     background: #fff;
     color: #64748b;
   }
@@ -865,10 +852,6 @@
   }
 
   @media (max-width: 640px) {
-    .panel-history {
-      padding: 20px;
-    }
-
     .history-list-header {
       align-items: stretch;
       flex-direction: column;

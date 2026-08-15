@@ -123,9 +123,13 @@
 
   .history-list {
     display: grid;
-    gap: 9px;
-    margin: 18px 0 0;
+    gap: 0;
+    margin: 12px 0 0;
     padding: 0;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
     list-style: none;
   }
 
@@ -133,14 +137,18 @@
     display: flex;
     align-items: stretch;
     overflow: hidden;
-    border: 1px solid rgba(203, 213, 225, 0.7);
-    border-radius: 8px;
-    background: rgba(255, 255, 255, 0.72);
+    border: 0;
+    border-bottom: 1px solid #e8ecf0;
+    border-radius: 0;
+    background: #fff;
   }
 
   .history-item:hover {
-    border-color: #7dd3fc;
-    box-shadow: 0 4px 14px rgba(14, 165, 233, 0.08);
+    background: #f8fafb;
+  }
+
+  .history-item:last-child {
+    border-bottom: 0;
   }
 
   .history-item-content {
@@ -148,7 +156,7 @@
     flex: 1;
     gap: 9px;
     min-width: 0;
-    padding: 14px 16px;
+    padding: 13px 15px;
     border: 0;
     background: transparent;
     color: inherit;
@@ -178,7 +186,7 @@
   }
 
   .history-bvid {
-    color: #0284c7;
+    color: var(--info);
     font-size: 0.8rem;
     font-weight: 600;
     text-decoration: none;
@@ -231,16 +239,21 @@
 
   .history-list-skeleton {
     display: grid;
-    gap: 9px;
-    margin-top: 18px;
+    gap: 0;
+    margin-top: 12px;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
   }
 
   .history-skeleton-item {
     display: flex;
     justify-content: space-between;
     padding: 14px 16px;
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
+    border: 0;
+    border-bottom: 1px solid #e8ecf0;
+    border-radius: 0;
   }
 
   .history-skeleton-item div {

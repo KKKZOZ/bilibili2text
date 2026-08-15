@@ -1,40 +1,38 @@
-/* ─── CSS Variables ──────────────────────────────────────────── */
-
 :root {
-  --bg-base: #f0f4f8;
-  --bg-gradient-top: #e0f2fe;
-  --bg-gradient-mid: #ccfbf1;
-  --bg-gradient-bottom: #f8fafc;
-  --panel-bg: rgba(255, 255, 255, 0.75);
-  --panel-border: rgba(255, 255, 255, 0.6);
-  --panel-shadow:
-    0 24px 48px -12px rgba(15, 23, 42, 0.08),
-    0 4px 24px -4px rgba(15, 23, 42, 0.04);
-  --text-main: #0f172a;
-  --text-soft: #334155;
-  --text-muted: #64748b;
-  --brand: #0d9488;
-  --brand-strong: #0f766e;
-  --brand-soft: #f0fdfa;
-  --danger: #ef4444;
-  --success: #10b981;
-  --line: rgba(148, 163, 184, 0.25);
+  --bg-base: #f4f6f8;
+  --panel-bg: #ffffff;
+  --panel-border: #dce2e8;
+  --panel-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+  --text-main: #17202e;
+  --text-soft: #354150;
+  --text-muted: #687584;
+  --brand: #0f8f83;
+  --brand-strong: #0b6f67;
+  --brand-soft: #e6f7f4;
+  --info: #2563eb;
+  --danger: #dc2626;
+  --success: #16835d;
+  --warning: #b45309;
+  --line: #dce2e8;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
 }
-
-/* ─── Reset & Base ───────────────────────────────────────────── */
 
 * {
   box-sizing: border-box;
 }
 
+html {
+  background: var(--bg-base);
+}
+
 body {
   margin: 0;
+  min-width: 320px;
   min-height: 100vh;
   color: var(--text-main);
-  background:
-    radial-gradient(circle at 15% 0%, var(--bg-gradient-top), transparent 45%),
-    radial-gradient(circle at 85% 15%, var(--bg-gradient-mid), transparent 45%),
-    linear-gradient(170deg, var(--bg-base), var(--bg-gradient-bottom));
+  background: var(--bg-base);
   font-family:
     'Manrope',
     -apple-system,
@@ -50,37 +48,39 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* ─── Panel base (used in all components) ───────────────────── */
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button,
+a,
+input,
+textarea,
+select {
+  -webkit-tap-highlight-color: transparent;
+}
 
 .panel {
   border: 1px solid var(--panel-border);
-  background: linear-gradient(
-    145deg,
-    rgba(255, 255, 255, 0.85),
-    rgba(255, 255, 255, 0.55)
-  );
-  border-radius: 28px;
-  box-shadow:
-    inset 0 1px 1px rgba(255, 255, 255, 0.8),
-    var(--panel-shadow);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  animation: panel-rise 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+  border-radius: var(--radius-lg);
+  background: var(--panel-bg);
+  box-shadow: var(--panel-shadow);
 }
-
-/* ─── Shared utilities ───────────────────────────────────────── */
 
 .spin {
   animation: spin 0.9s linear infinite;
 }
 
 .inline-error {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   margin: 16px 0 0;
   color: var(--danger);
-  display: inline-flex;
-  gap: 6px;
-  align-items: center;
-  font-size: 0.9rem;
+  font-size: 0.88rem;
 }
 
 .connection-notice {
@@ -88,84 +88,88 @@ body {
   align-items: center;
   gap: 7px;
   margin: 10px 0 0;
-  color: #92400e;
-  font-size: 0.86rem;
+  color: var(--warning);
+  font-size: 0.84rem;
   line-height: 1.45;
 }
 
-/* ─── Submit button (ProcessView + HistoryView) ──────────────── */
-
 .submit {
-  margin-top: 12px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  border-radius: 16px;
-  font-size: 1rem;
-  font-weight: 700;
+  gap: 8px;
+  min-height: 44px;
+  margin-top: 10px;
+  padding: 0 20px;
+  border: 1px solid var(--brand);
+  border-radius: var(--radius-md);
+  background: var(--brand);
+  color: #fff;
+  font-size: 0.92rem;
+  font-weight: 750;
   cursor: pointer;
-  min-height: 52px;
-  padding: 0 24px;
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-  border: none;
-  color: #ffffff;
-  background: linear-gradient(135deg, #0d9488, #0284c7);
-  box-shadow: 0 4px 12px rgba(2, 132, 199, 0.2);
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
-.submit:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 12px 24px -6px rgba(2, 132, 199, 0.4);
-  background: linear-gradient(135deg, #0f766e, #0369a1);
+.submit:hover:not(:disabled) {
+  border-color: var(--brand-strong);
+  background: var(--brand-strong);
+  box-shadow: 0 3px 10px rgba(15, 143, 131, 0.18);
+}
+
+.submit:focus-visible {
+  outline: 3px solid rgba(15, 143, 131, 0.18);
+  outline-offset: 2px;
 }
 
 .submit:disabled {
-  opacity: 0.64;
+  border-color: #94a3b8;
+  background: #94a3b8;
   cursor: not-allowed;
-  transform: none;
+  opacity: 0.72;
   box-shadow: none;
 }
 
-/* ─── Preset select (ProcessView + HistoryView) ──────────────── */
-
 .summary-preset {
   display: grid;
-  gap: 8px;
+  gap: 7px;
 }
 
 .preset-select {
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.7);
-  color: var(--text-main);
-  min-height: 48px;
   width: 100%;
-  max-width: 100%;
   min-width: 0;
-  padding: 0 16px;
-  font-size: 0.95rem;
+  max-width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
   outline: none;
-  transition: all 0.25s ease;
-  backdrop-filter: blur(8px);
+  background: #fff;
+  color: var(--text-main);
+  font-size: 0.88rem;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .preset-select:disabled {
+  background: #f5f7f9;
   color: #94a3b8;
-  background: rgba(248, 250, 252, 0.5);
   cursor: not-allowed;
 }
 
 .preset-select:focus {
-  border-color: #38bdf8;
-  background: #ffffff;
-  box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.15);
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgba(15, 143, 131, 0.12);
 }
 
 .preset-hint {
   margin: 0;
-  font-size: 0.8rem;
   color: var(--text-muted);
+  font-size: 0.78rem;
   line-height: 1.5;
 }
 
@@ -175,196 +179,120 @@ body {
 
 .preset-retry {
   margin-left: 8px;
+  padding: 0;
   border: none;
   background: transparent;
   color: var(--brand-strong);
-  font-size: 0.8rem;
-  font-weight: 600;
+  font-size: 0.78rem;
+  font-weight: 700;
   cursor: pointer;
-  padding: 0;
 }
 
 .preset-retry:hover {
   text-decoration: underline;
 }
 
-/* ─── Modal (FileList + HistoryView) ─────────────────────────── */
-
 .modal-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(15, 23, 42, 0.6);
-  backdrop-filter: blur(4px);
+  z-index: 1000;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
-  animation: fadeIn 0.2s ease;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.58);
+  animation: fade-in 0.15s ease;
 }
 
 .modal-content {
-  background: white;
-  border-radius: 16px;
-  padding: 24px;
-  max-width: 440px;
-  width: 90%;
-  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.3);
-  animation: slideUp 0.25s ease;
+  width: min(440px, 100%);
+  padding: 22px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-lg);
+  background: #fff;
+  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.22);
 }
 
 .modal-content h3 {
-  margin: 0 0 12px;
-  font-size: 1.18rem;
+  margin: 0 0 10px;
   color: var(--text-main);
+  font-size: 1.08rem;
 }
 
 .modal-content p {
-  margin: 0 0 20px;
-  font-size: 0.92rem;
+  margin: 0 0 18px;
   color: var(--text-soft);
+  font-size: 0.88rem;
   line-height: 1.6;
 }
 
 .modal-actions {
   display: flex;
-  gap: 10px;
   justify-content: flex-end;
+  gap: 8px;
 }
 
-.cancel-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 38px;
-  padding: 0 18px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.9);
-  color: var(--text-soft);
-  font-size: 0.88rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.cancel-button:hover:not(:disabled) {
-  border-color: #cbd5e1;
-  background: #f8fafc;
-}
-
-.cancel-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
+.cancel-button,
 .confirm-delete-button {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   min-height: 38px;
-  padding: 0 18px;
-  border: 1px solid #dc2626;
-  border-radius: 10px;
-  background: #dc2626;
-  color: white;
-  font-size: 0.88rem;
-  font-weight: 600;
+  padding: 0 16px;
+  border-radius: var(--radius-md);
+  font-size: 0.84rem;
+  font-weight: 700;
   cursor: pointer;
-  transition: all 0.2s ease;
+}
+
+.cancel-button {
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--text-soft);
+}
+
+.cancel-button:hover:not(:disabled) {
+  background: #f5f7f9;
+}
+
+.confirm-delete-button {
+  border: 1px solid var(--danger);
+  background: var(--danger);
+  color: #fff;
 }
 
 .confirm-delete-button:hover:not(:disabled) {
-  background: #b91c1c;
   border-color: #b91c1c;
-  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3);
+  background: #b91c1c;
 }
 
+.cancel-button:disabled,
 .confirm-delete-button:disabled {
-  opacity: 0.7;
   cursor: not-allowed;
+  opacity: 0.55;
 }
-
-/* ─── Animations ─────────────────────────────────────────────── */
 
 @keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
   to {
     transform: rotate(360deg);
   }
 }
 
-@keyframes panel-rise {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes float {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-14px);
-  }
-}
-
-@keyframes fadeIn {
+@keyframes fade-in {
   from {
     opacity: 0;
   }
-  to {
-    opacity: 1;
-  }
 }
-
-@keyframes slideUp {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes history-skeleton-shimmer {
-  100% {
-    transform: translateX(100%);
-  }
-}
-
-/* ─── Responsive (global) ────────────────────────────────────── */
 
 @media (max-width: 640px) {
-  .panel {
-    border-radius: 22px;
-  }
-
   .submit {
     width: 100%;
   }
 
   .modal-overlay {
     align-items: flex-end;
-    padding: 16px;
-  }
-
-  .modal-content {
-    width: 100%;
-    max-width: 100%;
-    padding: 20px;
+    padding: 12px;
   }
 
   .modal-actions {
@@ -374,7 +302,6 @@ body {
 
   .cancel-button,
   .confirm-delete-button {
-    justify-content: center;
     width: 100%;
   }
 }

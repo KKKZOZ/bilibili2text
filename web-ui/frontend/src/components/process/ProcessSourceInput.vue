@@ -1,12 +1,6 @@
 <script setup>
-  import {
-    CircleHelp,
-    FileAudio2,
-    FileVideo2,
-    Link2,
-    Minus,
-    Plus
-  } from 'lucide-vue-next'
+  import { FileAudio2, FileVideo2, Link2, Minus, Plus } from 'lucide-vue-next'
+  import HelpTooltip from '../common/HelpTooltip.vue'
   import ToggleSwitch from '../common/ToggleSwitch.vue'
 
   const props = defineProps({
@@ -109,24 +103,13 @@
           label="优先使用 B 站字幕"
           @update:model-value="emit('update:preferBilibiliSubtitle', $event)"
         />
-        <span class="option-help">
-          <button
-            type="button"
-            class="option-help-trigger"
-            aria-label="查看优先使用 B 站字幕说明"
-            aria-describedby="bilibili-subtitle-help-tooltip"
-          >
-            <CircleHelp :size="15" aria-hidden="true" />
-          </button>
-          <span
-            id="bilibili-subtitle-help-tooltip"
-            class="option-help-tooltip"
-            role="tooltip"
-          >
-            仅对 B
-            站视频生效。开启后会优先读取视频已有字幕，跳过音频转文字步骤；没有可用字幕或读取失败时会自动回退到音频转录。
-          </span>
-        </span>
+        <HelpTooltip
+          id="bilibili-subtitle-help-tooltip"
+          label="查看优先使用 B 站字幕说明"
+        >
+          仅对 B
+          站视频生效。开启后会优先读取视频已有字幕，跳过音频转文字步骤；没有可用字幕或读取失败时会自动回退到音频转录。
+        </HelpTooltip>
       </div>
       <div class="comments-field">
         <div class="option-toggle-row">
@@ -134,27 +117,12 @@
             id="include-comments"
             :model-value="includeComments"
             label="总结精选评论"
-            compact
             @update:model-value="emit('update:includeComments', $event)"
           />
-          <span class="option-help">
-            <button
-              type="button"
-              class="option-help-trigger"
-              aria-label="查看精选评论下载说明"
-              aria-describedby="comments-help-tooltip"
-            >
-              <CircleHelp :size="15" aria-hidden="true" />
-            </button>
-            <span
-              id="comments-help-tooltip"
-              class="option-help-tooltip"
-              role="tooltip"
-            >
-              支持 B 站和小宇宙。默认按热门排序下载前 200
-              条主评论，每条主评论的全部子评论都会下载。
-            </span>
-          </span>
+          <HelpTooltip id="comments-help-tooltip" label="查看精选评论下载说明">
+            支持 B 站和小宇宙。默认按热门排序下载前 200
+            条主评论，每条主评论的全部子评论都会下载。
+          </HelpTooltip>
         </div>
         <div v-if="includeComments" class="comments-options">
           <span class="comments-options-label">主评论数量</span>
@@ -254,8 +222,8 @@
     gap: 6px;
     padding: 6px;
     border: 1px solid var(--line);
-    border-radius: 14px;
-    background: rgba(248, 250, 252, 0.7);
+    border-radius: 7px;
+    background: #f1f4f7;
   }
 
   .input-mode-button {
@@ -265,7 +233,7 @@
     min-height: 38px;
     padding: 0 16px;
     border: none;
-    border-radius: 10px;
+    border-radius: 5px;
     background: transparent;
     color: #475569;
     font-size: 0.9rem;
@@ -274,9 +242,9 @@
   }
 
   .input-mode-button.active {
-    background: linear-gradient(135deg, #0ea5e9, #14b8a6);
-    color: #fff;
-    box-shadow: 0 2px 8px rgba(14, 165, 233, 0.25);
+    background: #fff;
+    color: var(--brand-strong);
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
   }
 
   .input-mode-button:disabled {
@@ -289,17 +257,16 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    min-height: 52px;
+    min-height: 48px;
     padding: 0 16px;
     border: 1px solid var(--line);
-    border-radius: 16px;
-    background: rgba(255, 255, 255, 0.7);
+    border-radius: 7px;
+    background: #fff;
   }
 
   .input-row:focus-within {
-    border-color: #38bdf8;
-    background: #fff;
-    box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.15);
+    border-color: var(--brand);
+    box-shadow: 0 0 0 3px rgba(15, 143, 131, 0.12);
   }
 
   .input-row svg {
@@ -337,51 +304,6 @@
     display: flex;
     align-items: center;
     gap: 3px;
-  }
-
-  .option-help {
-    position: relative;
-    display: inline-flex;
-  }
-
-  .option-help-trigger {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 26px;
-    height: 26px;
-    padding: 0;
-    border: 0;
-    border-radius: 50%;
-    background: transparent;
-    color: #64748b;
-    cursor: help;
-  }
-
-  .option-help-tooltip {
-    position: absolute;
-    z-index: 40;
-    bottom: calc(100% + 8px);
-    left: 50%;
-    width: min(360px, calc(100vw - 48px));
-    padding: 10px 12px;
-    border: 1px solid #cbd5e1;
-    border-radius: 8px;
-    background: #fff;
-    color: #334155;
-    font-size: 0.82rem;
-    font-weight: 500;
-    line-height: 1.55;
-    opacity: 0;
-    pointer-events: none;
-    transform: translate(-50%, 4px);
-    transition: 0.16s ease;
-  }
-
-  .option-help:hover .option-help-tooltip,
-  .option-help:focus-within .option-help-tooltip {
-    opacity: 1;
-    transform: translate(-50%, 0);
   }
 
   .comments-field {

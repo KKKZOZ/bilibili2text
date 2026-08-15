@@ -98,26 +98,17 @@
 <style scoped>
   .download-layout,
   .log-layout {
-    position: relative;
-    z-index: 2;
-    max-width: 1160px;
-    margin: 20px auto 0;
+    max-width: 1220px;
+    margin: 16px auto 0;
   }
 
   .panel-download,
   .panel-log {
-    padding: 28px;
+    padding: 22px;
   }
 
   .download-card {
-    padding: 18px;
-    border: 1px solid rgba(153, 246, 228, 0.6);
-    border-radius: 20px;
-    background: linear-gradient(
-      145deg,
-      rgba(240, 253, 250, 0.8),
-      rgba(236, 254, 255, 0.8)
-    );
+    min-height: 46px;
   }
 
   .cache-hit-note {
@@ -164,14 +155,14 @@
     overflow: auto;
     padding: 16px 18px;
     border: 1px solid rgba(100, 116, 139, 0.25);
-    border-radius: 16px;
-    background: rgba(248, 250, 252, 0.8);
+    border-radius: 6px;
+    background: #111820;
     font-family: 'SFMono-Regular', Menlo, Monaco, Consolas, monospace;
   }
 
   .log-line {
     margin: 0 0 8px;
-    color: #475569;
+    color: #cbd5df;
     font-size: 0.84rem;
     line-height: 1.55;
     white-space: pre-wrap;

@@ -11,7 +11,6 @@
     presets: { type: Array, default: () => [] },
     loading: Boolean,
     requiresApiKey: Boolean,
-    duplicate: Boolean,
     error: { type: String, default: '' },
     success: { type: String, default: '' }
   })
@@ -31,7 +30,7 @@
       <p>
         可切换模型配置与 preset，对同一条历史转录重新生成总结。
         <template v-if="requiresApiKey">
-          选择“用户自定义”时，会使用你在 API Key 页面保存的模板。
+          选择“用户自定义”时，会使用在 API Key 页面保存的模板。
         </template>
       </p>
     </div>
@@ -62,9 +61,6 @@
       <LoaderCircle v-if="loading" :size="16" class="spin" />
       <span>{{ loading ? '生成中...' : '用当前配置重新生成总结' }}</span>
     </button>
-    <p v-if="duplicate" class="duplicate-hint">
-      该模型配置与总结模板已经生成过；重新生成前将要求确认并覆盖原结果。
-    </p>
     <InlineNotice v-if="error">{{ error }}</InlineNotice>
     <InlineNotice v-if="success" kind="success">{{ success }}</InlineNotice>
   </div>
@@ -75,10 +71,9 @@
     display: grid;
     gap: 16px;
     margin: 20px 0;
-    padding: 18px;
-    border: 1px solid #dbeafe;
-    border-radius: 8px;
-    background: rgba(239, 246, 255, 0.55);
+    padding: 18px 0;
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
   }
 
   .history-regenerate-head {
@@ -102,8 +97,7 @@
     font-size: 1rem;
   }
 
-  .history-regenerate-head > p:last-child,
-  .duplicate-hint {
+  .history-regenerate-head > p:last-child {
     color: #64748b;
     font-size: 0.82rem;
     line-height: 1.5;
@@ -122,16 +116,7 @@
     font-size: 0.88rem;
   }
 
-  .duplicate-hint {
-    margin: 0;
-    color: #92400e;
-  }
-
   @media (max-width: 640px) {
-    .history-regenerate {
-      padding: 14px;
-    }
-
     .history-regenerate-grid {
       grid-template-columns: 1fr;
     }

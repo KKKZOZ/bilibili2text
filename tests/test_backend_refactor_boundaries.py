@@ -37,6 +37,13 @@ def test_job_repository_create_patch_cancel() -> None:
             stage="downloading",
             progress=25,
             bvid="BV1234567890",
+            title="测试视频",
+            duration_seconds=3671,
+            tname="财经商业",
+            parent_tname="知识",
+            comment_status="succeeded",
+            comment_count=12,
+            comment_reply_count=4,
             history_run_id="BV1234567890-deadbeef",
         ),
     )
@@ -47,6 +54,12 @@ def test_job_repository_create_patch_cancel() -> None:
     assert running["stage"] == "downloading"
     assert running["progress"] == 25
     assert running["bvid"] == "BV1234567890"
+    assert running["duration_seconds"] == 3671
+    assert running["tname"] == "财经商业"
+    assert running["parent_tname"] == "知识"
+    assert running["comment_status"] == "succeeded"
+    assert running["comment_count"] == 12
+    assert running["comment_reply_count"] == 4
     assert running["history_run_id"] == "BV1234567890-deadbeef"
 
     cancelled, status = repository.cancel(job_id)

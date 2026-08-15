@@ -74,11 +74,11 @@
       auto;
     align-items: end;
     gap: 12px;
-    margin: 18px -28px 0;
-    padding: 12px 28px;
-    border-top: 1px solid rgba(148, 163, 184, 0.2);
-    border-bottom: 1px solid rgba(148, 163, 184, 0.2);
-    background: #f8fafc;
+    padding: 14px 16px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: var(--panel-shadow);
   }
 
   .history-filter-heading {
@@ -131,8 +131,6 @@
   @media (max-width: 560px) {
     .history-filter-bar {
       grid-template-columns: 1fr;
-      margin-inline: -20px;
-      padding-inline: 20px;
     }
   }
 </style>

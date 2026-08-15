@@ -98,22 +98,28 @@
 <template>
   <div ref="root" class="summary-preset-field" :class="{ compact }">
     <label :for="id">{{ label }}</label>
-    <select
-      v-if="!preview"
-      :id="id"
-      class="preset-select"
-      :value="modelValue"
-      :disabled="disabled || loading || presets.length === 0"
-      @change="emit('update:modelValue', $event.target.value)"
-    >
-      <option v-if="loading" value="">正在加载模板...</option>
-      <option v-else-if="presets.length === 0" value="">
-        未获取到模板（将使用后端默认）
-      </option>
-      <option v-for="preset in presets" :key="preset.name" :value="preset.name">
-        {{ preset.label }}
-      </option>
-    </select>
+    <div v-if="!preview" class="summary-preset-control">
+      <select
+        :id="id"
+        class="preset-select summary-preset-native"
+        :value="modelValue"
+        :disabled="disabled || loading || presets.length === 0"
+        @change="emit('update:modelValue', $event.target.value)"
+      >
+        <option v-if="loading" value="">正在加载模板...</option>
+        <option v-else-if="presets.length === 0" value="">
+          未获取到模板（将使用后端默认）
+        </option>
+        <option
+          v-for="preset in presets"
+          :key="preset.name"
+          :value="preset.name"
+        >
+          {{ preset.label }}
+        </option>
+      </select>
+      <ChevronDown :size="16" aria-hidden="true" />
+    </div>
     <div v-else class="summary-preset-dropdown" :class="{ open }">
       <button
         :id="id"
@@ -194,6 +200,24 @@
     position: relative;
   }
 
+  .summary-preset-control {
+    position: relative;
+  }
+
+  .summary-preset-control svg {
+    position: absolute;
+    top: 50%;
+    right: 14px;
+    color: #64748b;
+    pointer-events: none;
+    transform: translateY(-50%);
+  }
+
+  .summary-preset-native {
+    appearance: none;
+    padding-right: 40px;
+  }
+
   .summary-preset-trigger {
     display: flex;
     align-items: center;
@@ -229,7 +253,7 @@
     width: min(620px, calc(100vw - 48px));
     overflow: hidden;
     border: 1px solid #cbd5e1;
-    border-radius: 10px;
+    border-radius: 8px;
     background: #fff;
     box-shadow: 0 18px 40px rgba(15, 23, 42, 0.2);
   }
@@ -305,7 +329,7 @@
 
   .compact .preset-select {
     min-height: 38px;
-    border-radius: 8px;
+    border-radius: 6px;
     padding: 0 12px;
     font-size: 0.84rem;
   }

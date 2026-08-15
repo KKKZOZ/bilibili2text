@@ -936,8 +936,8 @@
     gap: 12px;
     align-items: flex-start;
     border: 1px solid rgba(20, 184, 166, 0.22);
-    border-radius: 12px;
-    background: rgba(255, 255, 255, 0.62);
+    border-radius: 8px;
+    background: #fff;
     padding: 12px;
   }
 

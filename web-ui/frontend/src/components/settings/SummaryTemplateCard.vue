@@ -58,7 +58,8 @@
     padding: 22px;
     border: 1px solid var(--line);
     border-radius: 8px;
-    background: rgba(255, 255, 255, 0.62);
+    background: #fff;
+    box-shadow: var(--panel-shadow);
   }
   h3,
   p {

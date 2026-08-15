@@ -234,8 +234,8 @@
   /* ─── Panel variant ──────────────────────────────────────────── */
 
   .panel-progress {
-    padding: 24px;
-    animation-delay: 0.08s;
+    align-self: start;
+    padding: 22px;
   }
 
   /* ─── Progress header ────────────────────────────────────────── */
@@ -303,7 +303,7 @@
   }
 
   .progress-bar {
-    height: 12px;
+    height: 7px;
     width: 100%;
     border-radius: 999px;
     background: #dbe4ef;
@@ -315,7 +315,7 @@
     height: 100%;
     width: 0;
     border-radius: 999px;
-    background: linear-gradient(90deg, #0d9488, #06b6d4);
+    background: var(--brand);
     transition: width 0.35s ease;
   }
 
@@ -327,23 +327,25 @@
   /* ─── Stage list ─────────────────────────────────────────────── */
 
   .stage-list {
-    margin: 18px 0 0;
+    margin: 16px 0 0;
     padding: 0;
     list-style: none;
     display: grid;
-    gap: 9px;
+    gap: 0;
   }
 
   .stage-list li {
-    border: 1px solid rgba(148, 163, 184, 0.34);
-    border-radius: 12px;
-    padding: 10px 12px;
+    min-height: 44px;
+    padding: 9px 4px;
+    border: 0;
+    border-bottom: 1px solid #edf0f3;
+    border-radius: 0;
     display: grid;
     grid-template-columns: auto 1fr auto auto;
     gap: 10px;
     align-items: center;
     color: var(--text-soft);
-    background: rgba(255, 255, 255, 0.84);
+    background: transparent;
     transition:
       border-color 0.2s ease,
       background-color 0.2s ease;
@@ -371,9 +373,8 @@
   }
 
   .stage-list .stage-done {
-    border-color: #bbf7d0;
     color: #166534;
-    background: #f0fdf4;
+    background: transparent;
   }
 
   .stage-list .stage-done .dot {
@@ -385,21 +386,19 @@
   }
 
   .stage-list .stage-active {
-    border-color: #7dd3fc;
-    color: #0c4a6e;
-    background: #ecfeff;
+    color: var(--brand-strong);
+    background: var(--brand-soft);
   }
 
   .stage-list .stage-active .dot {
-    background: #0ea5e9;
+    background: var(--brand);
   }
 
   .stage-list .stage-active svg {
-    color: #0ea5e9;
+    color: var(--brand);
   }
 
   .stage-list .stage-error {
-    border-color: #fecaca;
     color: #991b1b;
     background: #fef2f2;
   }

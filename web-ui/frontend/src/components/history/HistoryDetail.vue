@@ -32,7 +32,6 @@
     presets: { type: Array, default: () => [] },
     regenerateLoading: Boolean,
     requiresApiKey: Boolean,
-    duplicateSummary: Boolean,
     regenerateError: { type: String, default: '' },
     regenerateSuccess: { type: String, default: '' },
     ragAnswerHtml: { type: String, default: '' },
@@ -57,7 +56,7 @@
 </script>
 
 <template>
-  <article class="panel panel-history">
+  <article class="history-detail">
     <header>
       <button type="button" @click="emit('back')">
         <ArrowLeft :size="16" />返回列表
@@ -116,7 +115,6 @@
         :presets="presets"
         :loading="regenerateLoading"
         :requires-api-key="requiresApiKey"
-        :duplicate="duplicateSummary"
         :error="regenerateError"
         :success="regenerateSuccess"
         @update:selected-profile="emit('update:selectedProfile', $event)"
@@ -235,8 +233,12 @@
 </template>
 
 <style scoped>
-  .panel-history {
+  .history-detail {
     padding: 28px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: var(--panel-shadow);
   }
   header {
     margin-bottom: 16px;
@@ -482,7 +484,7 @@
     }
   }
   @media (max-width: 640px) {
-    .panel-history {
+    .history-detail {
       padding: 20px;
     }
     .detail-info {

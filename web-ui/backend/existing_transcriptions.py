@@ -164,6 +164,8 @@ class ExistingTranscriptionService:
         auto_generate_fancy_html: bool,
         include_comments: bool = False,
         comment_limit: int | None = DEFAULT_COMMENT_LIMIT,
+        metadata_callback=None,
+        comment_status_callback=None,
         cancellation_token: CancellationToken | None = None,
     ) -> bool:
         if cancellation_token is not None and cancellation_token.is_cancelled():
@@ -203,6 +205,8 @@ class ExistingTranscriptionService:
                 storage_backend=storage_backend,
                 config=config,
                 existing_results=existing_results,
+                include_comments=include_comments,
+                comment_status_callback=comment_status_callback,
                 cancellation_token=cancellation_token,
             )
 
@@ -219,6 +223,8 @@ class ExistingTranscriptionService:
             auto_generate_fancy_html=auto_generate_fancy_html,
             include_comments=include_comments,
             comment_limit=comment_limit,
+            metadata_callback=metadata_callback,
+            comment_status_callback=comment_status_callback,
             cancellation_token=cancellation_token,
         )
 
@@ -231,6 +237,8 @@ class ExistingTranscriptionService:
         storage_backend: StorageBackend,
         config,
         existing_results,
+        include_comments: bool,
+        comment_status_callback=None,
         cancellation_token: CancellationToken | None = None,
     ) -> bool:
         if cancellation_token is not None and cancellation_token.is_cancelled():
@@ -248,6 +256,8 @@ class ExistingTranscriptionService:
         if cancellation_token is not None and cancellation_token.is_cancelled():
             return True
         notice = f"检测到 {transcription_id} 已经转录过，已直接返回历史文件。"
+        if include_comments and comment_status_callback is not None:
+            comment_status_callback("unavailable", 0, 0)
 
         def _persist_and_succeed() -> str | None:
             run_id = _record_history(
@@ -298,6 +308,8 @@ class ExistingTranscriptionService:
         auto_generate_fancy_html: bool,
         include_comments: bool,
         comment_limit: int | None,
+        metadata_callback=None,
+        comment_status_callback=None,
         cancellation_token: CancellationToken | None = None,
     ) -> bool:
         if cancellation_token is not None and cancellation_token.is_cancelled():
@@ -386,6 +398,8 @@ class ExistingTranscriptionService:
                 summary_prompt_template=summary_prompt_template,
                 include_comments=include_comments,
                 comment_limit=comment_limit,
+                metadata_callback=metadata_callback,
+                comment_status_callback=comment_status_callback,
                 cancellation_token=cancellation_token,
             )
         except PipelineCancelled:

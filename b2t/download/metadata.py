@@ -32,6 +32,7 @@ class VideoMetadata:
     description: str
     aid: int = 0
     tid: int = 0
+    duration_seconds: int = 0
 
     @property
     def tname(self) -> str:
@@ -132,6 +133,7 @@ async def get_video_metadata_async(bvid: str) -> VideoMetadata:
             description=video_data.get("desc", ""),
             aid=int(video_data.get("aid", 0) or 0),
             tid=int(video_data.get("tid", 0) or 0),
+            duration_seconds=int(video_data.get("duration", 0) or 0),
         )
 
         logger.info(

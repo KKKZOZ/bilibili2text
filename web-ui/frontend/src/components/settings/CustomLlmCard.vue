@@ -11,6 +11,7 @@
     model: { type: String, default: '' },
     apiKey: { type: String, default: '' },
     testing: Boolean,
+    testPassed: Boolean,
     error: { type: String, default: '' },
     success: { type: String, default: '' }
   })
@@ -69,8 +70,14 @@
       <button class="submit" type="button" @click="emit('save')">
         {{ configured ? '更新' : '保存' }}
       </button>
-      <button type="button" :disabled="testing" @click="emit('test')">
-        {{ testing ? '测试中' : '测试连接' }}
+      <button
+        type="button"
+        :class="{ 'test-passed': testPassed }"
+        :disabled="testing"
+        @click="emit('test')"
+      >
+        <CheckCircle2 v-if="testPassed" :size="14" />
+        {{ testing ? '测试中' : testPassed ? '连接正常' : '测试连接' }}
       </button>
       <button type="button" :disabled="!configured" @click="emit('clear')">
         清除
@@ -88,7 +95,8 @@
     padding: 22px;
     border: 1px solid var(--line);
     border-radius: 8px;
-    background: rgba(255, 255, 255, 0.62);
+    background: #fff;
+    box-shadow: var(--panel-shadow);
   }
   h3,
   p {
@@ -143,6 +151,10 @@
     border-radius: 8px;
     outline: 0;
   }
+  input:focus {
+    border-color: var(--brand);
+    box-shadow: 0 0 0 3px rgba(15, 143, 131, 0.1);
+  }
   .key-input {
     display: flex;
     align-items: center;
@@ -154,6 +166,11 @@
   }
   .key-input input {
     border: 0;
+    box-shadow: none;
+  }
+  .key-input:focus-within {
+    border-color: var(--brand);
+    box-shadow: 0 0 0 3px rgba(15, 143, 131, 0.1);
   }
   .actions {
     display: flex;
@@ -162,6 +179,10 @@
     margin-top: 3px;
   }
   .actions button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
     min-height: 36px;
     padding: 0 13px;
     border: 1px solid var(--line);
@@ -175,5 +196,10 @@
     margin: 0;
     background: var(--brand);
     color: #fff;
+  }
+  .actions .test-passed {
+    border-color: #86efac;
+    background: #f0fdf4;
+    color: #166534;
   }
 </style>

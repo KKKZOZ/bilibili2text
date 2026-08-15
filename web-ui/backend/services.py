@@ -2,7 +2,7 @@
 
 import logging
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
@@ -359,17 +359,24 @@ def _fetch_comments_for_existing_summary(
     config: AppConfig,
     run_prefix: str,
     comment_limit: int | None,
+    comment_status_callback: Callable[[str, int, int], None] | None = None,
 ) -> tuple[dict[str, StoredArtifact], str]:
     if metadata is None:
+        if comment_status_callback is not None:
+            comment_status_callback("unavailable", 0, 0)
         logger.warning("历史转录缺少平台元信息，已跳过评论下载")
         return {}, ""
 
     comment_platform = comment_platform_from_metadata(metadata)
     if comment_platform is None:
+        if comment_status_callback is not None:
+            comment_status_callback("unavailable", 0, 0)
         logger.warning("历史转录平台暂不支持评论下载，已跳过: %s", bvid)
         return {}, ""
 
     try:
+        if comment_status_callback is not None:
+            comment_status_callback("running", 0, 0)
         platform_label = comment_platform_label(comment_platform)
         logger.info(
             "历史评论补充配置：平台=%s，热门主评论=%s，子评论=每条主评论全部下载",
@@ -394,11 +401,14 @@ def _fetch_comments_for_existing_summary(
         write_comments_json(comments, comments_json_path)
         write_comments_markdown(comments, comments_md_path)
         comments_markdown_text = comments_md_path.read_text(encoding="utf-8")
+        reply_count = count_comment_replies(comments)
+        if comment_status_callback is not None:
+            comment_status_callback("succeeded", comments.fetched_count, reply_count)
         logger.info(
             "历史评论补充完成：平台=%s，主评论=%s，子评论=%s，UP主回复=%s，排序=%s，来源=%s，资源=%s",
             platform_label,
             comments.fetched_count,
-            count_comment_replies(comments),
+            reply_count,
             count_up_replies(comments),
             comments.sort,
             comments.source,
@@ -415,6 +425,8 @@ def _fetch_comments_for_existing_summary(
             ),
         }, comments_markdown_text
     except Exception as exc:
+        if comment_status_callback is not None:
+            comment_status_callback("failed", 0, 0)
         logger.warning("历史转录评论补充失败，已跳过: %s", exc)
         return {}, ""
 
@@ -621,6 +633,8 @@ def _run_summary_only_from_existing(
     pubdate: str = "",
     include_comments: bool = False,
     comment_limit: int | None = DEFAULT_COMMENT_LIMIT,
+    metadata_callback: Callable[[VideoMetadata], None] | None = None,
+    comment_status_callback: Callable[[str, int, int], None] | None = None,
     cancellation_token: CancellationToken | None = None,
 ) -> dict[str, object]:
     markdown_artifact = existing_results.get("markdown")
@@ -635,6 +649,8 @@ def _run_summary_only_from_existing(
         pubdate=pubdate,
         require_platform_metadata=include_comments,
     )
+    if metadata is not None and metadata_callback is not None:
+        metadata_callback(metadata)
 
     run_prefix = f"{transcription_id or bvid}-{uuid4().hex[:8]}"
     cleanup_temp_dir: tempfile.TemporaryDirectory | None = None
@@ -688,6 +704,7 @@ def _run_summary_only_from_existing(
                     config=config,
                     run_prefix=run_prefix,
                     comment_limit=comment_limit,
+                    comment_status_callback=comment_status_callback,
                 )
             )
             if cancellation_token is not None:

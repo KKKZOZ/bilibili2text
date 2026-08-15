@@ -200,6 +200,8 @@ def run_pipeline(
     stt_storage_backend: "StorageBackend | None" = None,
     prefer_bilibili_subtitle: bool = True,
     bilibili_subtitle_used_callback: Callable[[], None] | None = None,
+    metadata_callback: Callable[[VideoMetadata], None] | None = None,
+    comment_status_callback: Callable[[str, int, int], None] | None = None,
     include_comments: bool = False,
     comment_limit: int | None = DEFAULT_COMMENT_LIMIT,
     cancellation_token: CancellationToken | None = None,
@@ -221,6 +223,9 @@ def run_pipeline(
         progress_callback: Stage progress callback with (stage_key, stage_label, progress_percent)
         prefer_bilibili_subtitle: Try Bilibili native subtitles before downloading
             audio. Ignored for local uploads.
+        metadata_callback: Called as soon as source metadata is available.
+        comment_status_callback: Called with status, fetched top-level count,
+            and fetched reply count while comments are processed.
         include_comments: Fetch platform comments and append summarized viewpoints
             to the summary when available.
         comment_limit: Top-level comment limit. None means fetch all top-level
@@ -284,6 +289,8 @@ def run_pipeline(
                 metadata.title,
             )
             results["_metadata"] = metadata  # Temporarily store metadata for later use
+            if metadata_callback is not None:
+                metadata_callback(metadata)
 
         # Create workflow directory
         if metadata and metadata.title:
@@ -305,6 +312,8 @@ def run_pipeline(
         )
         if comment_platform is not None and metadata is not None:
             try:
+                if comment_status_callback is not None:
+                    comment_status_callback("running", 0, 0)
                 platform_label = comment_platform_label(comment_platform)
                 emit_progress("downloading", f"获取{platform_label}评论", 20)
                 logger.info("=== 获取%s评论 ===", platform_label)
@@ -332,11 +341,16 @@ def run_pipeline(
                 comments_markdown_text = comments_md_path.read_text(encoding="utf-8")
                 local_results["comments_json"] = comments_json_path
                 local_results["comments_markdown"] = comments_md_path
+                reply_count = count_comment_replies(comments)
+                if comment_status_callback is not None:
+                    comment_status_callback(
+                        "succeeded", comments.fetched_count, reply_count
+                    )
                 logger.info(
                     "评论下载完成：平台=%s，主评论=%s，子评论=%s，UP主回复=%s，排序=%s，来源=%s，资源=%s",
                     platform_label,
                     comments.fetched_count,
-                    count_comment_replies(comments),
+                    reply_count,
                     count_up_replies(comments),
                     comments.sort,
                     comments.source,
@@ -345,8 +359,12 @@ def run_pipeline(
             except PipelineCancelled:
                 raise
             except Exception as exc:
+                if comment_status_callback is not None:
+                    comment_status_callback("failed", 0, 0)
                 logger.warning("Failed to fetch platform comments: %s", exc)
         elif include_comments:
+            if comment_status_callback is not None:
+                comment_status_callback("unavailable", 0, 0)
             logger.info(
                 "评论下载未执行：当前资源不是支持评论获取的平台，"
                 "或缺少必要元信息（子评论规则：若执行则每条主评论全部下载）"

@@ -150,6 +150,15 @@ class ProcessStatusResponse(BaseModel):
     pubdate: str | None = None
     bvid: str | None = None
     title: str | None = None
+    duration_seconds: int = Field(default=0, ge=0)
+    tname: str | None = None
+    parent_tname: str | None = None
+    comment_status: Literal[
+        "disabled", "pending", "running", "succeeded", "failed", "unavailable"
+    ] = "disabled"
+    comment_limit: int = Field(default=200, ge=0)
+    comment_count: int = Field(default=0, ge=0)
+    comment_reply_count: int = Field(default=0, ge=0)
     history_run_id: str | None = None
     is_ephemeral_upload: bool = False
     expires_at: str | None = None

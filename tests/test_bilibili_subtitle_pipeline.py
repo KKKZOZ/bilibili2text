@@ -6,6 +6,8 @@ import pytest
 
 from b2t.cancellation import CancellationToken, PipelineCancelled
 from b2t.config import create_app_config
+from b2t.download.comments import PlatformCommentBundle
+from b2t.download.metadata import VideoMetadata
 from b2t.download.subtitle import (
     BilibiliSubtitle,
     BilibiliSubtitleItem,
@@ -149,7 +151,29 @@ def test_pipeline_uses_bilibili_subtitle_before_asr(
             ),
         ),
     )
-    monkeypatch.setattr("b2t.pipeline.get_video_metadata", lambda bvid: None)
+    metadata = VideoMetadata(
+        bvid="BV1ABcsztEcY",
+        title="测试视频",
+        author="测试UP主",
+        author_uid=123,
+        pubdate="2026-08-15 12:00:00",
+        pubdate_timestamp=0,
+        description="",
+        aid=456,
+        tid=207,
+        duration_seconds=3671,
+    )
+    monkeypatch.setattr("b2t.pipeline.get_video_metadata", lambda bvid: metadata)
+    monkeypatch.setattr(
+        "b2t.pipeline.fetch_platform_comments",
+        lambda **kwargs: PlatformCommentBundle(
+            bvid=metadata.bvid,
+            fetched_count=12,
+            requested_limit=20,
+            total_count=30,
+            sort="hot",
+        ),
+    )
     monkeypatch.setattr(
         "b2t.pipeline.download_audio",
         lambda *args, **kwargs: (_ for _ in ()).throw(
@@ -164,6 +188,8 @@ def test_pipeline_uses_bilibili_subtitle_before_asr(
     )
 
     used_callback_calls = 0
+    received_metadata = []
+    comment_updates = []
 
     def mark_subtitle_used() -> None:
         nonlocal used_callback_calls
@@ -176,9 +202,17 @@ def test_pipeline_uses_bilibili_subtitle_before_asr(
         storage_backend=storage,
         stt_storage_backend=storage,
         bilibili_subtitle_used_callback=mark_subtitle_used,
+        metadata_callback=received_metadata.append,
+        comment_status_callback=lambda status, count, replies: comment_updates.append(
+            (status, count, replies)
+        ),
+        include_comments=True,
+        comment_limit=20,
     )
 
     assert used_callback_calls == 1
+    assert received_metadata == [metadata]
+    assert comment_updates == [("running", 0, 0), ("succeeded", 12, 0)]
     assert "audio" not in results
     assert {"json", "markdown"} <= results.keys()
 

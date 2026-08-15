@@ -33,6 +33,7 @@ def test_get_video_metadata_saves_tid_and_resolves_empty_api_tname(
                     "aid": 117088458968224,
                     "tid": 207,
                     "tname": "",
+                    "duration": 3671,
                     "title": "康师傅控股中报点评",
                     "owner": {"name": "测试UP主", "mid": 123},
                     "pubdate": 0,
@@ -62,3 +63,4 @@ def test_get_video_metadata_saves_tid_and_resolves_empty_api_tname(
     assert metadata.tname == "财经商业"
     assert metadata.parent_tid == 36
     assert metadata.parent_tname == "知识"
+    assert metadata.duration_seconds == 3671

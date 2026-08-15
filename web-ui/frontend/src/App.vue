@@ -1,14 +1,13 @@
 <script setup>
-  import {
-    computed,
-    nextTick,
-    onBeforeUnmount,
-    onMounted,
-    ref,
-    watch
-  } from 'vue'
+  import { computed, onMounted, watch } from 'vue'
   import { useRoute, useRouter } from 'vue-router'
-  import { Brain, History, KeyRound, Sparkles } from 'lucide-vue-next'
+  import {
+    AudioLines,
+    Brain,
+    History,
+    KeyRound,
+    Sparkles
+  } from 'lucide-vue-next'
   import { usePublicCredentials } from './composables/usePublicCredentials'
   import { useRuntimeFeatures } from './composables/useRuntimeFeatures'
   import { useSummaryConfig } from './composables/useSummaryConfig'
@@ -18,280 +17,293 @@
   const { isOpenPublic, loadRuntimeFeatures } = useRuntimeFeatures()
   const { refreshCredentials } = usePublicCredentials()
   const { initializeSummaryConfig } = useSummaryConfig()
-  const tabBarRef = ref(null)
-  const tabIndicatorStyle = ref({
-    width: '0px',
-    transform: 'translateX(0px)'
-  })
 
-  // Active tab detection
+  const navigation = computed(() => [
+    { key: 'process', label: '新建转录', path: '/process', icon: Sparkles },
+    { key: 'history', label: '历史记录', path: '/history', icon: History },
+    { key: 'rag', label: '知识库', path: '/rag', icon: Brain },
+    ...(isOpenPublic.value
+      ? [
+          {
+            key: 'settings',
+            label: 'API Key 配置',
+            path: '/settings',
+            icon: KeyRound
+          }
+        ]
+      : [])
+  ])
+
   const currentView = computed(() => {
     const path = route.path
-    if (path.startsWith('/process')) return 'process'
     if (path.startsWith('/history')) return 'history'
     if (path.startsWith('/rag')) return 'rag'
     if (path.startsWith('/settings')) return 'settings'
     return 'process'
   })
 
-  // Tab bar indicator animation
-  const tabRefs = ref({})
-  const setTabRef = (view, el) => {
-    if (el) tabRefs.value[view] = el
-  }
-
-  const updateTabIndicator = () => {
-    const bar = tabBarRef.value
-    const activeButton = tabRefs.value[currentView.value]
-    if (!bar || !activeButton) {
-      return
-    }
-
-    const barRect = bar.getBoundingClientRect()
-    const buttonRect = activeButton.getBoundingClientRect()
-    const offsetX = buttonRect.left - barRect.left
-
-    tabIndicatorStyle.value = {
-      width: `${buttonRect.width}px`,
-      transform: `translateX(${offsetX}px)`
-    }
-  }
-
-  const navigateTo = (path) => {
-    router.push(path)
-  }
+  const currentPage = computed(
+    () =>
+      navigation.value.find((item) => item.key === currentView.value) || {
+        label: '新建转录'
+      }
+  )
 
   onMounted(() => {
-    void nextTick(updateTabIndicator)
-    window.addEventListener('resize', updateTabIndicator)
     refreshCredentials()
+    void initializeSummaryConfig()
     void (async () => {
       await loadRuntimeFeatures()
-      await initializeSummaryConfig()
-      await nextTick()
-      updateTabIndicator()
+      if (!isOpenPublic.value && route.path === '/settings') {
+        router.push('/process')
+      }
     })()
   })
 
-  watch(currentView, async () => {
-    await nextTick()
-    updateTabIndicator()
-  })
-
-  watch(isOpenPublic, async (openPublic) => {
-    if (!openPublic && route.path === '/settings') {
-      router.push('/process')
-      return
-    }
-    await nextTick()
-    updateTabIndicator()
-  })
-
-  onBeforeUnmount(() => {
-    window.removeEventListener('resize', updateTabIndicator)
+  watch(isOpenPublic, (openPublic) => {
+    if (!openPublic && route.path === '/settings') router.push('/process')
   })
 </script>
 
 <template>
-  <main class="shell">
-    <div class="ambient ambient-left"></div>
-    <div class="ambient ambient-right"></div>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="topbar-inner">
+        <RouterLink
+          class="brand-lockup"
+          to="/process"
+          aria-label="返回新建转录"
+        >
+          <span class="brand-mark"><AudioLines :size="20" /></span>
+          <span class="brand-copy">
+            <strong>bilibili-to-text</strong>
+          </span>
+        </RouterLink>
 
-    <!-- Tab bar -->
-    <nav ref="tabBarRef" class="tab-bar">
-      <span
-        class="tab-indicator"
-        :style="tabIndicatorStyle"
-        aria-hidden="true"
-      ></span>
-      <button
-        :ref="(el) => setTabRef('process', el)"
-        class="tab-button"
-        :class="{ active: currentView === 'process' }"
-        @click="navigateTo('/process')"
-      >
-        <Sparkles :size="16" />
-        <span>新建转录</span>
-      </button>
-      <button
-        :ref="(el) => setTabRef('history', el)"
-        class="tab-button"
-        :class="{ active: currentView === 'history' }"
-        @click="navigateTo('/history')"
-      >
-        <History :size="16" />
-        <span>历史记录</span>
-      </button>
-      <button
-        :ref="(el) => setTabRef('rag', el)"
-        class="tab-button"
-        :class="{ active: currentView === 'rag' }"
-        @click="navigateTo('/rag')"
-      >
-        <Brain :size="16" />
-        <span>知识库</span>
-      </button>
-      <button
-        v-if="isOpenPublic"
-        :ref="(el) => setTabRef('settings', el)"
-        class="tab-button"
-        :class="{ active: currentView === 'settings' }"
-        @click="navigateTo('/settings')"
-      >
-        <KeyRound :size="16" />
-        <span>API Key</span>
-      </button>
-    </nav>
+        <nav class="top-tabs" aria-label="主导航">
+          <button
+            v-for="item in navigation"
+            :key="item.key"
+            type="button"
+            :class="{ active: currentView === item.key }"
+            @click="router.push(item.path)"
+          >
+            <component :is="item.icon" :size="17" />
+            <span>{{ item.label }}</span>
+          </button>
+        </nav>
+      </div>
+    </header>
 
-    <RouterView />
-  </main>
+    <main class="workspace-content">
+      <header class="page-heading">
+        <h1>{{ currentPage.label }}</h1>
+      </header>
+      <RouterView />
+    </main>
+  </div>
 </template>
 
 <style scoped>
-  /* ─── Shell & Ambient ────────────────────────────────────────── */
-
-  .shell {
-    position: relative;
+  .app-shell {
     min-height: 100vh;
-    padding: clamp(12px, 2vw, 24px) clamp(24px, 4vw, 48px)
-      clamp(24px, 4vw, 48px);
-    overflow: hidden;
   }
 
-  .ambient {
-    position: absolute;
-    border-radius: 999px;
-    filter: blur(80px);
-    opacity: 0.35;
-    pointer-events: none;
-    animation: float 16s ease-in-out infinite;
+  .topbar {
+    position: sticky;
+    z-index: 100;
+    top: 0;
+    border-bottom: 1px solid #dbe1e8;
+    background: rgba(255, 255, 255, 0.96);
+    backdrop-filter: blur(12px);
   }
 
-  .ambient-left {
-    width: 360px;
-    height: 360px;
-    left: -130px;
-    top: -110px;
-    background: #7dd3fc;
+  .topbar-inner {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    width: 100%;
+    max-width: 1440px;
+    min-height: 64px;
+    margin: 0 auto;
+    padding: 0 clamp(28px, 4vw, 56px);
   }
 
-  .ambient-right {
-    width: 420px;
-    height: 420px;
-    right: -180px;
-    bottom: -150px;
-    background: #99f6e4;
-    animation-delay: 0.8s;
+  .brand-lockup {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-right: 30px;
+    border-radius: 7px;
+    color: var(--text-main);
+    text-decoration: none;
   }
 
-  /* ─── Tab bar ────────────────────────────────────────────────── */
+  .brand-lockup:focus-visible {
+    outline: 0;
+    box-shadow: 0 0 0 3px rgba(15, 143, 131, 0.14);
+  }
 
-  .tab-bar {
+  .brand-mark {
+    display: grid;
+    flex: 0 0 auto;
+    width: 34px;
+    height: 34px;
+    place-items: center;
+    border-radius: 7px;
+    background: #101820;
+    color: #5eead4;
+  }
+
+  .brand-copy {
+    min-width: 0;
+  }
+
+  .brand-copy strong {
+    font-size: 0.88rem;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+
+  .top-tabs {
+    display: flex;
+    align-self: stretch;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .top-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .top-tabs button {
     position: relative;
-    z-index: 2;
-    max-width: 1160px;
-    margin: 0 auto 32px;
     display: inline-flex;
-    gap: 4px;
-    padding: 6px;
-    border-radius: 20px;
-    border: 1px solid rgba(255, 255, 255, 0.5);
-    background: rgba(255, 255, 255, 0.45);
-    backdrop-filter: blur(24px);
-    -webkit-backdrop-filter: blur(24px);
-    box-shadow:
-      0 4px 12px rgba(15, 23, 42, 0.04),
-      inset 0 1px 1px rgba(255, 255, 255, 0.6);
-    isolation: isolate;
-  }
-
-  .tab-indicator {
-    position: absolute;
-    top: 6px;
-    left: 0;
-    bottom: 6px;
-    border-radius: 14px;
-    background: rgba(255, 255, 255, 0.9);
-    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
-    pointer-events: none;
-    transition:
-      transform 0.34s cubic-bezier(0.16, 1, 0.3, 1),
-      width 0.34s cubic-bezier(0.16, 1, 0.3, 1);
-    z-index: 0;
-  }
-
-  .tab-button {
-    position: relative;
-    z-index: 1;
-    display: inline-flex;
+    flex: 0 0 auto;
     align-items: center;
     justify-content: center;
-    gap: 8px;
-    padding: 10px 20px;
-    border: none;
-    border-radius: 14px;
+    gap: 7px;
+    min-width: 110px;
+    padding: 0 16px;
+    border: 0;
     background: transparent;
-    color: var(--text-muted);
-    font-size: 0.9rem;
-    font-weight: 600;
+    color: #687584;
+    font: inherit;
+    font-size: 0.82rem;
+    font-weight: 700;
     cursor: pointer;
-    transition:
-      color 0.24s ease,
-      transform 0.2s ease;
   }
 
-  .tab-button:hover {
+  .top-tabs button::after {
+    position: absolute;
+    right: 14px;
+    bottom: 0;
+    left: 14px;
+    height: 2px;
+    background: transparent;
+    content: '';
+  }
+
+  .top-tabs button:hover {
+    background: #f6f8f9;
     color: var(--text-soft);
   }
 
-  .tab-button:active {
-    transform: translateY(1px);
+  .top-tabs button.active {
+    background: #f2faf8;
+    color: var(--brand-strong);
   }
 
-  .tab-button.active {
-    color: #0f766e;
+  .top-tabs button.active::after {
+    background: var(--brand);
   }
 
-  .tab-button svg {
-    transition: transform 0.26s ease;
+  .top-tabs button:focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: -3px;
   }
 
-  .tab-button.active svg {
-    transform: scale(1.04);
+  .workspace-content {
+    width: 100%;
+    max-width: 1440px;
+    margin: 0 auto;
+    padding: 32px clamp(28px, 4vw, 56px) 56px;
   }
 
-  .tab-button:focus-visible {
-    outline: none;
-    box-shadow: inset 0 0 0 2px rgba(15, 118, 110, 0.28);
+  .page-heading {
+    display: grid;
+    gap: 4px;
+    margin-bottom: 22px;
   }
 
-  /* ─── Responsive ─────────────────────────────────────────────── */
+  .page-heading p,
+  .page-heading h1 {
+    margin: 0;
+  }
 
-  @media (max-width: 640px) {
-    .ambient {
-      display: none;
+  .page-heading p {
+    color: var(--brand-strong);
+    font-size: 0.68rem;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+
+  .page-heading h1 {
+    font-size: 1.5rem;
+    font-weight: 750;
+    line-height: 1.25;
+  }
+
+  @media (max-width: 760px) {
+    .topbar-inner {
+      grid-template-columns: minmax(0, 1fr);
+      min-height: 0;
+      padding: 10px 20px 0;
     }
 
-    .tab-bar {
-      width: 100%;
-      overflow-x: auto;
-      scrollbar-width: none;
+    .brand-lockup {
+      padding-right: 0;
     }
 
-    .tab-bar::-webkit-scrollbar {
-      display: none;
+    .top-tabs {
+      grid-column: 1 / -1;
+      min-height: 44px;
+      margin-top: 7px;
     }
 
-    .tab-button {
+    .top-tabs button {
       flex: 1 0 auto;
-      justify-content: center;
-      min-width: 0;
-      padding: 9px 10px;
-      font-size: 0.84rem;
+      min-width: 104px;
+      padding: 0 12px;
     }
 
-    .tab-button span {
-      white-space: nowrap;
+    .workspace-content {
+      padding: 24px 20px 40px;
+    }
+  }
+
+  @media (max-width: 520px) {
+    .topbar-inner {
+      padding-inline: 14px;
+    }
+
+    .top-tabs button {
+      min-width: 98px;
+      padding-inline: 10px;
+      font-size: 0.78rem;
+    }
+
+    .workspace-content {
+      padding: 20px 14px 32px;
+    }
+
+    .page-heading {
+      margin-bottom: 16px;
+    }
+
+    .page-heading h1 {
+      font-size: 1.35rem;
     }
   }
 </style>
