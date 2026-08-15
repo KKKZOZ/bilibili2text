@@ -78,11 +78,7 @@ async def rag_query_stream_post(payload: RagQueryRequest) -> StreamingResponse:
 
 def _create_rag_query_service(request: RagQueryRequest) -> RagQueryService:
     config = get_runtime_app_config(
-        api_key=(request.api_key or "").strip(),
-        deepseek_api_key=(request.deepseek_api_key or "").strip(),
-        custom_llm_base_url=(request.custom_llm_base_url or "").strip(),
-        custom_llm_api_key=(request.custom_llm_api_key or "").strip(),
-        custom_llm_model=(request.custom_llm_model or "").strip(),
+        **request.runtime_config_kwargs(),
     )
     if not config.rag.enabled:
         raise HTTPException(

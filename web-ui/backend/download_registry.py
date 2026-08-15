@@ -55,18 +55,6 @@ class DownloadRegistry:
             for item_id in stale_ids:
                 self._artifacts.pop(item_id, None)
 
-    @property
-    def legacy_artifacts(self) -> OrderedDict[str, StoredArtifact]:
-        return self._artifacts
-
-    @property
-    def legacy_content(self) -> OrderedDict[str, tuple[bytes, str]]:
-        return self._content
-
-    @property
-    def legacy_lock(self) -> Lock:
-        return self._lock
-
 
 download_registry = DownloadRegistry()
 

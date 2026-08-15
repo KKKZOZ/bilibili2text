@@ -1,7 +1,27 @@
 import { readonly, ref, watch } from 'vue'
 import { summaryApi } from '../api'
-import { usePublicCredentials } from './usePublicCredentials'
+import {
+  CUSTOM_LLM_PROFILE_NAME,
+  usePublicCredentials
+} from './usePublicCredentials'
 import { useRuntimeFeatures } from './useRuntimeFeatures'
+
+export const CUSTOM_SUMMARY_PRESET_VALUE = '__user_custom__'
+
+export const formatSummaryProfileLabel = (profile) => {
+  if (!profile) return ''
+  if (profile.name === CUSTOM_LLM_PROFILE_NAME) {
+    return `custom(${profile.model || 'model'})`
+  }
+  return `${profile.name} (${profile.model})`
+}
+
+export const withCustomSummaryPreset = (presets, enabled) => {
+  const base = Array.isArray(presets) ? presets : []
+  return enabled
+    ? [...base, { name: CUSTOM_SUMMARY_PRESET_VALUE, label: '用户自定义' }]
+    : base
+}
 
 const summaryPresets = ref([])
 const summaryDefaultPreset = ref('')

@@ -12,7 +12,7 @@ from uuid import uuid4
 
 import requests
 
-from b2t.config import STTConfig
+from b2t.config import STTProfile
 from b2t.storage.base import StorageBackend
 from b2t.stt.base import ProgressCallback, STTProvider
 
@@ -65,7 +65,7 @@ def _raise_api_error(response: requests.Response, operation: str) -> None:
 class VolcSTTProvider(STTProvider):
     """Volcengine STT provider backed by the bigmodel submit/query APIs."""
 
-    def __init__(self, stt_config: STTConfig, storage_backend: StorageBackend) -> None:
+    def __init__(self, stt_config: STTProfile, storage_backend: StorageBackend) -> None:
         self._stt_config = stt_config
         self._storage_backend = storage_backend
         self._session = requests.Session()

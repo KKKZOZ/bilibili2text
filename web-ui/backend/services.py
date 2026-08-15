@@ -18,6 +18,8 @@ from b2t.converter.md_remove_table import MarkdownRemoveTableConverter
 from b2t.converter.md_to_png import MarkdownToPngConverter
 from b2t.download.comments import (
     DEFAULT_COMMENT_LIMIT,
+    comment_platform_from_metadata,
+    comment_platform_label,
     count_comment_replies,
     count_up_replies,
     fetch_platform_comments,
@@ -42,30 +44,21 @@ from b2t.summarize.timeline import (
     export_summary_table_without_video_time,
     export_summary_timeline_text,
 )
+from backend.artifacts import materialize_artifact, storage_parent_key
 from backend.dependencies import get_history_db
 from backend.download_registry import download_registry
 from backend.stock_cache import get_cached_stock_statuses, get_or_fetch_stock_statuses
 
 logger = logging.getLogger(__name__)
 CUSTOM_SUMMARY_PRESET_VALUE = "__user_custom__"
-_XIAOYUZHOU_BVID_PREFIX = "xiaoyuzhou_"
 _MISSING_METADATA_TEXT = {"", "unknown"}
 
 
-def _comment_platform_from_metadata(metadata: VideoMetadata) -> Platform | None:
-    if metadata.bvid.startswith("BV") and metadata.aid > 0:
-        return Platform.BILIBILI
-    if metadata.bvid.startswith(_XIAOYUZHOU_BVID_PREFIX):
-        return Platform.XIAOYUZHOU
-    return None
-
-
-def _comment_platform_label(platform: Platform) -> str:
-    if platform == Platform.BILIBILI:
-        return "B 站"
-    if platform == Platform.XIAOYUZHOU:
-        return "小宇宙"
-    return platform.value
+def _xiaoyuzhou_episode_id(bvid: str) -> str | None:
+    prefix = f"{Platform.XIAOYUZHOU.value}_"
+    if not bvid.startswith(prefix):
+        return None
+    return bvid.removeprefix(prefix).strip() or None
 
 
 def _clean_metadata_text(value: object) -> str:
@@ -102,11 +95,8 @@ def _fetch_platform_metadata_for_bvid(bvid: str) -> VideoMetadata | None:
             logger.warning("补取 Bilibili 元信息失败（将继续使用历史字段）: %s", exc)
             return None
 
-    if not bvid.startswith(_XIAOYUZHOU_BVID_PREFIX):
-        return None
-
-    episode_id = bvid.removeprefix(_XIAOYUZHOU_BVID_PREFIX).strip()
-    if not episode_id:
+    episode_id = _xiaoyuzhou_episode_id(bvid)
+    if episode_id is None:
         return None
 
     try:
@@ -200,7 +190,7 @@ def _should_refresh_existing_summary_metadata(
     existing_results: Mapping[str, object],
 ) -> bool:
     """Return True when an old cached summary likely has Unknown metadata header."""
-    if not bvid.startswith(_XIAOYUZHOU_BVID_PREFIX):
+    if _xiaoyuzhou_episode_id(bvid) is None:
         return False
 
     detail = _history_detail_for_existing_results(
@@ -374,13 +364,13 @@ def _fetch_comments_for_existing_summary(
         logger.warning("历史转录缺少平台元信息，已跳过评论下载")
         return {}, ""
 
-    comment_platform = _comment_platform_from_metadata(metadata)
+    comment_platform = comment_platform_from_metadata(metadata)
     if comment_platform is None:
         logger.warning("历史转录平台暂不支持评论下载，已跳过: %s", bvid)
         return {}, ""
 
     try:
-        platform_label = _comment_platform_label(comment_platform)
+        platform_label = comment_platform_label(comment_platform)
         logger.info(
             "历史评论补充配置：平台=%s，热门主评论=%s，子评论=每条主评论全部下载",
             platform_label,
@@ -429,31 +419,6 @@ def _fetch_comments_for_existing_summary(
         return {}, ""
 
 
-def _materialize_artifact_to_file(
-    storage_backend: StorageBackend,
-    artifact: StoredArtifact,
-    target_dir: Path,
-) -> Path:
-    target_path = target_dir / artifact.filename
-    with (
-        storage_backend.open_stream(artifact.storage_key) as stream,
-        target_path.open("wb") as output,
-    ):
-        while True:
-            chunk = stream.read(1024 * 1024)
-            if not chunk:
-                break
-            output.write(chunk)
-    return target_path
-
-
-def _storage_parent_key(storage_key: str) -> str:
-    normalized = storage_key.replace("\\", "/").strip("/")
-    if "/" not in normalized:
-        return ""
-    return normalized.rsplit("/", 1)[0]
-
-
 def _artifact_sibling_object_key(
     *,
     storage_backend: StorageBackend,
@@ -461,7 +426,7 @@ def _artifact_sibling_object_key(
     source_storage_key: str,
     filename: str,
 ) -> str:
-    parent_key = _storage_parent_key(source_storage_key)
+    parent_key = storage_parent_key(source_storage_key)
     if storage_backend.backend_name == "minio":
         base_prefix = config.storage.minio.base_prefix.strip("/")
         if base_prefix and parent_key.startswith(f"{base_prefix}/"):
@@ -522,14 +487,14 @@ def _generate_summary_png_exports(
 
     generated: dict[str, StoredArtifact] = {}
     try:
-        summary_path = _materialize_artifact_to_file(
+        summary_path = materialize_artifact(
             storage_backend,
             summary_artifact,
             work_dir,
         )
         summary_table_artifact = results.get("summary_table_md")
         table_md_path = (
-            _materialize_artifact_to_file(
+            materialize_artifact(
                 storage_backend,
                 summary_table_artifact,
                 work_dir,
@@ -685,7 +650,7 @@ def _run_summary_only_from_existing(
     try:
         if cancellation_token is not None:
             cancellation_token.raise_if_cancelled()
-        markdown_path = _materialize_artifact_to_file(
+        markdown_path = materialize_artifact(
             storage_backend,
             markdown_artifact,
             work_dir,
@@ -837,7 +802,7 @@ def _run_fancy_html_only_from_summary(
         work_dir = Path(cleanup_temp_dir.name)
 
     try:
-        summary_path = _materialize_artifact_to_file(
+        summary_path = materialize_artifact(
             storage_backend,
             summary_artifact,
             work_dir,

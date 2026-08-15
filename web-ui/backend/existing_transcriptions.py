@@ -3,7 +3,6 @@
 import json
 import logging
 from datetime import datetime
-from pathlib import Path
 
 from b2t.cancellation import CancellationToken, PipelineCancelled
 from b2t.config import resolve_summarize_model_profile, resolve_summary_preset_name
@@ -12,6 +11,7 @@ from b2t.download.comments import DEFAULT_COMMENT_LIMIT
 from b2t.history import infer_run_id
 from b2t.storage import SUMMARY_ARTIFACT_KINDS, StorageBackend
 from b2t.storage.base import StoredArtifact
+from backend.artifacts import summary_family_storage_keys
 from backend.dependencies import get_history_db
 from backend.jobs import _append_job_log, _update_job
 from backend.logging_config import JOB_LOG_DATE_FORMAT, _redact_text
@@ -27,13 +27,6 @@ from backend.services import (
 
 logger = logging.getLogger(__name__)
 CUSTOM_SUMMARY_PRESET_VALUE = "__user_custom__"
-
-
-def _storage_parent_key(storage_key: str) -> str:
-    normalized = storage_key.replace("\\", "/").strip("/")
-    if "/" not in normalized:
-        return ""
-    return normalized.rsplit("/", 1)[0]
 
 
 def _resolve_requested_summary_selection(
@@ -135,43 +128,13 @@ def _find_existing_summary_results_for_selection(
     if matched_summary is None:
         return None
 
-    selected_keys = {matched_summary.storage_key}
-    while True:
-        expanded = {
-            artifact.storage_key
-            for artifact in detail.artifacts
-            if artifact.kind in SUMMARY_ARTIFACT_KINDS
-            and artifact.derived_from.strip() in selected_keys
-        }
-        if expanded.issubset(selected_keys):
-            break
-        selected_keys.update(expanded)
-
-    summary_stem = Path(matched_summary.filename).stem
-    expected_filenames = {
-        matched_summary.filename,
-        f"{summary_stem}.txt",
-        f"{summary_stem}_fancy.html",
-        f"{summary_stem}_table.md",
-        f"{summary_stem}_table.pdf",
-        f"{summary_stem}_timeline.txt",
-        f"{summary_stem}.png",
-        f"{summary_stem}_no_table.png",
-        f"{summary_stem}_table.png",
-    }
-    parent_key = _storage_parent_key(matched_summary.storage_key)
+    selected_keys = summary_family_storage_keys(detail, matched_summary)
     selected_results = dict(existing_results)
     for artifact in detail.artifacts:
         if artifact.kind not in SUMMARY_ARTIFACT_KINDS:
             continue
         if artifact.storage_key not in selected_keys:
-            # Legacy records have no source relation, so retain filename matching.
-            if artifact.derived_from.strip():
-                continue
-            if _storage_parent_key(artifact.storage_key) != parent_key:
-                continue
-            if artifact.filename not in expected_filenames:
-                continue
+            continue
         selected_results[artifact.kind] = StoredArtifact(
             filename=artifact.filename,
             storage_key=artifact.storage_key,

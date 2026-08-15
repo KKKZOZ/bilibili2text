@@ -7,6 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "web-ui"))
 from backend.download_registry import DownloadRegistry
 from backend.ephemeral_uploads import cleanup_expired_ephemeral_uploads
 from backend.job_store import JobPatch, JobRepository
+from backend.routes.process import _to_process_status_response
 
 from b2t.storage import StoredArtifact
 
@@ -48,6 +49,29 @@ def test_job_repository_lists_and_marks_expired_ephemeral_uploads() -> None:
     assert payload["status"] == "failed"
     assert payload["all_downloads"] == []
     assert payload["ephemeral_artifacts"] == []
+
+
+def test_process_status_preserves_ephemeral_upload_fields() -> None:
+    repository = JobRepository(limit=10)
+    created = repository.create(
+        skip_summary=True,
+        summary_preset=None,
+        summary_profile=None,
+        auto_generate_fancy_html=False,
+    )
+    job_id = str(created["job_id"])
+    expires_at = (datetime.now(tz=UTC) + timedelta(hours=2)).isoformat()
+    repository.patch(
+        job_id,
+        JobPatch(is_ephemeral_upload=True, expires_at=expires_at),
+    )
+
+    payload = repository.get(job_id)
+    assert payload is not None
+    response = _to_process_status_response(payload)
+
+    assert response.is_ephemeral_upload is True
+    assert response.expires_at == expires_at
 
 
 def test_cleanup_expired_ephemeral_uploads_deletes_storage_and_download_tokens(

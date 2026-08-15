@@ -2,10 +2,60 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from b2t.summarize.llm import validate_summary_prompt_template
 
 
-class ProcessRequest(BaseModel):
+class RuntimeCredentialsRequest(BaseModel):
+    api_key: str | None = None
+    deepseek_api_key: str | None = None
+    custom_llm_base_url: str | None = None
+    custom_llm_api_key: str | None = None
+    custom_llm_model: str | None = None
+
+    @field_validator(
+        "api_key",
+        "deepseek_api_key",
+        "custom_llm_base_url",
+        "custom_llm_api_key",
+        "custom_llm_model",
+        mode="before",
+    )
+    @classmethod
+    def _clean_credentials(cls, value: object) -> str | None:
+        cleaned = value.strip() if isinstance(value, str) else ""
+        return cleaned or None
+
+    def runtime_config_kwargs(self) -> dict[str, str | None]:
+        return {
+            "api_key": self.api_key,
+            "deepseek_api_key": self.deepseek_api_key,
+            "custom_llm_base_url": self.custom_llm_base_url,
+            "custom_llm_api_key": self.custom_llm_api_key,
+            "custom_llm_model": self.custom_llm_model,
+        }
+
+
+class SummarySelectionRequest(RuntimeCredentialsRequest):
+    summary_preset: str | None = None
+    summary_profile: str | None = None
+    summary_prompt_template: str | None = None
+
+    @field_validator("summary_preset", "summary_profile", mode="before")
+    @classmethod
+    def _clean_selection(cls, value: object) -> str | None:
+        cleaned = value.strip() if isinstance(value, str) else ""
+        return cleaned or None
+
+    @field_validator("summary_prompt_template", mode="before")
+    @classmethod
+    def _clean_prompt_template(cls, value: object) -> str | None:
+        cleaned = value.strip() if isinstance(value, str) else ""
+        return validate_summary_prompt_template(cleaned) if cleaned else None
+
+
+class ProcessRequest(SummarySelectionRequest):
     url: str = Field(
         ...,
         min_length=1,
@@ -14,18 +64,6 @@ class ProcessRequest(BaseModel):
     skip_summary: bool = Field(
         default=False,
         description="是否跳过总结步骤",
-    )
-    summary_preset: str | None = Field(
-        default=None,
-        description="总结 preset 名称",
-    )
-    summary_profile: str | None = Field(
-        default=None,
-        description="总结模型 profile 名称",
-    )
-    summary_prompt_template: str | None = Field(
-        default=None,
-        description="本次请求使用的自定义总结模板，必须包含 {content} 占位符",
     )
     auto_generate_fancy_html: bool = Field(
         default=False,
@@ -44,26 +82,6 @@ class ProcessRequest(BaseModel):
         ge=1,
         le=1000,
         description="下载的主评论数量；每条主评论的子评论全部下载；为空表示下载全部主评论",
-    )
-    api_key: str | None = Field(
-        default=None,
-        description="open-public 模式下用户自带的阿里云 DashScope API Key",
-    )
-    deepseek_api_key: str | None = Field(
-        default=None,
-        description="open-public 模式下用户自带的 DeepSeek API Key（可选，用于 LLM/RAG/Fancy HTML）",
-    )
-    custom_llm_base_url: str | None = Field(
-        default=None,
-        description="open-public 模式下用户自定义 OpenAI-compatible LLM base_url",
-    )
-    custom_llm_api_key: str | None = Field(
-        default=None,
-        description="open-public 模式下用户自定义 OpenAI-compatible LLM API Key",
-    )
-    custom_llm_model: str | None = Field(
-        default=None,
-        description="open-public 模式下用户自定义 OpenAI-compatible LLM model",
     )
 
 
@@ -287,46 +305,14 @@ class HistoryDetailResponse(BaseModel):
     fancy_html_error: str | None = None
 
 
-class HistoryRegenerateSummaryRequest(BaseModel):
-    summary_preset: str | None = Field(
-        default=None,
-        description="总结 preset 名称，为空时使用后端默认",
-    )
-    summary_profile: str | None = Field(
-        default=None,
-        description="总结模型 profile 名称，为空时使用后端默认",
-    )
-    summary_prompt_template: str | None = Field(
-        default=None,
-        description="本次重生成使用的自定义总结模板，必须包含 {content} 占位符",
-    )
+class HistoryRegenerateSummaryRequest(SummarySelectionRequest):
     overwrite_existing: bool = Field(
         default=False,
         description="确认覆盖相同模型配置与总结模板生成的已有结果",
     )
-    api_key: str | None = Field(
-        default=None,
-        description="open-public 模式下用户自带的阿里云 DashScope API Key",
-    )
-    deepseek_api_key: str | None = Field(
-        default=None,
-        description="open-public 模式下用户自带的 DeepSeek API Key（可选，用于 LLM/Fancy HTML）",
-    )
-    custom_llm_base_url: str | None = Field(
-        default=None,
-        description="open-public 模式下用户自定义 OpenAI-compatible LLM base_url",
-    )
-    custom_llm_api_key: str | None = Field(
-        default=None,
-        description="open-public 模式下用户自定义 OpenAI-compatible LLM API Key",
-    )
-    custom_llm_model: str | None = Field(
-        default=None,
-        description="open-public 模式下用户自定义 OpenAI-compatible LLM model",
-    )
 
 
-class GenerateFancyHtmlRequest(BaseModel):
+class GenerateFancyHtmlRequest(RuntimeCredentialsRequest):
     download_id: str = Field(..., description="总结 Markdown 的下载 ID")
     history_run_id: str | None = Field(
         default=None,
@@ -339,26 +325,6 @@ class GenerateFancyHtmlRequest(BaseModel):
     summary_profile: str | None = Field(
         default=None,
         description="生成 fancy HTML 使用的 profile；为空时使用后端默认",
-    )
-    api_key: str | None = Field(
-        default=None,
-        description="open-public 模式下用户自带的阿里云 DashScope API Key",
-    )
-    deepseek_api_key: str | None = Field(
-        default=None,
-        description="open-public 模式下用户自带的 DeepSeek API Key（可选，用于 Fancy HTML）",
-    )
-    custom_llm_base_url: str | None = Field(
-        default=None,
-        description="open-public 模式下用户自定义 OpenAI-compatible LLM base_url",
-    )
-    custom_llm_api_key: str | None = Field(
-        default=None,
-        description="open-public 模式下用户自定义 OpenAI-compatible LLM API Key",
-    )
-    custom_llm_model: str | None = Field(
-        default=None,
-        description="open-public 模式下用户自定义 OpenAI-compatible LLM model",
     )
 
 

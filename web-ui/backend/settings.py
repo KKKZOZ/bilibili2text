@@ -246,20 +246,6 @@ def build_open_public_config(
     public_stt_config = STTConfig(
         profile="open_public_qwen",
         profiles={"open_public_qwen": public_stt_profile},
-        provider="qwen",
-        language=public_stt_profile.language,
-        storage_profile=public_stt_profile.storage_profile,
-        qwen_api_key=api_key,
-        qwen_model=public_stt_profile.qwen_model,
-        qwen_base_url=public_stt_profile.qwen_base_url,
-        groq_api_key="",
-        groq_model=public_stt_profile.groq_model,
-        groq_base_url=public_stt_profile.groq_base_url,
-        groq_chunk_length=public_stt_profile.groq_chunk_length,
-        groq_overlap=public_stt_profile.groq_overlap,
-        groq_bitrate=public_stt_profile.groq_bitrate,
-        diarization_enabled=public_stt_profile.diarization_enabled,
-        speaker_count=public_stt_profile.speaker_count,
     )
 
     # Build summarize profiles by injecting user API keys into the

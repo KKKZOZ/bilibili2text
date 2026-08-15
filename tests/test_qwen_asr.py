@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from b2t.config import STTConfig
+from b2t.config import STTProfile
 from b2t.stt.qwen_asr import QwenSTTProvider
 
 
@@ -23,7 +23,8 @@ def _provider(
     speaker_count: int = 2,
 ) -> QwenSTTProvider:
     return QwenSTTProvider(
-        STTConfig(
+        STTProfile(
+            provider="qwen",
             qwen_api_key="test-key",
             qwen_model=model,
             qwen_base_url="https://dashscope.aliyuncs.com/api/v1",

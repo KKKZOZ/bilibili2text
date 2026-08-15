@@ -394,14 +394,6 @@ class JobRepository:
                 labels[key] = "--"
         return labels
 
-    @property
-    def legacy_jobs(self) -> OrderedDict[str, JobState]:
-        return self._jobs
-
-    @property
-    def legacy_lock(self) -> Lock:
-        return self._lock
-
 
 class JobManager(JobRepository):
     """Own job state, submitted futures, and cooperative cancellation tokens."""

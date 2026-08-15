@@ -13,6 +13,7 @@ from b2t.converter.md_remove_table import MarkdownRemoveTableConverter
 from b2t.converter.md_to_png import MarkdownToPngConverter
 from b2t.storage import ArtifactKind, StoredArtifact
 from b2t.storage.base import resolve_artifact_kind
+from backend.artifacts import materialize_artifact, sibling_storage_key
 from backend.dependencies import get_history_db, get_storage_backend
 from backend.download_registry import download_registry, media_type_for_filename
 from backend.schemas import ConvertRequest, ConvertResponse
@@ -26,13 +27,6 @@ PNG_DESKTOP_DPR = 2
 PNG_MOBILE_VIEWPORT_WIDTH = 430
 PNG_MOBILE_VIEWPORT_HEIGHT = 932
 PNG_MOBILE_DPR = 3
-
-
-def _sibling_storage_key(source_storage_key: str, filename: str) -> str:
-    normalized = source_storage_key.replace("\\", "/")
-    if "/" not in normalized:
-        return filename
-    return f"{normalized.rsplit('/', 1)[0]}/{filename}"
 
 
 def _precomputed_convert_filename(
@@ -77,7 +71,7 @@ def _find_precomputed_conversion(
 
     candidate = StoredArtifact(
         filename=filename,
-        storage_key=_sibling_storage_key(artifact.storage_key, filename),
+        storage_key=sibling_storage_key(artifact.storage_key, filename),
         backend=artifact.backend,
     )
     storage_backend = get_storage_backend()
@@ -346,17 +340,8 @@ def preview_rendered_html(
 
     with tempfile.TemporaryDirectory(prefix="b2t-preview-") as temp_dir:
         temp_dir_path = Path(temp_dir)
-        source_path = temp_dir_path / artifact.filename
         try:
-            with (
-                storage_backend.open_stream(artifact.storage_key) as stream,
-                source_path.open("wb") as output,
-            ):
-                while True:
-                    chunk = stream.read(1024 * 1024)
-                    if not chunk:
-                        break
-                    output.write(chunk)
+            source_path = materialize_artifact(storage_backend, artifact, temp_dir_path)
         except FileNotFoundError:
             raise HTTPException(
                 status_code=410,
@@ -455,18 +440,8 @@ def convert_artifact(payload: ConvertRequest) -> ConvertResponse:
     # Download source file to temporary directory
     with tempfile.TemporaryDirectory(prefix="b2t-convert-") as temp_dir:
         temp_dir_path = Path(temp_dir)
-        source_path = temp_dir_path / artifact.filename
-
         try:
-            with (
-                storage_backend.open_stream(artifact.storage_key) as stream,
-                source_path.open("wb") as output,
-            ):
-                while True:
-                    chunk = stream.read(1024 * 1024)
-                    if not chunk:
-                        break
-                    output.write(chunk)
+            source_path = materialize_artifact(storage_backend, artifact, temp_dir_path)
         except FileNotFoundError:
             raise HTTPException(
                 status_code=410,

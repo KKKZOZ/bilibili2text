@@ -5,15 +5,17 @@ import logging
 import shutil
 import tempfile
 from collections.abc import Callable
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from uuid import uuid4
 
-from b2t.cancellation import CancellationToken
+from b2t.cancellation import CancellationToken, PipelineCancelled
 from b2t.config import AppConfig, build_bilibili_cookie
 from b2t.converter.json_to_md import TIMELINE_SCHEMA_VERSION, convert_json_to_md
 from b2t.download.comments import (
     DEFAULT_COMMENT_LIMIT,
+    comment_platform_from_metadata,
+    comment_platform_label,
     count_comment_replies,
     count_up_replies,
     fetch_platform_comments,
@@ -22,7 +24,7 @@ from b2t.download.comments import (
 )
 from b2t.download.metadata import VideoMetadata, get_video_metadata
 from b2t.download.platform import Platform, build_transcription_artifact_name
-from b2t.download.subtitle import fetch_bilibili_subtitle
+from b2t.download.subtitle import BilibiliSubtitle, fetch_bilibili_subtitle
 from b2t.download.url_detect import detect_platform
 from b2t.download.yutto import download_audio
 from b2t.download.yutto_cli import (
@@ -46,24 +48,6 @@ from b2t.summarize.timeline import (
 
 logger = logging.getLogger(__name__)
 
-_XIAOYUZHOU_BVID_PREFIX = f"{Platform.XIAOYUZHOU.value}_"
-
-
-def _comment_platform_from_metadata(metadata: VideoMetadata) -> Platform | None:
-    if metadata.bvid.startswith("BV") and metadata.aid > 0:
-        return Platform.BILIBILI
-    if metadata.bvid.startswith(_XIAOYUZHOU_BVID_PREFIX):
-        return Platform.XIAOYUZHOU
-    return None
-
-
-def _comment_platform_label(platform: Platform) -> str:
-    if platform == Platform.BILIBILI:
-        return "B 站"
-    if platform == Platform.XIAOYUZHOU:
-        return "小宇宙"
-    return platform.value
-
 
 def _ensure_bvid_prefixed_name(
     name: str,
@@ -75,6 +59,128 @@ def _ensure_bvid_prefixed_name(
         name,
         bvid,
         preserve_extension=preserve_extension,
+    )
+
+
+@dataclass(frozen=True)
+class PipelineInput:
+    audio_file: Path | None
+    metadata: VideoMetadata | None
+    bvid: str
+    transcription_id: str
+    subtitle: BilibiliSubtitle | None
+    use_local_audio: bool
+
+
+def _resolve_pipeline_input(
+    *,
+    url: str,
+    config: AppConfig,
+    temp_download_dir: Path,
+    audio_path: Path | str | None,
+    input_bvid: str | None,
+    prefer_bilibili_subtitle: bool,
+    token: CancellationToken,
+    emit_progress: Callable[[str, str, int], None],
+) -> PipelineInput:
+    token.raise_if_cancelled()
+    normalized_audio_path = (
+        Path(audio_path).expanduser().resolve() if audio_path is not None else None
+    )
+    if normalized_audio_path is not None:
+        if not normalized_audio_path.is_file():
+            raise FileNotFoundError(f"上传音频文件不存在: {normalized_audio_path}")
+        emit_progress("downloading", "处理上传音频", 10)
+        logger.info("=== 处理上传音频 ===")
+        bvid = input_bvid or extract_bvid(normalized_audio_path.name)
+        if bvid is None:
+            raise ValueError(
+                "无法提取资源 ID。请上传形如 `BV号_视频标题.xxx` 的音频文件。"
+            )
+        return PipelineInput(
+            audio_file=normalized_audio_path,
+            metadata=None,
+            bvid=bvid,
+            transcription_id=bvid,
+            subtitle=None,
+            use_local_audio=True,
+        )
+
+    if not url.strip():
+        raise ValueError("URL 不能为空")
+    platform = detect_platform(url)
+    if platform is None and extract_bvid(url) is not None:
+        platform = Platform.BILIBILI
+    if platform is None:
+        raise ValueError("不支持的 URL，请使用 Bilibili、小宇宙或喜马拉雅链接")
+
+    if platform == Platform.BILIBILI:
+        normalized_url = normalize_bilibili_target(url)
+        bvid = input_bvid or extract_bvid(normalized_url)
+        transcription_id = extract_bilibili_target_id(normalized_url) or bvid
+        metadata = None
+        if bvid:
+            token.raise_if_cancelled()
+            try:
+                metadata = get_video_metadata(bvid)
+            except Exception as exc:
+                logger.warning("Failed to fetch video metadata: %s", exc)
+
+        subtitle = None
+        if prefer_bilibili_subtitle:
+            emit_progress("downloading", "获取 B 站字幕", 10)
+            logger.info("=== 获取 B 站字幕 ===")
+            subtitle = fetch_bilibili_subtitle(normalized_url)
+        if subtitle is not None:
+            audio_file = None
+        else:
+            emit_progress("downloading", "下载视频音频", 10)
+            logger.info("=== 下载音频 ===")
+            audio_file, downloaded_metadata = download_audio(
+                normalized_url,
+                temp_download_dir,
+                config.download.audio_quality,
+                fetch_metadata=metadata is None,
+            )
+            if metadata is None:
+                metadata = downloaded_metadata
+            bvid = bvid or extract_bvid(audio_file.name)
+    elif platform == Platform.XIAOYUZHOU:
+        emit_progress("downloading", "下载音频", 10)
+        logger.info("=== 下载小宇宙音频 ===")
+        from b2t.download.xiaoyuzhou import XiaoyuzhouDownloader
+
+        audio_file, platform_metadata = XiaoyuzhouDownloader().download_audio(
+            url, temp_download_dir
+        )
+        metadata = VideoMetadata.from_platform_metadata(platform_metadata)
+        bvid = input_bvid or metadata.bvid
+        transcription_id = bvid
+        subtitle = None
+    elif platform == Platform.XIMALAYA:
+        emit_progress("downloading", "下载音频", 10)
+        logger.info("=== 下载喜马拉雅音频 ===")
+        from b2t.download.ximalaya import XimalayaDownloader
+
+        audio_file, platform_metadata = XimalayaDownloader().download_audio(
+            url, temp_download_dir
+        )
+        metadata = VideoMetadata.from_platform_metadata(platform_metadata)
+        bvid = input_bvid or metadata.bvid
+        transcription_id = bvid
+        subtitle = None
+    else:
+        raise ValueError(f"不支持的平台: {platform}")
+
+    if bvid is None:
+        raise ValueError("无法从 URL 提取有效的资源 ID")
+    return PipelineInput(
+        audio_file=audio_file,
+        metadata=metadata,
+        bvid=bvid,
+        transcription_id=transcription_id or bvid,
+        subtitle=subtitle,
+        use_local_audio=False,
     )
 
 
@@ -144,122 +250,30 @@ def run_pipeline(
 
     temp_download_dir = transcribe_root / "temp_download"
     temp_download_dir.mkdir(exist_ok=True)
+    token = cancellation_token or CancellationToken()
 
     def emit_progress(stage: str, label: str, progress: int) -> None:
-        if cancellation_token is not None:
-            cancellation_token.raise_if_cancelled()
+        token.raise_if_cancelled()
         if progress_callback is not None:
             progress_callback(stage, label, progress)
 
     try:
-        if cancellation_token is not None:
-            cancellation_token.raise_if_cancelled()
-        normalized_audio_path = (
-            Path(audio_path).expanduser().resolve() if audio_path is not None else None
+        pipeline_input = _resolve_pipeline_input(
+            url=url,
+            config=config,
+            temp_download_dir=temp_download_dir,
+            audio_path=audio_path,
+            input_bvid=input_bvid,
+            prefer_bilibili_subtitle=prefer_bilibili_subtitle,
+            token=token,
+            emit_progress=emit_progress,
         )
-        use_local_audio = normalized_audio_path is not None
-        subtitle = None
-        if use_local_audio:
-            if cancellation_token is not None:
-                cancellation_token.raise_if_cancelled()
-            if not normalized_audio_path.is_file():
-                raise FileNotFoundError(f"上传音频文件不存在: {normalized_audio_path}")
-            emit_progress("downloading", "处理上传音频", 10)
-            logger.info("=== 处理上传音频 ===")
-            audio_file = normalized_audio_path
-            metadata = None
-            bvid = input_bvid or extract_bvid(audio_file.name)
-            transcription_id = bvid
-        else:
-            if cancellation_token is not None:
-                cancellation_token.raise_if_cancelled()
-            if not url.strip():
-                raise ValueError("URL 不能为空")
-
-            platform = detect_platform(url)
-            if platform is None and extract_bvid(url) is not None:
-                platform = Platform.BILIBILI
-            if platform is None:
-                raise ValueError("不支持的 URL，请使用 Bilibili、小宇宙或喜马拉雅链接")
-            metadata = None
-            audio_file = None
-            subtitle = None
-
-            if platform == Platform.BILIBILI:
-                normalized_url = normalize_bilibili_target(url)
-                bvid = input_bvid or extract_bvid(normalized_url)
-                transcription_id = extract_bilibili_target_id(normalized_url) or bvid
-                if bvid:
-                    try:
-                        if cancellation_token is not None:
-                            cancellation_token.raise_if_cancelled()
-                        metadata = get_video_metadata(bvid)
-                    except Exception as e:
-                        logger.warning("Failed to fetch video metadata: %s", e)
-
-                if prefer_bilibili_subtitle:
-                    if cancellation_token is not None:
-                        cancellation_token.raise_if_cancelled()
-                    emit_progress("downloading", "获取 B 站字幕", 10)
-                    logger.info("=== 获取 B 站字幕 ===")
-                    subtitle = fetch_bilibili_subtitle(normalized_url)
-                else:
-                    subtitle = None
-
-                if subtitle is None:
-                    if cancellation_token is not None:
-                        cancellation_token.raise_if_cancelled()
-                    emit_progress("downloading", "下载视频音频", 10)
-                    logger.info("=== 下载音频 ===")
-                    audio_file, downloaded_metadata = download_audio(
-                        normalized_url,
-                        temp_download_dir,
-                        config.download.audio_quality,
-                        fetch_metadata=metadata is None,
-                    )
-                    if metadata is None:
-                        metadata = downloaded_metadata
-                    bvid = bvid or extract_bvid(audio_file.name)
-                else:
-                    audio_file = None
-            elif platform == Platform.XIAOYUZHOU:
-                if cancellation_token is not None:
-                    cancellation_token.raise_if_cancelled()
-                emit_progress("downloading", "下载音频", 10)
-                logger.info("=== 下载小宇宙音频 ===")
-                from b2t.download.xiaoyuzhou import XiaoyuzhouDownloader
-
-                downloader = XiaoyuzhouDownloader()
-                audio_file, platform_metadata = downloader.download_audio(
-                    url, temp_download_dir
-                )
-                metadata = VideoMetadata.from_platform_metadata(platform_metadata)
-                bvid = input_bvid or metadata.bvid
-                transcription_id = bvid
-            elif platform == Platform.XIMALAYA:
-                if cancellation_token is not None:
-                    cancellation_token.raise_if_cancelled()
-                emit_progress("downloading", "下载音频", 10)
-                logger.info("=== 下载喜马拉雅音频 ===")
-                from b2t.download.ximalaya import XimalayaDownloader
-
-                downloader = XimalayaDownloader()
-                audio_file, platform_metadata = downloader.download_audio(
-                    url, temp_download_dir
-                )
-                metadata = VideoMetadata.from_platform_metadata(platform_metadata)
-                bvid = input_bvid or metadata.bvid
-                transcription_id = bvid
-            else:
-                raise ValueError(f"不支持的平台: {platform}")
-
-        if bvid is None:
-            raise ValueError(
-                "无法提取资源 ID。请使用包含有效 ID 的 URL，"
-                "或上传形如 `BV号_视频标题.xxx` 的音频文件。"
-            )
-        if transcription_id is None:
-            transcription_id = bvid
+        audio_file = pipeline_input.audio_file
+        metadata = pipeline_input.metadata
+        bvid = pipeline_input.bvid
+        transcription_id = pipeline_input.transcription_id
+        subtitle = pipeline_input.subtitle
+        use_local_audio = pipeline_input.use_local_audio
 
         # Record metadata
         if metadata:
@@ -285,13 +299,13 @@ def run_pipeline(
 
         comments_markdown_text = ""
         comment_platform = (
-            _comment_platform_from_metadata(metadata)
+            comment_platform_from_metadata(metadata)
             if include_comments and not use_local_audio and metadata is not None
             else None
         )
         if comment_platform is not None and metadata is not None:
             try:
-                platform_label = _comment_platform_label(comment_platform)
+                platform_label = comment_platform_label(comment_platform)
                 emit_progress("downloading", f"获取{platform_label}评论", 20)
                 logger.info("=== 获取%s评论 ===", platform_label)
                 logger.info(
@@ -328,6 +342,8 @@ def run_pipeline(
                     comments.source,
                     metadata.bvid,
                 )
+            except PipelineCancelled:
+                raise
             except Exception as exc:
                 logger.warning("Failed to fetch platform comments: %s", exc)
         elif include_comments:
@@ -337,8 +353,7 @@ def run_pipeline(
             )
 
         if audio_file is None:
-            if cancellation_token is not None:
-                cancellation_token.raise_if_cancelled()
+            token.raise_if_cancelled()
             if bilibili_subtitle_used_callback is not None:
                 bilibili_subtitle_used_callback()
             emit_progress("converting", "Generating Markdown", 80)
@@ -365,8 +380,7 @@ def run_pipeline(
                 encoding="utf-8",
             )
         else:
-            if cancellation_token is not None:
-                cancellation_token.raise_if_cancelled()
+            token.raise_if_cancelled()
             # Move audio to work directory
             audio_filename = _ensure_bvid_prefixed_name(
                 f"{work_dir.name}{audio_file.suffix}",
@@ -382,8 +396,7 @@ def run_pipeline(
             logger.info("Work directory: %s", work_dir)
 
             # 2. Transcribe (each provider handles its own details, e.g. Qwen's OSS upload)
-            if cancellation_token is not None:
-                cancellation_token.raise_if_cancelled()
+            token.raise_if_cancelled()
             stt_provider = create_stt_provider(config, stt_storage_backend)
             json_path = stt_provider.transcribe(
                 new_audio_path,
@@ -401,8 +414,7 @@ def run_pipeline(
         local_results["json"] = json_path
 
         # 3. JSON -> Markdown
-        if cancellation_token is not None:
-            cancellation_token.raise_if_cancelled()
+        token.raise_if_cancelled()
         emit_progress("converting", "Generating Markdown", 80)
         logger.info("=== Generating Markdown ===")
         md_path = convert_json_to_md(json_path, min_length=config.converter.min_length)
@@ -410,8 +422,7 @@ def run_pipeline(
 
         # 4. LLM Summarization
         if not skip_summary:
-            if cancellation_token is not None:
-                cancellation_token.raise_if_cancelled()
+            token.raise_if_cancelled()
             emit_progress("summarizing", "LLM summarization", 90)
             logger.info("=== Generating summary ===")
             summary_path = summarize_with_comment_viewpoints(
@@ -428,8 +439,7 @@ def run_pipeline(
             local_results["summary"] = summary_path
 
             # Extract summary table as a separate Markdown file
-            if cancellation_token is not None:
-                cancellation_token.raise_if_cancelled()
+            token.raise_if_cancelled()
             summary_table_md_path = export_summary_table_without_video_time(
                 summary_path
             )
@@ -442,8 +452,7 @@ def run_pipeline(
         storage_prefix = f"{transcription_id}-{uuid4().hex[:8]}"
         try:
             for artifact_key, artifact_path in local_results.items():
-                if cancellation_token is not None:
-                    cancellation_token.raise_if_cancelled()
+                token.raise_if_cancelled()
                 object_key = f"{storage_prefix}/{artifact_path.name}"
 
                 def _store_artifact(
@@ -455,11 +464,7 @@ def run_pipeline(
                         object_key=key,
                     )
 
-                stored = (
-                    cancellation_token.run_if_active(_store_artifact)
-                    if cancellation_token is not None
-                    else _store_artifact()
-                )
+                stored = token.run_if_active(_store_artifact)
                 derived_from = ""
                 if artifact_key == ArtifactKind.SUMMARY:
                     derived_from = results["markdown"].storage_key

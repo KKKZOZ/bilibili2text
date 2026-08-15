@@ -10,7 +10,7 @@ from pathlib import Path
 from groq import Groq, RateLimitError
 from pydub import AudioSegment
 
-from b2t.config import STTConfig
+from b2t.config import STTProfile
 from b2t.stt.base import ProgressCallback, STTProvider
 
 logger = logging.getLogger(__name__)
@@ -40,7 +40,7 @@ def _transcribe_single_chunk(
     chunk: AudioSegment,
     chunk_num: int,
     total_chunks: int,
-    config: STTConfig,
+    config: STTProfile,
 ) -> tuple[dict, float, float]:
     total_api_time = 0.0
     total_export_time = 0.0
@@ -262,7 +262,7 @@ def merge_transcripts(results: list[tuple[dict, int]]) -> dict:
     return output
 
 
-def transcribe_local_audio(audio_path: Path, config: STTConfig) -> dict:
+def transcribe_local_audio(audio_path: Path, config: STTProfile) -> dict:
     """Transcribe local audio in chunks using Groq."""
     if not config.groq_api_key:
         raise ValueError("Missing stt.groq_api_key config")
@@ -336,7 +336,7 @@ def transcribe_local_audio(audio_path: Path, config: STTConfig) -> dict:
 class GroqSTTProvider(STTProvider):
     """Groq STT Provider (local chunked transcription)."""
 
-    def __init__(self, stt_config: STTConfig) -> None:
+    def __init__(self, stt_config: STTProfile) -> None:
         self._stt_config = stt_config
 
     def transcribe(

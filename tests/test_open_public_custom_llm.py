@@ -36,10 +36,6 @@ def _config() -> AppConfig:
         stt=STTConfig(
             profile="qwen-main",
             profiles={"qwen-main": stt_profile},
-            provider="qwen",
-            qwen_model="fun-asr",
-            diarization_enabled=True,
-            speaker_count=4,
         ),
         summarize=SummarizeConfig(
             profile="bailian-main",

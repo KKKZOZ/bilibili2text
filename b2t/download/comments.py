@@ -17,6 +17,7 @@ from typing import Any
 
 import httpx
 
+from b2t.download.metadata import VideoMetadata
 from b2t.download.platform import Platform
 from b2t.download.url_detect import extract_platform_id
 
@@ -133,6 +134,21 @@ class PlatformCommentBundle:
 
 BilibiliComment = PlatformComment
 BilibiliCommentBundle = PlatformCommentBundle
+
+
+def comment_platform_from_metadata(metadata: VideoMetadata) -> Platform | None:
+    if metadata.bvid.startswith("BV") and metadata.aid > 0:
+        return Platform.BILIBILI
+    if metadata.bvid.startswith(f"{Platform.XIAOYUZHOU.value}_"):
+        return Platform.XIAOYUZHOU
+    return None
+
+
+def comment_platform_label(platform: Platform) -> str:
+    return {
+        Platform.BILIBILI: "B 站",
+        Platform.XIAOYUZHOU: "小宇宙",
+    }.get(platform, platform.value)
 
 
 def count_comment_replies(bundle: PlatformCommentBundle) -> int:
@@ -1086,6 +1102,8 @@ __all__ = [
     "fetch_xiaoyuzhou_comments",
     "fetch_xiaoyuzhou_comments_async",
     "comments_to_markdown",
+    "comment_platform_from_metadata",
+    "comment_platform_label",
     "count_comment_replies",
     "count_up_replies",
     "write_comments_json",

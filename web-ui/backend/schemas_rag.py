@@ -2,16 +2,13 @@
 
 from pydantic import BaseModel, Field
 
+from backend.schemas import RuntimeCredentialsRequest
 
-class RagQueryRequest(BaseModel):
+
+class RagQueryRequest(RuntimeCredentialsRequest):
     question: str = Field(..., min_length=1, max_length=1000)
     filter_authors: list[str] = Field(default_factory=list)
     llm_profile: str | None = None
-    api_key: str | None = None
-    deepseek_api_key: str | None = None
-    custom_llm_base_url: str | None = None
-    custom_llm_api_key: str | None = None
-    custom_llm_model: str | None = None
 
 
 class RagSourceItem(BaseModel):

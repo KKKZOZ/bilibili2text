@@ -31,20 +31,16 @@
     XCircle
   } from 'lucide-vue-next'
   import FileList from './FileList.vue'
-  import {
-    ApiError,
-    artifactApi,
-    historyApi,
-    processApi,
-    subscribeSse,
-    summaryApi
-  } from '../api'
-  import {
-    CUSTOM_LLM_PROFILE_NAME,
-    usePublicCredentials
-  } from '../composables/usePublicCredentials'
+  import { artifactApi, historyApi, subscribeSse, summaryApi } from '../api'
+  import { useActiveJobs } from '../composables/useActiveJobs'
+  import { usePublicCredentials } from '../composables/usePublicCredentials'
   import { useRuntimeFeatures } from '../composables/useRuntimeFeatures'
-  import { useSummaryConfig } from '../composables/useSummaryConfig'
+  import {
+    CUSTOM_SUMMARY_PRESET_VALUE,
+    formatSummaryProfileLabel,
+    useSummaryConfig,
+    withCustomSummaryPreset
+  } from '../composables/useSummaryConfig'
   import {
     formatTime,
     resourceAuthorLabel,
@@ -124,132 +120,18 @@
   let stopRagFancyHtmlEvents = null
   let historyDetailRequestVersion = 0
 
-  // ─── Active jobs (in-progress) ───────────────────────────────
-  const ACTIVE_JOB_IDS_KEY = 'b2t.active-job-ids'
-  const CUSTOM_SUMMARY_PRESET_VALUE = '__user_custom__'
-  const activeJobs = ref([])
-  const activeJobsConnectionNotice = ref('')
-  let activeJobsPollTimer = null
-  let activeJobsLoading = false
-  let stopActiveJobEvents = null
-
-  const readActiveJobIds = () => {
-    try {
-      const raw = window.localStorage.getItem(ACTIVE_JOB_IDS_KEY)
-      if (!raw) return []
-      const parsed = JSON.parse(raw)
-      return Array.isArray(parsed)
-        ? parsed.filter((id) => typeof id === 'string' && id)
-        : []
-    } catch {
-      return []
-    }
-  }
-
-  const removeActiveJobId = (id) => {
-    try {
-      const ids = readActiveJobIds().filter((i) => i !== id)
-      window.localStorage.setItem(ACTIVE_JOB_IDS_KEY, JSON.stringify(ids))
-    } catch {}
-  }
-
-  const stopActiveJobsPolling = () => {
-    if (activeJobsPollTimer !== null) {
-      clearInterval(activeJobsPollTimer)
-      activeJobsPollTimer = null
-    }
-  }
-
-  const stopActiveJobsEvents = () => {
-    if (stopActiveJobEvents !== null) {
-      stopActiveJobEvents()
-      stopActiveJobEvents = null
-    }
-  }
-
-  const loadActiveJobs = async () => {
-    if (activeJobsLoading) return
-    const ids = readActiveJobIds()
-    if (ids.length === 0) {
-      activeJobs.value = []
-      stopActiveJobsPolling()
-      return
-    }
-    activeJobsLoading = true
-    try {
-      const results = await Promise.allSettled(
-        ids.map((id) => processApi.getJob(id))
-      )
-      const next = []
-      for (let i = 0; i < ids.length; i++) {
-        const result = results[i]
-        if (result.status === 'fulfilled') {
-          const data = result.value
-          if (data.status === 'queued' || data.status === 'running') {
-            next.push(data)
-          } else {
-            removeActiveJobId(ids[i])
-          }
-        } else if (
-          result.reason instanceof ApiError &&
-          result.reason.status === 404
-        ) {
-          removeActiveJobId(ids[i])
-        }
-      }
-      activeJobs.value = next
-      if (next.length === 0) stopActiveJobsPolling()
-    } finally {
-      activeJobsLoading = false
-    }
-  }
-
-  const startActiveJobsPollingFallback = () => {
-    activeJobsConnectionNotice.value = '实时连接不可用，已切换为兼容模式。'
-    stopActiveJobsPolling()
-    loadActiveJobs()
-    activeJobsPollTimer = setInterval(loadActiveJobs, 2000)
-  }
-
-  const syncActiveJobEvents = () => {
-    stopActiveJobsEvents()
-    stopActiveJobsPolling()
-    activeJobsConnectionNotice.value = ''
-    const subscribedIds = readActiveJobIds()
-    if (subscribedIds.length === 0) {
-      activeJobs.value = []
-      return
-    }
-
-    stopActiveJobEvents = subscribeSse({
-      url: processApi.activeJobEventsUrl(subscribedIds),
-      eventName: 'jobs',
-      onEvent: (data) => {
-        const jobs = Array.isArray(data?.jobs) ? data.jobs : []
-        const activeIds = new Set(jobs.map((item) => item.job_id))
-        for (const id of subscribedIds) {
-          if (!activeIds.has(id)) removeActiveJobId(id)
-        }
-        activeJobs.value = jobs
-        return jobs.length > 0
-      },
-      onFallback: () => {
-        stopActiveJobEvents = null
-        startActiveJobsPollingFallback()
-      }
-    })
-  }
-
-  const onActiveJobsStorage = (event) => {
-    if (event.key === ACTIVE_JOB_IDS_KEY) syncActiveJobEvents()
-  }
+  const {
+    activeJobs,
+    connectionNotice: activeJobsConnectionNotice,
+    cancel: cancelTrackedJob,
+    onStorage: onActiveJobsStorage,
+    sync: syncActiveJobEvents,
+    stop: stopActiveJobs
+  } = useActiveJobs()
 
   const cancelActiveJob = async (jobId) => {
     try {
-      await processApi.cancelJob(jobId)
-      removeActiveJobId(jobId)
-      activeJobs.value = activeJobs.value.filter((j) => j.job_id !== jobId)
-      syncActiveJobEvents()
+      await cancelTrackedJob(jobId)
     } catch (err) {
       historyError.value = err instanceof Error ? err.message : '取消任务失败'
     }
@@ -355,26 +237,8 @@
 
   const regenerateDisabled = computed(() => regenerateLoading.value)
 
-  const formatSummaryProfileLabel = (profile) => {
-    if (!profile) return ''
-    if (profile.name === CUSTOM_LLM_PROFILE_NAME) {
-      return `custom(${profile.model || 'model'})`
-    }
-    return `${profile.name} (${profile.model})`
-  }
-
   const historyPresetOptions = computed(() => {
-    const base = Array.isArray(summaryPresets.value) ? summaryPresets.value : []
-    if (!requiresApiKey.value) {
-      return base
-    }
-    return [
-      ...base,
-      {
-        name: CUSTOM_SUMMARY_PRESET_VALUE,
-        label: '用户自定义'
-      }
-    ]
+    return withCustomSummaryPreset(summaryPresets.value, requiresApiKey.value)
   })
 
   const loadHistory = async () => {
@@ -933,8 +797,7 @@
     historyDetailRequestVersion += 1
     stopRagFancyHtmlEventStream()
     stopRagFancyHtmlPolling()
-    stopActiveJobsEvents()
-    stopActiveJobsPolling()
+    stopActiveJobs()
     window.removeEventListener('storage', onActiveJobsStorage)
     document.removeEventListener('pointerdown', onHistoryFilterPointerDown)
   })

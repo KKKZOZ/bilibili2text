@@ -12,7 +12,8 @@ def create_stt_provider(
     config: AppConfig,
     storage_backend: StorageBackend,
 ) -> STTProvider:
-    provider = config.stt.provider.strip().lower()
+    stt_profile = config.stt.selected_profile
+    provider = stt_profile.provider.strip().lower()
 
     if provider == "qwen":
         if not storage_backend.supports_public_url():
@@ -20,16 +21,16 @@ def create_stt_provider(
                 "Qwen transcription requires a storage backend that supports public URLs for audio upload. "
                 "Please set the storage_profile for the current stt.profile (or storage.backend) to minio or alicloud."
             )
-        return QwenSTTProvider(config.stt, storage_backend)
+        return QwenSTTProvider(stt_profile, storage_backend)
     if provider == "groq":
-        return GroqSTTProvider(config.stt)
+        return GroqSTTProvider(stt_profile)
     if provider == "volc":
         if not storage_backend.supports_public_url():
             raise ValueError(
                 "Volc transcription requires a storage backend that supports public URLs for audio upload. "
                 "Please set the storage_profile for the current stt.profile (or storage.backend) to minio or alicloud."
             )
-        return VolcSTTProvider(config.stt, storage_backend)
+        return VolcSTTProvider(stt_profile, storage_backend)
 
     raise ValueError(
         f"Unsupported stt.provider: {config.stt.provider}, supported values: qwen, groq, volc"

@@ -153,35 +153,21 @@ def _default_stt_profiles() -> dict[str, "STTProfile"]:
 class STTConfig:
     profile: str = DEFAULT_STT_PROFILE
     profiles: dict[str, STTProfile] = field(default_factory=_default_stt_profiles)
-    provider: str = "qwen"
-    language: str = "zh"
-    storage_profile: str = ""
 
-    qwen_api_key: str = ""
-    qwen_model: str = "qwen3-asr-flash-filetrans"
-    qwen_base_url: str = "https://dashscope.aliyuncs.com/api/v1"
+    @property
+    def selected_profile(self) -> STTProfile:
+        try:
+            return self.profiles[self.profile]
+        except KeyError:
+            available = ", ".join(self.profiles)
+            raise ValueError(
+                f"stt.profile `{self.profile}` 不存在，可选值: {available}"
+            ) from None
 
-    groq_api_key: str = ""
-    groq_model: str = "whisper-large-v3-turbo"
-    groq_base_url: str = "https://api.groq.com/openai/v1"
-    groq_chunk_length: int = 1800
-    groq_overlap: int = 10
-    groq_bitrate: str = "64k"
-
-    volc_api_key: str = ""
-    volc_resource_id: str = "volc.seedasr.auc"
-    volc_submit_url: str = "https://openspeech.bytedance.com/api/v3/auc/bigmodel/submit"
-    volc_query_url: str = "https://openspeech.bytedance.com/api/v3/auc/bigmodel/query"
-    volc_enable_itn: bool = True
-    volc_enable_punc: bool = True
-    volc_enable_ddc: bool = False
-    volc_show_utterances: bool = True
-    volc_poll_interval_seconds: int = 5
-    volc_timeout_seconds: int = 1800
-
-    # Speaker diarization (supported by fun-asr model via Transcription.async_call)
-    diarization_enabled: bool = False
-    speaker_count: int = 2
+    def __getattr__(self, name: str) -> object:
+        if name in STTProfile.__dataclass_fields__:
+            return getattr(self.selected_profile, name)
+        raise AttributeError(name)
 
 
 @dataclass(frozen=True)
@@ -918,34 +904,7 @@ def _load_stt_config(raw_stt: dict) -> STTConfig:
         available = ", ".join(profiles.keys())
         raise ValueError(f"stt.profile `{profile}` 不存在，可选值: {available}")
 
-    return STTConfig(
-        profile=profile,
-        profiles=profiles,
-        provider=selected_profile.provider,
-        language=selected_profile.language,
-        storage_profile=selected_profile.storage_profile,
-        qwen_api_key=selected_profile.qwen_api_key,
-        qwen_model=selected_profile.qwen_model,
-        qwen_base_url=selected_profile.qwen_base_url,
-        groq_api_key=selected_profile.groq_api_key,
-        groq_model=selected_profile.groq_model,
-        groq_base_url=selected_profile.groq_base_url,
-        groq_chunk_length=selected_profile.groq_chunk_length,
-        groq_overlap=selected_profile.groq_overlap,
-        groq_bitrate=selected_profile.groq_bitrate,
-        volc_api_key=selected_profile.volc_api_key,
-        volc_resource_id=selected_profile.volc_resource_id,
-        volc_submit_url=selected_profile.volc_submit_url,
-        volc_query_url=selected_profile.volc_query_url,
-        volc_enable_itn=selected_profile.volc_enable_itn,
-        volc_enable_punc=selected_profile.volc_enable_punc,
-        volc_enable_ddc=selected_profile.volc_enable_ddc,
-        volc_show_utterances=selected_profile.volc_show_utterances,
-        volc_poll_interval_seconds=selected_profile.volc_poll_interval_seconds,
-        volc_timeout_seconds=selected_profile.volc_timeout_seconds,
-        diarization_enabled=selected_profile.diarization_enabled,
-        speaker_count=selected_profile.speaker_count,
-    )
+    return STTConfig(profile=profile, profiles=profiles)
 
 
 def _validate_storage_backend_choice(value: str, *, field_name: str) -> str:
@@ -1718,34 +1677,7 @@ def create_app_config(
         )
 
     stt_profiles[profile_key] = stt_profile
-    stt_config = STTConfig(
-        profile=profile_key,
-        profiles=stt_profiles,
-        provider=stt_profile.provider,
-        language=stt_profile.language,
-        storage_profile=stt_profile.storage_profile,
-        qwen_api_key=stt_profile.qwen_api_key,
-        qwen_model=stt_profile.qwen_model,
-        qwen_base_url=stt_profile.qwen_base_url,
-        groq_api_key=stt_profile.groq_api_key,
-        groq_model=stt_profile.groq_model,
-        groq_base_url=stt_profile.groq_base_url,
-        groq_chunk_length=stt_profile.groq_chunk_length,
-        groq_overlap=stt_profile.groq_overlap,
-        groq_bitrate=stt_profile.groq_bitrate,
-        volc_api_key=stt_profile.volc_api_key,
-        volc_resource_id=stt_profile.volc_resource_id,
-        volc_submit_url=stt_profile.volc_submit_url,
-        volc_query_url=stt_profile.volc_query_url,
-        volc_enable_itn=stt_profile.volc_enable_itn,
-        volc_enable_punc=stt_profile.volc_enable_punc,
-        volc_enable_ddc=stt_profile.volc_enable_ddc,
-        volc_show_utterances=stt_profile.volc_show_utterances,
-        volc_poll_interval_seconds=stt_profile.volc_poll_interval_seconds,
-        volc_timeout_seconds=stt_profile.volc_timeout_seconds,
-        diarization_enabled=stt_profile.diarization_enabled,
-        speaker_count=stt_profile.speaker_count,
-    )
+    stt_config = STTConfig(profile=profile_key, profiles=stt_profiles)
 
     # Build summarization config
     summarize_provider = summarize_provider.strip().lower() or (

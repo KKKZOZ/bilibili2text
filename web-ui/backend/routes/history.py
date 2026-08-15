@@ -3,7 +3,6 @@
 import json
 import logging
 from collections.abc import AsyncIterator
-from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query
@@ -20,7 +19,9 @@ from b2t.download.metadata import VideoMetadata
 from b2t.download.yutto_cli import extract_bilibili_page_from_target_id
 from b2t.history import build_history_artifacts
 from b2t.storage import SUMMARY_ARTIFACT_KINDS, StoredArtifact
-from b2t.summarize.llm import validate_summary_prompt_template
+from backend.artifacts import (
+    summary_family_storage_keys as _summary_family_storage_keys,
+)
 from backend.dependencies import get_history_db, get_storage_backend
 from backend.download_registry import download_registry
 from backend.event_stream import event_broker, history_channel
@@ -49,58 +50,6 @@ _PLATFORM_NAMES = {
     "upload": "本地上传",
     "knowledge_base": "知识库查询",
 }
-
-
-def _storage_parent_key(storage_key: str) -> str:
-    normalized = storage_key.replace("\\", "/").strip("/")
-    if "/" not in normalized:
-        return ""
-    return normalized.rsplit("/", 1)[0]
-
-
-def _summary_family_storage_keys(detail, summary_artifact) -> set[str]:
-    related = {summary_artifact.storage_key}
-    # New manifests explicitly link every derivative to its immediate source.
-    # Traverse the graph so table-derived exports remain in the same family.
-    while True:
-        expanded = {
-            artifact.storage_key
-            for artifact in detail.artifacts
-            if artifact.kind in SUMMARY_ARTIFACT_KINDS
-            and artifact.derived_from.strip() in related
-        }
-        if expanded.issubset(related):
-            break
-        related.update(expanded)
-
-    # Mixed manifests can contain an explicitly linked summary and legacy
-    # derivatives. Match only unlinked rows through the filename fallback.
-    summary_stem = Path(summary_artifact.filename).stem
-    expected_filenames = {
-        summary_artifact.filename,
-        f"{summary_stem}.txt",
-        f"{summary_stem}.png",
-        f"{summary_stem}_fancy.html",
-        f"{summary_stem}_table.md",
-        f"{summary_stem}_table.png",
-        f"{summary_stem}_table.pdf",
-        f"{summary_stem}_no_table.png",
-        f"{summary_stem}_timeline.txt",
-    }
-    parent_key = _storage_parent_key(summary_artifact.storage_key)
-    for artifact in detail.artifacts:
-        if artifact.kind not in SUMMARY_ARTIFACT_KINDS:
-            continue
-        if artifact.storage_key == summary_artifact.storage_key:
-            related.add(artifact.storage_key)
-            continue
-        if artifact.derived_from.strip():
-            continue
-        if _storage_parent_key(artifact.storage_key) != parent_key:
-            continue
-        if artifact.filename in expected_filenames:
-            related.add(artifact.storage_key)
-    return related
 
 
 def _summary_config_storage_keys(
@@ -405,11 +354,7 @@ def regenerate_history_summary(
     try:
         config = get_runtime_app_config(
             require_public_api_key=True,
-            api_key=(payload.api_key or "").strip() or None,
-            deepseek_api_key=(payload.deepseek_api_key or "").strip() or None,
-            custom_llm_base_url=(payload.custom_llm_base_url or "").strip() or None,
-            custom_llm_api_key=(payload.custom_llm_api_key or "").strip() or None,
-            custom_llm_model=(payload.custom_llm_model or "").strip() or None,
+            **payload.runtime_config_kwargs(),
         )
         storage_backend = get_storage_backend()
     except FileNotFoundError as exc:
@@ -425,14 +370,10 @@ def regenerate_history_summary(
             detail=f"初始化配置或存储后端失败: {exc}",
         ) from exc
 
-    summary_preset = (payload.summary_preset or "").strip() or None
-    summary_profile = (payload.summary_profile or "").strip() or None
-    summary_prompt_template = (payload.summary_prompt_template or "").strip() or None
+    summary_preset = payload.summary_preset
+    summary_profile = payload.summary_profile
+    summary_prompt_template = payload.summary_prompt_template
     try:
-        if summary_prompt_template is not None:
-            summary_prompt_template = validate_summary_prompt_template(
-                summary_prompt_template
-            )
         resolved_preset = _resolve_regenerate_summary_preset(
             config=config,
             summary_preset=summary_preset,

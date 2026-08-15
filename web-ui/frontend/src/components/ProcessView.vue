@@ -24,12 +24,18 @@
   import ProgressPanel from './ProgressPanel.vue'
   import FileList from './FileList.vue'
   import { ApiError, processApi, subscribeSse } from '../api'
-  import {
-    CUSTOM_LLM_PROFILE_NAME,
-    usePublicCredentials
-  } from '../composables/usePublicCredentials'
+  import { usePublicCredentials } from '../composables/usePublicCredentials'
   import { useRuntimeFeatures } from '../composables/useRuntimeFeatures'
-  import { useSummaryConfig } from '../composables/useSummaryConfig'
+  import {
+    addActiveJobId,
+    removeActiveJobId
+  } from '../composables/useActiveJobs'
+  import {
+    CUSTOM_SUMMARY_PRESET_VALUE,
+    formatSummaryProfileLabel,
+    useSummaryConfig,
+    withCustomSummaryPreset
+  } from '../composables/useSummaryConfig'
   import { inferSummaryPresetFromFilename } from '../utils/fileUtils'
 
   const route = useRoute()
@@ -122,8 +128,6 @@
   let stopJobEvents = null
   let lastRenderedJobSignature = ''
   const maxPollErrors = 3
-  const ACTIVE_JOB_IDS_KEY = 'b2t.active-job-ids'
-  const CUSTOM_SUMMARY_PRESET_VALUE = '__user_custom__'
   const uploadAccept =
     '.aac,.flac,.m4a,.mp3,.ogg,.opus,.wav,.webm,.avi,.m4v,.mkv,.mov,.mp4'
   const uploadFilenamePattern =
@@ -140,17 +144,7 @@
   const isJobDetailMode = computed(() => !!routeJobId.value)
   const isOpenPublic = requiresApiKey
   const presetOptions = computed(() => {
-    const base = Array.isArray(summaryPresets.value) ? summaryPresets.value : []
-    if (!isOpenPublic.value) {
-      return base
-    }
-    return [
-      ...base,
-      {
-        name: CUSTOM_SUMMARY_PRESET_VALUE,
-        label: '用户自定义'
-      }
-    ]
+    return withCustomSummaryPreset(summaryPresets.value, isOpenPublic.value)
   })
   const effectiveSummaryPromptTemplate = computed(() => {
     if (!enableSummary.value) {
@@ -248,48 +242,9 @@
     )
   )
 
-  // Multi-job localStorage helpers (shared with HistoryView for active job tracking)
-  const readActiveJobIds = () => {
-    try {
-      const raw = window.localStorage.getItem(ACTIVE_JOB_IDS_KEY)
-      if (!raw) return []
-      const parsed = JSON.parse(raw)
-      return Array.isArray(parsed)
-        ? parsed.filter((id) => typeof id === 'string' && id)
-        : []
-    } catch {
-      return []
-    }
-  }
-
-  const addActiveJobId = (id) => {
-    try {
-      const ids = readActiveJobIds()
-      if (!ids.includes(id)) {
-        ids.push(id)
-        window.localStorage.setItem(ACTIVE_JOB_IDS_KEY, JSON.stringify(ids))
-      }
-    } catch {}
-  }
-
-  const removeActiveJobId = (id) => {
-    try {
-      const ids = readActiveJobIds().filter((i) => i !== id)
-      window.localStorage.setItem(ACTIVE_JOB_IDS_KEY, JSON.stringify(ids))
-    } catch {}
-  }
-
   const clearActiveJobId = () => {
     if (jobId.value) removeActiveJobId(jobId.value)
     jobId.value = ''
-  }
-
-  const formatSummaryProfileLabel = (profile) => {
-    if (!profile) return ''
-    if (profile.name === CUSTOM_LLM_PROFILE_NAME) {
-      return `custom(${profile.model || 'model'})`
-    }
-    return `${profile.name} (${profile.model})`
   }
 
   const loadLocalSummaryPromptTemplate = () => {

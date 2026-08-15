@@ -10,7 +10,7 @@ import requests
 from dashscope.audio.asr import Transcription
 from dashscope.audio.qwen_asr import QwenTranscription
 
-from b2t.config import STTConfig
+from b2t.config import STTProfile
 from b2t.storage.base import StorageBackend
 from b2t.stt.base import ProgressCallback, STTProvider
 
@@ -47,7 +47,7 @@ def _describe_dashscope_response(response: Any) -> str:
 class QwenSTTProvider(STTProvider):
     """Qwen STT Provider (handles storage upload and result download internally)."""
 
-    def __init__(self, stt_config: STTConfig, storage_backend: StorageBackend) -> None:
+    def __init__(self, stt_config: STTProfile, storage_backend: StorageBackend) -> None:
         self._stt_config = stt_config
         self._storage_backend = storage_backend
 

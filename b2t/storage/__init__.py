@@ -47,7 +47,9 @@ def create_storage_backend(config: AppConfig) -> StorageBackend:
 def create_stt_storage_backend(
     config: AppConfig,
 ) -> StorageBackend:
-    selected_backend = config.stt.storage_profile.strip() or config.storage.backend
+    selected_backend = (
+        config.stt.selected_profile.storage_profile.strip() or config.storage.backend
+    )
     return _create_backend_from_storage_section(
         backend_name=selected_backend,
         local_output_dir=config.download.output_dir,

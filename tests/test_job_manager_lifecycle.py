@@ -66,7 +66,6 @@ def test_cancelled_job_ignores_late_stage_metadata() -> None:
     assert job is not None
     assert job["status"] == "cancelled"
     assert job["stage"] == "cancelled"
-    assert manager.legacy_jobs[job_id].stage_seen["summarizing"] is False
 
 
 def test_submission_failure_marks_job_failed_instead_of_leaving_it_queued() -> None:
