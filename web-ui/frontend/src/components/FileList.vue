@@ -139,6 +139,16 @@
     kind === 'summary_no_table_png' ||
     kind === 'summary_table_png'
 
+  const resolveSummaryVariantLabel = (kind) =>
+    ({
+      summary_no_table: '无表格',
+      summary_fancy_html: 'Fancy HTML',
+      summary_table_md: '表格',
+      summary_table_png: '表格',
+      summary_table_pdf: '表格',
+      summary_timeline: '时间线'
+    })[kind] || ''
+
   const resolveSummaryProfileLabel = (profileName) => {
     const effectiveName = (profileName || '').trim()
     if (!effectiveName) {
@@ -282,8 +292,8 @@
           kind === 'summary_no_table_png' ||
           kind === 'summary_fancy_html',
         primaryTargetFormat: kind === 'summary_no_table' ? 'md_no_table' : '',
-        noTableBadge: kind === 'summary_no_table',
-        derivedFromSummary: isDerivedFromSummary
+        derivedFromSummary: isDerivedFromSummary,
+        variantLabel: resolveSummaryVariantLabel(kind)
       }
     }
 
@@ -398,18 +408,7 @@
       return a.order - b.order
     })
 
-    const summaryNameById = new Map(
-      sortedRows
-        .filter((item) => item.kind === 'summary' && item.summaryRowId)
-        .map((item) => [item.summaryRowId, item.displayName])
-    )
-
-    return sortedRows.map((item) => ({
-      ...item,
-      parentSummaryName: item.parentSummaryRowId
-        ? summaryNameById.get(item.parentSummaryRowId) || ''
-        : ''
-    }))
+    return sortedRows
   })
 
   const canConvert = (kind) => {
@@ -807,33 +806,30 @@
                 <Trash2 v-else :size="14" />
               </button>
             </div>
-            <span class="all-download-type">{{ item.fileType }}</span>
-            <span
-              v-if="item.presetLabel"
-              class="all-download-type all-download-type-preset"
-            >
-              {{ item.presetLabel }}
-            </span>
-            <span
-              v-if="item.modelProfileLabel"
-              class="all-download-type all-download-type-profile"
-            >
-              {{ item.modelProfileLabel }}
-            </span>
-            <span
-              v-if="item.derivedFromSummary"
-              class="all-download-type all-download-type-derived"
-            >
-              派生自总结
-            </span>
-            <span v-if="item.noTableBadge" class="all-download-type"
-              >无表格</span
-            >
-            <p v-if="item.derivedFromSummary" class="all-download-derived-note">
-              来源：{{
-                item.parentSummaryName || '对应总结'
-              }}。删除父总结将同时清理此派生文件。
-            </p>
+            <div class="all-download-tags">
+              <span class="all-download-format">{{ item.fileType }}</span>
+              <span v-if="item.variantLabel" class="all-download-variant">
+                {{ item.variantLabel }}
+              </span>
+              <template
+                v-if="
+                  item.presetLabel &&
+                  (!item.derivedFromSummary || !item.parentSummaryRowId)
+                "
+              >
+                <span class="all-download-tag-label">总结模板</span>
+                <strong class="summary-context-preset">{{
+                  item.presetLabel
+                }}</strong>
+                <template v-if="item.modelProfileLabel">
+                  <i aria-hidden="true"></i>
+                  <span class="all-download-tag-label">模型</span>
+                  <strong class="summary-context-profile">{{
+                    item.modelProfileLabel
+                  }}</strong>
+                </template>
+              </template>
+            </div>
           </div>
           <ArtifactActions
             :item="item"
@@ -988,6 +984,16 @@
     min-width: 0;
   }
 
+  .all-download-tags {
+    display: flex;
+    flex-basis: 100%;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 5px 7px;
+    color: #7b8a9a;
+    font-size: 0.76rem;
+  }
+
   .all-download-name {
     flex: 1;
     min-width: 0;
@@ -1027,42 +1033,54 @@
     cursor: not-allowed;
   }
 
-  .all-download-type {
+  .all-download-format,
+  .all-download-variant {
     display: inline-flex;
     align-items: center;
     min-height: 22px;
-    padding: 0 8px;
-    border-radius: 999px;
-    border: 1px solid #bae6fd;
-    background: #eff6ff;
-    color: #0c4a6e;
-    font-size: 0.74rem;
+    padding: 0 7px;
+    border: 1px solid #b9dceb;
+    border-radius: 5px;
+    background: #eff8fc;
+    color: #17617f;
+    font-size: 0.7rem;
     font-weight: 700;
   }
 
-  .all-download-type-preset {
-    border-color: #fcd34d;
-    background: #fffbeb;
-    color: #92400e;
+  .all-download-variant {
+    border-color: #ccc8e6;
+    background: #f5f3fb;
+    color: #5c5386;
   }
 
-  .all-download-type-profile {
-    border-color: #86efac;
-    background: #f0fdf4;
-    color: #166534;
+  .all-download-tags strong {
+    display: inline-flex;
+    align-items: center;
+    min-height: 21px;
+    padding: 0 6px;
+    border: 1px solid transparent;
+    border-radius: 5px;
+    font-weight: 700;
   }
 
-  .all-download-type-derived {
-    border-color: #cbd5e1;
-    background: #f8fafc;
-    color: #475569;
+  .all-download-tags .summary-context-preset {
+    border-color: #f4d58b;
+    background: #fff9e9;
+    color: #8a5814;
   }
 
-  .all-download-derived-note {
-    flex-basis: 100%;
-    margin: 0;
-    font-size: 0.8rem;
-    color: #64748b;
+  .all-download-tags .summary-context-profile {
+    border-color: #a9dfbf;
+    background: #effaf4;
+    color: #247044;
+  }
+
+  .all-download-tags i {
+    width: 3px;
+    height: 3px;
+    margin: 0 2px;
+    border-radius: 50%;
+    background: #b1bdc9;
   }
 
   /* ─── Responsive ─────────────────────────────────────────────── */

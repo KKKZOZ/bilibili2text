@@ -29,6 +29,7 @@
   const {
     summaryPresets,
     summaryDefaultPreset,
+    summaryDefaultPromptTemplate,
     summaryProfiles,
     selectedSummaryPreset,
     selectedSummaryProfile
@@ -700,6 +701,9 @@
       :presets="historyPresetOptions"
       :regenerate-loading="regenerateLoading"
       :requires-api-key="requiresApiKey"
+      :custom-prompt-template="getSummaryTemplate(summaryDefaultPromptTemplate)"
+      :fallback-prompt-template="summaryDefaultPromptTemplate"
+      :custom-preset-value="CUSTOM_SUMMARY_PRESET_VALUE"
       :regenerate-error="regenerateError"
       :regenerate-success="regenerateSuccess"
       :rag-answer-html="renderedRagAnswer"

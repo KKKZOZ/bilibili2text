@@ -11,6 +11,9 @@
     presets: { type: Array, default: () => [] },
     loading: Boolean,
     requiresApiKey: Boolean,
+    customPromptTemplate: { type: String, default: '' },
+    fallbackPromptTemplate: { type: String, default: '' },
+    customPresetValue: { type: String, default: '__user_custom__' },
     error: { type: String, default: '' },
     success: { type: String, default: '' }
   })
@@ -40,7 +43,6 @@
         :model-value="selectedProfile"
         :profiles="profiles"
         :disabled="loading"
-        compact
         @update:model-value="emit('update:selectedProfile', $event)"
       />
       <SummaryPresetPicker
@@ -48,7 +50,10 @@
         :model-value="selectedPreset"
         :presets="presets"
         :disabled="loading"
-        compact
+        :custom-prompt-template="customPromptTemplate"
+        :fallback-prompt-template="fallbackPromptTemplate"
+        :custom-preset-value="customPresetValue"
+        preview
         @update:model-value="emit('update:selectedPreset', $event)"
       />
     </div>
@@ -59,7 +64,7 @@
       @click="emit('regenerate')"
     >
       <LoaderCircle v-if="loading" :size="16" class="spin" />
-      <span>{{ loading ? '生成中...' : '用当前配置重新生成总结' }}</span>
+      <span>{{ loading ? '生成中...' : '重新生成总结' }}</span>
     </button>
     <InlineNotice v-if="error">{{ error }}</InlineNotice>
     <InlineNotice v-if="success" kind="success">{{ success }}</InlineNotice>

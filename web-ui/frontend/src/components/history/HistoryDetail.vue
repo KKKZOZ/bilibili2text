@@ -32,6 +32,9 @@
     presets: { type: Array, default: () => [] },
     regenerateLoading: Boolean,
     requiresApiKey: Boolean,
+    customPromptTemplate: { type: String, default: '' },
+    fallbackPromptTemplate: { type: String, default: '' },
+    customPresetValue: { type: String, default: '__user_custom__' },
     regenerateError: { type: String, default: '' },
     regenerateSuccess: { type: String, default: '' },
     ragAnswerHtml: { type: String, default: '' },
@@ -115,6 +118,9 @@
         :presets="presets"
         :loading="regenerateLoading"
         :requires-api-key="requiresApiKey"
+        :custom-prompt-template="customPromptTemplate"
+        :fallback-prompt-template="fallbackPromptTemplate"
+        :custom-preset-value="customPresetValue"
         :error="regenerateError"
         :success="regenerateSuccess"
         @update:selected-profile="emit('update:selectedProfile', $event)"

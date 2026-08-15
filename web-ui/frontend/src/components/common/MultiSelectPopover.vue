@@ -283,7 +283,7 @@
 
   .compact .multi-select-trigger {
     width: auto;
-    height: 32px;
+    height: 38px;
     border-color: rgba(148, 163, 184, 0.35);
     border-radius: 8px;
     background: rgba(255, 255, 255, 0.8);
