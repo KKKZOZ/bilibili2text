@@ -110,3 +110,79 @@ export const requestStream = async (
   }
   return response.body
 }
+
+const SSE_RETRY_DELAYS = [1000, 2000, 4000]
+
+export const subscribeSse = ({
+  url,
+  eventName,
+  onEvent,
+  onDeleted,
+  onFallback
+}) => {
+  let source = null
+  let retryTimer = null
+  let failureCount = 0
+  let closed = false
+
+  const closeSource = () => {
+    if (source !== null) {
+      source.close()
+      source = null
+    }
+  }
+
+  const close = () => {
+    closed = true
+    closeSource()
+    if (retryTimer !== null) {
+      clearTimeout(retryTimer)
+      retryTimer = null
+    }
+  }
+
+  const fallback = () => {
+    close()
+    onFallback?.()
+  }
+
+  const connect = () => {
+    if (closed) return
+    if (typeof window.EventSource !== 'function') {
+      fallback()
+      return
+    }
+
+    source = new window.EventSource(url)
+    source.addEventListener(eventName, (event) => {
+      try {
+        const keepOpen = onEvent(JSON.parse(event.data))
+        failureCount = 0
+        if (keepOpen === false) close()
+      } catch {
+        fallback()
+      }
+    })
+    source.addEventListener('deleted', (event) => {
+      let payload = null
+      try {
+        payload = JSON.parse(event.data)
+      } catch {}
+      onDeleted?.(payload)
+      close()
+    })
+    source.onerror = () => {
+      if (closed) return
+      closeSource()
+      failureCount += 1
+      if (failureCount > SSE_RETRY_DELAYS.length) {
+        fallback()
+        return
+      }
+      retryTimer = setTimeout(connect, SSE_RETRY_DELAYS[failureCount - 1])
+    }
+  }
+
+  connect()
+  return close
+}

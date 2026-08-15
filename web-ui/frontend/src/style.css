@@ -83,6 +83,16 @@ body {
   font-size: 0.9rem;
 }
 
+.connection-notice {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 10px 0 0;
+  color: #92400e;
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
 /* ─── Submit button (ProcessView + HistoryView) ──────────────── */
 
 .submit {

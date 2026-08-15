@@ -1,14 +1,19 @@
 """Process endpoints: submit a video URL / upload audio and poll job status."""
 
+import json
 import re
 import shutil
 import subprocess
 import tempfile
+from collections.abc import AsyncIterator
 from pathlib import Path
+from typing import Annotated
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import StreamingResponse
 
 from b2t.summarize.llm import validate_summary_prompt_template
+from backend.event_stream import event_broker, job_channel
 from backend.job_store import JobCapacityError, job_manager
 from backend.jobs import _create_job, _get_job, _list_active_jobs
 from backend.runner import _run_job
@@ -28,6 +33,7 @@ from backend.settings import (
 from backend.task_queue import submit_job
 
 router = APIRouter()
+_SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
 _UPLOAD_BVID_NAME_PATTERN = re.compile(r"^(BV[0-9A-Za-z]{10})_(.+)$", re.IGNORECASE)
 _ALLOWED_AUDIO_SUFFIXES = {
     ".aac",
@@ -377,6 +383,43 @@ def list_active_jobs() -> ActiveJobsResponse:
     return ActiveJobsResponse(jobs=[ActiveJobItem(**j) for j in jobs])
 
 
+def _serialize_sse(event: str, payload: object) -> str:
+    return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+def _active_jobs_response(job_ids: set[str]) -> ActiveJobsResponse:
+    jobs = [job for job in _list_active_jobs() if str(job["job_id"]) in job_ids]
+    return ActiveJobsResponse(jobs=[ActiveJobItem(**job) for job in jobs])
+
+
+@router.get("/api/jobs/events")
+async def active_job_events(
+    job_id: Annotated[list[str], Query()],
+) -> StreamingResponse:
+    job_ids = tuple(dict.fromkeys(value for value in job_id if value))
+    if not job_ids:
+        raise HTTPException(status_code=400, detail="至少需要一个任务 ID")
+
+    async def stream() -> AsyncIterator[str]:
+        subscription = event_broker.subscribe(job_channel(value) for value in job_ids)
+        try:
+            while True:
+                response = _active_jobs_response(set(job_ids))
+                yield _serialize_sse("jobs", response.model_dump(mode="json"))
+                if not response.jobs:
+                    return
+                while not await subscription.wait():
+                    yield ": keep-alive\n\n"
+        finally:
+            subscription.close()
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers=_SSE_HEADERS,
+    )
+
+
 @router.post("/api/process/{job_id}/cancel")
 def cancel_job(job_id: str) -> dict:
     cancelled, status = job_manager.cancel(job_id)
@@ -390,12 +433,7 @@ def cancel_job(job_id: str) -> dict:
     return {"ok": True, "job_id": job_id}
 
 
-@router.get("/api/process/{job_id}", response_model=ProcessStatusResponse)
-def process_status(job_id: str) -> ProcessStatusResponse:
-    job = _get_job(job_id)
-    if job is None:
-        raise HTTPException(status_code=404, detail="任务不存在或已过期")
-
+def _to_process_status_response(job: dict) -> ProcessStatusResponse:
     all_downloads_raw = job.get("all_downloads")
     all_downloads: list[DownloadItemResponse] = []
     if isinstance(all_downloads_raw, list):
@@ -481,3 +519,45 @@ def process_status(job_id: str) -> ProcessStatusResponse:
         if isinstance(job.get("history_run_id"), str)
         else None,
     )
+
+
+@router.get("/api/process/{job_id}/events")
+async def process_events(job_id: str) -> StreamingResponse:
+    if _get_job(job_id) is None:
+        raise HTTPException(status_code=404, detail="任务不存在或已过期")
+
+    async def stream() -> AsyncIterator[str]:
+        subscription = event_broker.subscribe([job_channel(job_id)])
+        try:
+            while True:
+                job = _get_job(job_id)
+                if job is None:
+                    yield _serialize_sse("deleted", {"job_id": job_id})
+                    return
+                response = _to_process_status_response(job)
+                yield _serialize_sse("job", response.model_dump(mode="json"))
+                fancy_html_active = response.auto_generate_fancy_html and (
+                    response.fancy_html_status in {"pending", "running"}
+                )
+                if response.status in {"failed", "cancelled"} or (
+                    response.status == "succeeded" and not fancy_html_active
+                ):
+                    return
+                while not await subscription.wait():
+                    yield ": keep-alive\n\n"
+        finally:
+            subscription.close()
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers=_SSE_HEADERS,
+    )
+
+
+@router.get("/api/process/{job_id}", response_model=ProcessStatusResponse)
+def process_status(job_id: str) -> ProcessStatusResponse:
+    job = _get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="任务不存在或已过期")
+    return _to_process_status_response(job)

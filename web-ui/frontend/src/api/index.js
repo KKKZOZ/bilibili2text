@@ -1,4 +1,10 @@
-import { ApiError, requestJson, requestStream, requestText } from './client'
+import {
+  ApiError,
+  requestJson,
+  requestStream,
+  requestText,
+  subscribeSse
+} from './client'
 
 const encode = (value) => encodeURIComponent(String(value))
 
@@ -36,6 +42,12 @@ export const summaryApi = {
 export const processApi = {
   getJob: (jobId) =>
     requestJson(`/api/process/${encode(jobId)}`, {}, '获取任务进度失败'),
+  jobEventsUrl: (jobId) => `/api/process/${encode(jobId)}/events`,
+  activeJobEventsUrl: (jobIds) => {
+    const params = new URLSearchParams()
+    for (const jobId of jobIds) params.append('job_id', jobId)
+    return `/api/jobs/events?${params.toString()}`
+  },
   startFromUrl: async (payload) =>
     assertJobStart(
       await requestJson(
@@ -65,6 +77,7 @@ export const historyApi = {
     requestJson(`/api/history?${params.toString()}`, {}, '获取历史记录失败'),
   getDetail: (runId) =>
     requestJson(`/api/history/${encode(runId)}`, {}, '获取详情失败'),
+  eventsUrl: (runId) => `/api/history/${encode(runId)}/events`,
   regenerateSummary: (runId, payload) =>
     requestJson(
       `/api/history/${encode(runId)}/regenerate-summary`,
@@ -138,4 +151,4 @@ export const openPublicApi = {
     )
 }
 
-export { ApiError }
+export { ApiError, subscribeSse }

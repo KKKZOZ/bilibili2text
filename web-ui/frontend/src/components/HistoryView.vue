@@ -26,6 +26,7 @@
     artifactApi,
     historyApi,
     processApi,
+    subscribeSse,
     summaryApi
   } from '../api'
   import {
@@ -89,16 +90,20 @@
   const ragAnswerLoading = ref(false)
   const ragFancyHtmlGenerating = ref(false)
   const ragFancyHtmlError = ref('')
+  const ragFancyConnectionNotice = ref('')
   let ragFancyHtmlPollTimer = null
   let ragFancyHtmlPollInFlight = false
+  let stopRagFancyHtmlEvents = null
   let historyDetailRequestVersion = 0
 
   // ─── Active jobs (in-progress) ───────────────────────────────
   const ACTIVE_JOB_IDS_KEY = 'b2t.active-job-ids'
   const CUSTOM_SUMMARY_PRESET_VALUE = '__user_custom__'
   const activeJobs = ref([])
+  const activeJobsConnectionNotice = ref('')
   let activeJobsPollTimer = null
   let activeJobsLoading = false
+  let stopActiveJobEvents = null
 
   const readActiveJobIds = () => {
     try {
@@ -120,11 +125,26 @@
     } catch {}
   }
 
+  const stopActiveJobsPolling = () => {
+    if (activeJobsPollTimer !== null) {
+      clearInterval(activeJobsPollTimer)
+      activeJobsPollTimer = null
+    }
+  }
+
+  const stopActiveJobsEvents = () => {
+    if (stopActiveJobEvents !== null) {
+      stopActiveJobEvents()
+      stopActiveJobEvents = null
+    }
+  }
+
   const loadActiveJobs = async () => {
     if (activeJobsLoading) return
     const ids = readActiveJobIds()
     if (ids.length === 0) {
       activeJobs.value = []
+      stopActiveJobsPolling()
       return
     }
     activeJobsLoading = true
@@ -150,9 +170,50 @@
         }
       }
       activeJobs.value = next
+      if (next.length === 0) stopActiveJobsPolling()
     } finally {
       activeJobsLoading = false
     }
+  }
+
+  const startActiveJobsPollingFallback = () => {
+    activeJobsConnectionNotice.value = '实时连接不可用，已切换为兼容模式。'
+    stopActiveJobsPolling()
+    loadActiveJobs()
+    activeJobsPollTimer = setInterval(loadActiveJobs, 2000)
+  }
+
+  const syncActiveJobEvents = () => {
+    stopActiveJobsEvents()
+    stopActiveJobsPolling()
+    activeJobsConnectionNotice.value = ''
+    const subscribedIds = readActiveJobIds()
+    if (subscribedIds.length === 0) {
+      activeJobs.value = []
+      return
+    }
+
+    stopActiveJobEvents = subscribeSse({
+      url: processApi.activeJobEventsUrl(subscribedIds),
+      eventName: 'jobs',
+      onEvent: (data) => {
+        const jobs = Array.isArray(data?.jobs) ? data.jobs : []
+        const activeIds = new Set(jobs.map((item) => item.job_id))
+        for (const id of subscribedIds) {
+          if (!activeIds.has(id)) removeActiveJobId(id)
+        }
+        activeJobs.value = jobs
+        return jobs.length > 0
+      },
+      onFallback: () => {
+        stopActiveJobEvents = null
+        startActiveJobsPollingFallback()
+      }
+    })
+  }
+
+  const onActiveJobsStorage = (event) => {
+    if (event.key === ACTIVE_JOB_IDS_KEY) syncActiveJobEvents()
   }
 
   const cancelActiveJob = async (jobId) => {
@@ -160,6 +221,7 @@
       await processApi.cancelJob(jobId)
       removeActiveJobId(jobId)
       activeJobs.value = activeJobs.value.filter((j) => j.job_id !== jobId)
+      syncActiveJobEvents()
     } catch (err) {
       historyError.value = err instanceof Error ? err.message : '取消任务失败'
     }
@@ -288,6 +350,7 @@
     ragAnswerMarkdown.value = ''
     ragAnswerError.value = ''
     ragFancyHtmlError.value = ''
+    ragFancyConnectionNotice.value = ''
     regenerateError.value = ''
     regenerateSuccess.value = ''
     regenerateOverwriteConfirm.value = false
@@ -304,7 +367,7 @@
       }
       historyDetail.value = data
       ragFancyHtmlError.value = data.fancy_html_error || ''
-      syncRagFancyHtmlPolling()
+      syncRagFancyHtmlUpdates()
       if (data.record_type === 'rag_query') {
         await loadRagAnswerMarkdown(data, requestVersion)
       }
@@ -312,6 +375,7 @@
       if (requestVersion !== historyDetailRequestVersion) return
       historyError.value = err instanceof Error ? err.message : '获取详情失败'
       showHistoryDetail.value = false
+      stopRagFancyHtmlEventStream()
       stopRagFancyHtmlPolling()
     } finally {
       if (requestVersion === historyDetailRequestVersion) {
@@ -335,14 +399,16 @@
     }
   }
 
-  const syncRagFancyHtmlPolling = () => {
-    stopRagFancyHtmlPolling()
-    const shouldPoll =
-      showHistoryDetail.value &&
-      historyDetail.value?.record_type === 'rag_query' &&
-      historyDetail.value?.fancy_html_status === 'running'
-    if (!shouldPoll) return
+  const stopRagFancyHtmlEventStream = () => {
+    if (stopRagFancyHtmlEvents !== null) {
+      stopRagFancyHtmlEvents()
+      stopRagFancyHtmlEvents = null
+    }
+  }
 
+  const startRagFancyHtmlPollingFallback = () => {
+    ragFancyConnectionNotice.value = '实时连接不可用，已切换为兼容模式。'
+    stopRagFancyHtmlPolling()
     ragFancyHtmlPollTimer = setInterval(async () => {
       if (ragFancyHtmlPollInFlight) return
       const runId = historyDetail.value?.run_id
@@ -369,6 +435,46 @@
     }, 2000)
   }
 
+  const syncRagFancyHtmlUpdates = () => {
+    stopRagFancyHtmlEventStream()
+    stopRagFancyHtmlPolling()
+    ragFancyConnectionNotice.value = ''
+    const runId = historyDetail.value?.run_id
+    const shouldSubscribe =
+      showHistoryDetail.value &&
+      historyDetail.value?.record_type === 'rag_query' &&
+      ['pending', 'running'].includes(
+        historyDetail.value?.fancy_html_status || ''
+      )
+    if (!shouldSubscribe || !runId) return
+
+    stopRagFancyHtmlEvents = subscribeSse({
+      url: historyApi.eventsUrl(runId),
+      eventName: 'history',
+      onEvent: (data) => {
+        if (historyDetail.value?.run_id !== runId) return false
+        historyDetail.value = data
+        ragFancyHtmlError.value = data.fancy_html_error || ''
+        const isActive = ['pending', 'running'].includes(
+          data.fancy_html_status || ''
+        )
+        if (!isActive) loadHistory()
+        return isActive
+      },
+      onDeleted: () => {
+        if (historyDetail.value?.run_id !== runId) return
+        historyError.value = '转录记录不存在'
+        showHistoryDetail.value = false
+      },
+      onFallback: () => {
+        stopRagFancyHtmlEvents = null
+        if (historyDetail.value?.run_id === runId) {
+          startRagFancyHtmlPollingFallback()
+        }
+      }
+    })
+  }
+
   const generateRagFancyHtml = async () => {
     const artifact = historyDetail.value?.artifacts?.find(
       (item) => item.kind === 'rag_answer'
@@ -391,7 +497,7 @@
       if (data.history_detail) {
         historyDetail.value = data.history_detail
         ragFancyHtmlError.value = data.history_detail.fancy_html_error || ''
-        syncRagFancyHtmlPolling()
+        syncRagFancyHtmlUpdates()
         await loadHistory()
       }
       if (data.download_url && data.filename) {
@@ -582,7 +688,7 @@
     regenerateSuccess.value = '文件已删除。'
     if (detail?.record_type === 'rag_query') {
       ragFancyHtmlError.value = detail.fancy_html_error || ''
-      syncRagFancyHtmlPolling()
+      syncRagFancyHtmlUpdates()
     }
     loadHistory()
   }
@@ -593,7 +699,7 @@
     regenerateSuccess.value = 'Fancy HTML 已生成并归档。'
     if (detail?.record_type === 'rag_query') {
       ragFancyHtmlError.value = detail.fancy_html_error || ''
-      syncRagFancyHtmlPolling()
+      syncRagFancyHtmlUpdates()
     }
     loadHistory()
   }
@@ -607,8 +713,8 @@
     if (routeRunId.value) {
       loadHistoryDetail(routeRunId.value)
     }
-    loadActiveJobs()
-    activeJobsPollTimer = setInterval(loadActiveJobs, 2000)
+    syncActiveJobEvents()
+    window.addEventListener('storage', onActiveJobsStorage)
   })
 
   watch(routeRunId, (runId) => {
@@ -626,6 +732,7 @@
     regenerateError.value = ''
     regenerateSuccess.value = ''
     regenerateOverwriteConfirm.value = false
+    stopRagFancyHtmlEventStream()
     stopRagFancyHtmlPolling()
   })
 
@@ -647,11 +754,11 @@
 
   onBeforeUnmount(() => {
     historyDetailRequestVersion += 1
+    stopRagFancyHtmlEventStream()
     stopRagFancyHtmlPolling()
-    if (activeJobsPollTimer !== null) {
-      clearInterval(activeJobsPollTimer)
-      activeJobsPollTimer = null
-    }
+    stopActiveJobsEvents()
+    stopActiveJobsPolling()
+    window.removeEventListener('storage', onActiveJobsStorage)
   })
 </script>
 
@@ -857,6 +964,10 @@
           >
             Fancy HTML 正在后台生成，离开当前页面后稍后再回来，状态仍会保留。
           </p>
+          <p v-if="ragFancyConnectionNotice" class="connection-notice">
+            <AlertCircle :size="14" />
+            <span>{{ ragFancyConnectionNotice }}</span>
+          </p>
           <p
             v-if="ragFancyHtmlError"
             class="inline-error"
@@ -988,6 +1099,13 @@
       </header>
 
       <!-- Active jobs section -->
+      <p
+        v-if="activeJobsConnectionNotice && activeJobs.length > 0"
+        class="connection-notice"
+      >
+        <AlertCircle :size="14" />
+        <span>{{ activeJobsConnectionNotice }}</span>
+      </p>
       <div v-if="activeJobs.length > 0" class="active-jobs-section">
         <h3 class="active-jobs-heading">
           <LoaderCircle :size="14" class="spin" />

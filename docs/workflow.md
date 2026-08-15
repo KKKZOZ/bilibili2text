@@ -18,9 +18,18 @@ sequenceDiagram
 
     Note over 后端: 线程池异步执行
 
-    loop 前端轮询进度
-        前端->>后端: GET /api/process/{job_id}
-        后端-->>前端: {status, progress, stage...}
+    前端->>后端: GET /api/process/{job_id}/events
+    后端-->>前端: SSE 初始任务快照
+
+    loop 状态发生变化
+        后端-->>前端: SSE {status, progress, stage...}
+    end
+
+    opt SSE 连续重连失败
+        loop 兼容轮询
+            前端->>后端: GET /api/process/{job_id}
+            后端-->>前端: {status, progress, stage...}
+        end
     end
 
     后端->>Pipeline: run_pipeline(url, config)

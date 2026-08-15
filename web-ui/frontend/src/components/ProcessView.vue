@@ -23,7 +23,7 @@
   } from 'lucide-vue-next'
   import ProgressPanel from './ProgressPanel.vue'
   import FileList from './FileList.vue'
-  import { ApiError, processApi } from '../api'
+  import { ApiError, processApi, subscribeSse } from '../api'
   import {
     CUSTOM_LLM_PROFILE_NAME,
     usePublicCredentials
@@ -65,6 +65,7 @@
 
   const url = ref('')
   const error = ref('')
+  const connectionNotice = ref('')
   const inputMode = ref('url')
   const uploadedAudioFile = ref(null)
   const uploadFileInput = ref(null)
@@ -118,6 +119,7 @@
   })
 
   let pollTimer = null
+  let stopJobEvents = null
   let lastRenderedJobSignature = ''
   const maxPollErrors = 3
   const ACTIVE_JOB_IDS_KEY = 'b2t.active-job-ids'
@@ -358,6 +360,13 @@
     }
   }
 
+  const stopEventSubscription = () => {
+    if (stopJobEvents !== null) {
+      stopJobEvents()
+      stopJobEvents = null
+    }
+  }
+
   const getLogSignature = (logs) => {
     if (!Array.isArray(logs) || logs.length === 0) {
       return '0::'
@@ -540,6 +549,52 @@
     closeSummaryPresetMenu()
   }
 
+  const applyJobUpdate = (data) => {
+    const previousLogCount = Array.isArray(job.value.logs)
+      ? job.value.logs.length
+      : 0
+    const nextRenderSignature = getJobRenderSignature(data)
+    const shouldRenderJob = nextRenderSignature !== lastRenderedJobSignature
+    if (shouldRenderJob) {
+      job.value = data
+      lastRenderedJobSignature = nextRenderSignature
+      currentSkipSummary.value = Boolean(data.skip_summary)
+      if (
+        isOpenPublic.value &&
+        typeof data.summary_prompt_template === 'string' &&
+        data.summary_prompt_template.trim()
+      ) {
+        userSummaryPromptTemplate.value = data.summary_prompt_template
+      }
+    }
+    pollErrorCount.value = 0
+    error.value = ''
+    const currentLogCount = Array.isArray(data.logs) ? data.logs.length : 0
+    if (shouldRenderJob && currentLogCount !== previousLogCount) {
+      nextTick(syncLogScroll)
+    }
+
+    if (data.status === 'failed') {
+      error.value = data.error || '处理失败'
+      clearActiveJobId()
+      return false
+    } else if (data.status === 'cancelled') {
+      error.value = data.error || '任务已取消'
+      clearActiveJobId()
+      return false
+    } else if (
+      data.status === 'succeeded' &&
+      !(
+        data.auto_generate_fancy_html &&
+        ['pending', 'running'].includes(data.fancy_html_status || '')
+      )
+    ) {
+      clearActiveJobId()
+      return false
+    }
+    return true
+  }
+
   const pollStatus = async () => {
     if (!jobId.value || isPolling.value) {
       return
@@ -548,49 +603,7 @@
     isPolling.value = true
     try {
       const data = await processApi.getJob(jobId.value)
-
-      const previousLogCount = Array.isArray(job.value.logs)
-        ? job.value.logs.length
-        : 0
-      const nextRenderSignature = getJobRenderSignature(data)
-      const shouldRenderJob = nextRenderSignature !== lastRenderedJobSignature
-      if (shouldRenderJob) {
-        job.value = data
-        lastRenderedJobSignature = nextRenderSignature
-        currentSkipSummary.value = Boolean(data.skip_summary)
-        if (
-          isOpenPublic.value &&
-          typeof data.summary_prompt_template === 'string' &&
-          data.summary_prompt_template.trim()
-        ) {
-          userSummaryPromptTemplate.value = data.summary_prompt_template
-        }
-      }
-      pollErrorCount.value = 0
-      error.value = ''
-      const currentLogCount = Array.isArray(data.logs) ? data.logs.length : 0
-      if (shouldRenderJob && currentLogCount !== previousLogCount) {
-        nextTick(syncLogScroll)
-      }
-
-      if (data.status === 'failed') {
-        error.value = data.error || '处理失败'
-        clearActiveJobId()
-        stopPolling()
-      } else if (data.status === 'cancelled') {
-        error.value = data.error || '任务已取消'
-        clearActiveJobId()
-        stopPolling()
-      } else if (
-        data.status === 'succeeded' &&
-        !(
-          data.auto_generate_fancy_html &&
-          ['pending', 'running'].includes(data.fancy_html_status || '')
-        )
-      ) {
-        clearActiveJobId()
-        stopPolling()
-      }
+      if (!applyJobUpdate(data)) stopPolling()
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) {
         clearActiveJobId()
@@ -609,9 +622,44 @@
     }
   }
 
+  const startPollingFallback = () => {
+    connectionNotice.value = '实时连接不可用，已切换为兼容模式。'
+    stopPolling()
+    pollStatus()
+    pollTimer = setInterval(pollStatus, 1200)
+  }
+
+  const startJobEvents = () => {
+    stopEventSubscription()
+    stopPolling()
+    connectionNotice.value = ''
+    const subscribedJobId = jobId.value
+    if (!subscribedJobId) return
+
+    stopJobEvents = subscribeSse({
+      url: processApi.jobEventsUrl(subscribedJobId),
+      eventName: 'job',
+      onEvent: (data) => {
+        if (jobId.value !== subscribedJobId) return false
+        return applyJobUpdate(data)
+      },
+      onDeleted: () => {
+        if (jobId.value !== subscribedJobId) return
+        clearActiveJobId()
+        error.value = '任务不存在或已过期'
+      },
+      onFallback: () => {
+        stopJobEvents = null
+        if (jobId.value === subscribedJobId) startPollingFallback()
+      }
+    })
+  }
+
   const submit = async () => {
     isStarting.value = true
     error.value = ''
+    connectionNotice.value = ''
+    stopEventSubscription()
     stopPolling()
     clearActiveJobId()
     resetJob()
@@ -714,8 +762,7 @@
       addActiveJobId(data.job_id)
       // Navigate to the job detail URL
       await router.push(`/process/${data.job_id}`)
-      pollTimer = setInterval(pollStatus, 1200)
-      await pollStatus()
+      startJobEvents()
     } catch (err) {
       error.value = err instanceof Error ? err.message : '提交任务失败'
     } finally {
@@ -735,13 +782,16 @@
     await pollStatus()
     if (
       jobId.value &&
-      (job.value.status === 'queued' || job.value.status === 'running')
+      (job.value.status === 'queued' ||
+        job.value.status === 'running' ||
+        (job.value.status === 'succeeded' && isFancyHtmlPending.value))
     ) {
-      pollTimer = setInterval(pollStatus, 1200)
+      startJobEvents()
     }
   })
 
   onBeforeUnmount(() => {
+    stopEventSubscription()
     stopPolling()
     document.removeEventListener('mousedown', onDocumentPointerDown)
   })
@@ -1237,6 +1287,10 @@
         <p v-if="error" class="inline-error">
           <AlertCircle :size="16" />
           <span>{{ error }}</span>
+        </p>
+        <p v-if="connectionNotice" class="connection-notice">
+          <AlertCircle :size="16" />
+          <span>{{ connectionNotice }}</span>
         </p>
       </article>
 

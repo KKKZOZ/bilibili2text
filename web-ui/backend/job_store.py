@@ -12,6 +12,7 @@ from threading import Lock, RLock
 from uuid import uuid4
 
 from b2t.cancellation import CancellationToken
+from backend.event_stream import event_broker, job_channel
 from backend.settings import JOB_LOG_LIMIT, STAGE_KEYS, utc_iso
 
 JobValue = (
@@ -174,10 +175,20 @@ def _format_elapsed(seconds: int) -> str:
 
 
 class JobRepository:
-    def __init__(self, *, limit: int = 200) -> None:
+    def __init__(
+        self,
+        *,
+        limit: int = 200,
+        on_change: Callable[[str], None] | None = None,
+    ) -> None:
         self._jobs: OrderedDict[str, JobState] = OrderedDict()
         self._limit = limit
         self._lock = Lock()
+        self._on_change = on_change
+
+    def _notify_change(self, job_id: str) -> None:
+        if self._on_change is not None:
+            self._on_change(job_id)
 
     def create(
         self,
@@ -200,7 +211,9 @@ class JobRepository:
             if len(self._jobs) >= self._limit:
                 raise JobCapacityError("任务记录容量已满，当前任务仍在处理中")
             self._jobs[job.job_id] = job
-        return job.to_payload()
+            payload = job.to_payload()
+        self._notify_change(job.job_id)
+        return payload
 
     def _evict_terminal_jobs_locked(self) -> None:
         while len(self._jobs) >= self._limit:
@@ -249,6 +262,7 @@ class JobRepository:
                 setattr(job, field_name, value)
 
             job.updated_at = utc_iso()
+        self._notify_change(job_id)
 
     def cancel(self, job_id: str) -> tuple[bool, str | None]:
         with self._lock:
@@ -262,7 +276,9 @@ class JobRepository:
             job.stage_label = "任务已取消"
             job.error = "任务已被用户取消"
             job.updated_at = utc_iso()
-            return True, job.status
+            status = job.status
+        self._notify_change(job_id)
+        return True, status
 
     def append_log(self, job_id: str, line: str) -> None:
         with self._lock:
@@ -273,6 +289,7 @@ class JobRepository:
             if len(job.logs) > JOB_LOG_LIMIT:
                 del job.logs[:-JOB_LOG_LIMIT]
             job.updated_at = utc_iso()
+        self._notify_change(job_id)
 
     def list_active(self) -> list[dict[str, JobValue]]:
         with self._lock:
@@ -324,6 +341,7 @@ class JobRepository:
             job.summary_table_pdf_filename = None
             job.ephemeral_artifacts = []
             job.updated_at = utc_iso()
+        self._notify_change(job_id)
 
     def list_expired_ephemeral_uploads(
         self, *, now: datetime | None = None
@@ -388,8 +406,13 @@ class JobRepository:
 class JobManager(JobRepository):
     """Own job state, submitted futures, and cooperative cancellation tokens."""
 
-    def __init__(self, *, limit: int = 200) -> None:
-        super().__init__(limit=limit)
+    def __init__(
+        self,
+        *,
+        limit: int = 200,
+        on_change: Callable[[str], None] | None = None,
+    ) -> None:
+        super().__init__(limit=limit, on_change=on_change)
         self._futures: dict[str, Future] = {}
         self._tokens: dict[str, CancellationToken] = {}
         self._lifecycle_lock = RLock()
@@ -508,6 +531,8 @@ class JobManager(JobRepository):
         self.append_log(job_id, f"[ERROR] 后台任务异常: {exception}")
 
 
-job_manager = JobManager()
+job_manager = JobManager(
+    on_change=lambda job_id: event_broker.publish(job_channel(job_id))
+)
 # Kept for callers that still import the original repository name.
 job_repository = job_manager

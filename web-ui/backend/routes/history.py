@@ -1,9 +1,12 @@
 """History endpoints: list, detail, and delete transcription records."""
 
+import json
 import logging
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import StreamingResponse
 
 from b2t.config import resolve_summarize_model_profile, resolve_summary_preset_name
 from b2t.download.metadata import VideoMetadata
@@ -13,6 +16,7 @@ from b2t.storage import SUMMARY_ARTIFACT_KINDS, StoredArtifact
 from b2t.summarize.llm import validate_summary_prompt_template
 from backend.dependencies import get_history_db, get_storage_backend
 from backend.download_registry import download_registry
+from backend.event_stream import event_broker, history_channel
 from backend.schemas import (
     HistoryDetailArtifactResponse,
     HistoryDetailResponse,
@@ -26,6 +30,7 @@ from backend.settings import get_runtime_app_config, is_delete_enabled
 router = APIRouter()
 CUSTOM_SUMMARY_PRESET_VALUE = "__user_custom__"
 logger = logging.getLogger(__name__)
+_SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
 
 
 def _storage_parent_key(storage_key: str) -> str:
@@ -223,6 +228,40 @@ def history_detail(run_id: str) -> HistoryDetailResponse:
         raise HTTPException(status_code=404, detail="转录记录不存在")
 
     return _to_history_detail_response(detail)
+
+
+@router.get("/api/history/{run_id}/events")
+async def history_events(run_id: str) -> StreamingResponse:
+    db = get_history_db()
+    if db.get_run_detail(run_id) is None:
+        raise HTTPException(status_code=404, detail="转录记录不存在")
+
+    async def stream() -> AsyncIterator[str]:
+        subscription = event_broker.subscribe([history_channel(run_id)])
+        try:
+            while True:
+                detail = db.get_run_detail(run_id)
+                if detail is None:
+                    yield f'event: deleted\ndata: {{"run_id": {json.dumps(run_id)} }}\n\n'
+                    return
+                response = _to_history_detail_response(detail)
+                yield (
+                    "event: history\ndata: "
+                    f"{json.dumps(response.model_dump(mode='json'), ensure_ascii=False)}"
+                    "\n\n"
+                )
+                if response.fancy_html_status not in {"pending", "running"}:
+                    return
+                while not await subscription.wait():
+                    yield ": keep-alive\n\n"
+        finally:
+            subscription.close()
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers=_SSE_HEADERS,
+    )
 
 
 @router.post(
