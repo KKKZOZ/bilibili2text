@@ -1,13 +1,10 @@
 <script setup>
   import { onMounted, ref, watch } from 'vue'
-  import {
-    AlertCircle,
-    CheckCircle2,
-    KeyRound,
-    Shield,
-    Info
-  } from 'lucide-vue-next'
+  import { Shield, Info } from 'lucide-vue-next'
   import { openPublicApi } from '../api'
+  import ApiKeyProviderCard from './settings/ApiKeyProviderCard.vue'
+  import CustomLlmCard from './settings/CustomLlmCard.vue'
+  import SummaryTemplateCard from './settings/SummaryTemplateCard.vue'
   import { usePublicCredentials } from '../composables/usePublicCredentials'
   import { useSummaryConfig } from '../composables/useSummaryConfig'
 
@@ -452,332 +449,92 @@
       </div>
 
       <div class="provider-grid">
-        <!-- Aliyun Section -->
-        <div class="provider-section">
-          <h3 class="provider-title">
-            阿里云 DashScope <span class="required-badge">必填</span>
-          </h3>
-          <p class="provider-desc">
+        <ApiKeyProviderCard
+          v-model="aliyunKeyInput"
+          title="阿里云 DashScope"
+          field-id="aliyun-api-key"
+          placeholder="请输入 sk-... 格式的 API Key"
+          :configured="aliyunConfigured"
+          :masked-key="aliyunMaskedKey"
+          :testing="isTestingAliyun"
+          :error="aliyunError"
+          :success="aliyunSuccess"
+          required
+          @save="saveAliyunKey"
+          @test="testAliyunConnection"
+          @clear="clearAliyunKey"
+        >
+          <p>
             语音识别（ASR）依赖阿里云，无此 Key 无法提交转录任务。
             <a
-              class="provider-link"
               href="https://bailian.console.aliyun.com/cn-beijing/?tab=model#/api-key"
               target="_blank"
               rel="noopener noreferrer"
+              >前往阿里云百炼创建 API Key</a
             >
-              前往阿里云百炼创建 API Key
-            </a>
           </p>
+        </ApiKeyProviderCard>
 
-          <div class="status-row">
-            <span class="status-label">当前状态</span>
-            <span :class="['status-pill', aliyunConfigured ? 'ok' : 'missing']">
-              <CheckCircle2 v-if="aliyunConfigured" :size="14" />
-              <AlertCircle v-else :size="14" />
-              <span>{{ aliyunConfigured ? '已配置' : '未配置' }}</span>
-            </span>
-          </div>
-
-          <p v-if="aliyunConfigured && aliyunMaskedKey" class="status-note">
-            已保存 Key：<code>{{ aliyunMaskedKey }}</code>
-          </p>
-
-          <label for="aliyun-api-key" class="field-label"
-            >DashScope API Key</label
-          >
-          <div class="field-row">
-            <KeyRound :size="16" />
-            <input
-              id="aliyun-api-key"
-              v-model="aliyunKeyInput"
-              type="password"
-              placeholder="请输入 sk-... 格式的 API Key"
-              autocomplete="off"
-            />
-          </div>
-
-          <div class="actions">
-            <button class="submit" type="button" @click="saveAliyunKey">
-              <span>{{ aliyunConfigured ? '更新' : '保存' }}</span>
-            </button>
-            <button
-              class="ghost-button"
-              type="button"
-              :disabled="isTestingAliyun"
-              @click="testAliyunConnection"
-            >
-              <span>{{ isTestingAliyun ? '测试中' : '测试连接' }}</span>
-            </button>
-            <button
-              class="clear-button"
-              type="button"
-              :disabled="!aliyunConfigured"
-              @click="clearAliyunKey"
-            >
-              <span>清除</span>
-            </button>
-          </div>
-
-          <p v-if="aliyunError" class="inline-error">
-            <AlertCircle :size="16" />
-            <span>{{ aliyunError }}</span>
-          </p>
-          <p v-if="aliyunSuccess" class="success-note">
-            <CheckCircle2 :size="16" />
-            <span>{{ aliyunSuccess }}</span>
-          </p>
-        </div>
-
-        <!-- DeepSeek Section -->
-        <div class="provider-section">
-          <h3 class="provider-title">
-            DeepSeek <span class="optional-badge">可选</span>
-          </h3>
-          <p class="provider-desc">
-            配置后可在转录页面的模型下拉框中选择 DeepSeek 模型，用于 LLM
-            总结、知识库问答和 Fancy HTML。
+        <ApiKeyProviderCard
+          v-model="deepseekKeyInput"
+          title="DeepSeek"
+          field-id="deepseek-api-key"
+          placeholder="请输入 sk-... 格式的 API Key"
+          :configured="deepseekConfigured"
+          :masked-key="deepseekMaskedKey"
+          :testing="isTestingDeepseek"
+          :error="deepseekError"
+          :success="deepseekSuccess"
+          @save="saveDeepseekKey"
+          @test="testDeepseekConnection"
+          @clear="clearDeepseekKey"
+        >
+          <p>
+            配置后可用于 LLM 总结、知识库问答和 Fancy HTML。
             <a
-              class="provider-link"
               href="https://platform.deepseek.com/api_keys"
               target="_blank"
               rel="noopener noreferrer"
+              >前往 DeepSeek 创建 API Key</a
             >
-              前往 DeepSeek 创建 API Key
-            </a>
           </p>
-
-          <div class="status-row">
-            <span class="status-label">当前状态</span>
-            <span
-              :class="['status-pill', deepseekConfigured ? 'ok' : 'missing']"
-            >
-              <CheckCircle2 v-if="deepseekConfigured" :size="14" />
-              <AlertCircle v-else :size="14" />
-              <span>{{ deepseekConfigured ? '已配置' : '未配置' }}</span>
-            </span>
-          </div>
-
-          <p v-if="deepseekConfigured && deepseekMaskedKey" class="status-note">
-            已保存 Key：<code>{{ deepseekMaskedKey }}</code>
-          </p>
-          <p v-else class="status-note">
-            未配置时将使用阿里云 Key 进行 LLM 调用。
-          </p>
-
-          <label for="deepseek-api-key" class="field-label"
-            >DeepSeek API Key</label
-          >
-          <div class="field-row">
-            <KeyRound :size="16" />
-            <input
-              id="deepseek-api-key"
-              v-model="deepseekKeyInput"
-              type="password"
-              placeholder="请输入 sk-... 格式的 API Key"
-              autocomplete="off"
-            />
-          </div>
-
-          <div class="actions">
-            <button class="submit" type="button" @click="saveDeepseekKey">
-              <span>{{ deepseekConfigured ? '更新' : '保存' }}</span>
-            </button>
-            <button
-              class="ghost-button"
-              type="button"
-              :disabled="isTestingDeepseek"
-              @click="testDeepseekConnection"
-            >
-              <span>{{ isTestingDeepseek ? '测试中' : '测试连接' }}</span>
-            </button>
-            <button
-              class="clear-button"
-              type="button"
-              :disabled="!deepseekConfigured"
-              @click="clearDeepseekKey"
-            >
-              <span>清除</span>
-            </button>
-          </div>
-
-          <p v-if="deepseekError" class="inline-error">
-            <AlertCircle :size="16" />
-            <span>{{ deepseekError }}</span>
-          </p>
-          <p v-if="deepseekSuccess" class="success-note">
-            <CheckCircle2 :size="16" />
-            <span>{{ deepseekSuccess }}</span>
-          </p>
-        </div>
+          <template #status-note>
+            <p v-if="!deepseekConfigured" class="provider-fallback-note">
+              未配置时将使用阿里云 Key 进行 LLM 调用。
+            </p>
+          </template>
+        </ApiKeyProviderCard>
       </div>
 
-      <div class="provider-section">
-        <h3 class="provider-title">
-          自定义 OpenAI-compatible LLM
-          <span class="optional-badge">可选</span>
-        </h3>
-        <p class="provider-desc">
-          配置后将优先用于 LLM 总结、知识库问答和 Fancy HTML。端点需兼容 OpenAI
-          chat/completions，base_url 示例为
-          <code>https://api.example.com/v1</code>。
-        </p>
+      <CustomLlmCard
+        :configured="customLlmConfigured"
+        :masked-key="customLlmMaskedKey"
+        :saved-base-url="customLlmSavedBaseUrl"
+        :saved-model="customLlmSavedModel"
+        :base-url="customLlmBaseUrlInput"
+        :model="customLlmModelInput"
+        :api-key="customLlmApiKeyInput"
+        :testing="isTestingCustomLlm"
+        :error="customLlmError"
+        :success="customLlmSuccess"
+        @update:base-url="customLlmBaseUrlInput = $event"
+        @update:model="customLlmModelInput = $event"
+        @update:api-key="customLlmApiKeyInput = $event"
+        @save="saveCustomLlm"
+        @test="testCustomLlmConnection"
+        @clear="clearCustomLlm"
+      />
 
-        <div class="status-row">
-          <span class="status-label">当前状态</span>
-          <span
-            :class="['status-pill', customLlmConfigured ? 'ok' : 'missing']"
-          >
-            <CheckCircle2 v-if="customLlmConfigured" :size="14" />
-            <AlertCircle v-else :size="14" />
-            <span>{{ customLlmConfigured ? '已配置' : '未配置' }}</span>
-          </span>
-        </div>
-
-        <p v-if="customLlmConfigured" class="status-note">
-          已保存模型：<code>{{ customLlmSavedModel }}</code>
-          <span v-if="customLlmSavedBaseUrl">
-            · <code>{{ customLlmSavedBaseUrl }}</code>
-          </span>
-          <span v-if="customLlmMaskedKey">
-            · Key：<code>{{ customLlmMaskedKey }}</code>
-          </span>
-        </p>
-        <p v-else class="status-note">
-          未配置时将使用 DeepSeek；DeepSeek 也未配置时回退使用阿里云。
-        </p>
-
-        <label for="custom-llm-base-url" class="field-label">base_url</label>
-        <div class="field-row">
-          <input
-            id="custom-llm-base-url"
-            v-model="customLlmBaseUrlInput"
-            type="url"
-            placeholder="https://api.example.com/v1"
-            autocomplete="off"
-          />
-        </div>
-
-        <label for="custom-llm-model" class="field-label">model</label>
-        <div class="field-row">
-          <input
-            id="custom-llm-model"
-            v-model="customLlmModelInput"
-            type="text"
-            placeholder="请输入模型名称"
-            autocomplete="off"
-          />
-        </div>
-
-        <label for="custom-llm-api-key" class="field-label">API Key</label>
-        <div class="field-row">
-          <KeyRound :size="16" />
-          <input
-            id="custom-llm-api-key"
-            v-model="customLlmApiKeyInput"
-            type="password"
-            placeholder="请输入 API Key"
-            autocomplete="off"
-          />
-        </div>
-
-        <div class="actions">
-          <button class="submit" type="button" @click="saveCustomLlm">
-            <span>{{ customLlmConfigured ? '更新' : '保存' }}</span>
-          </button>
-          <button
-            class="ghost-button"
-            type="button"
-            :disabled="isTestingCustomLlm"
-            @click="testCustomLlmConnection"
-          >
-            <span>{{ isTestingCustomLlm ? '测试中' : '测试连接' }}</span>
-          </button>
-          <button
-            class="clear-button"
-            type="button"
-            :disabled="!customLlmConfigured"
-            @click="clearCustomLlm"
-          >
-            <span>清除</span>
-          </button>
-        </div>
-
-        <p v-if="customLlmError" class="inline-error">
-          <AlertCircle :size="16" />
-          <span>{{ customLlmError }}</span>
-        </p>
-        <p v-if="customLlmSuccess" class="success-note">
-          <CheckCircle2 :size="16" />
-          <span>{{ customLlmSuccess }}</span>
-        </p>
-      </div>
-
-      <div class="provider-section">
-        <h3 class="provider-title">
-          自定义总结模板 <span class="optional-badge">可选</span>
-        </h3>
-        <p class="provider-desc">
-          保存后，可在“新建转录”或历史重生成的总结模板下拉框中选择“用户自定义”。
-          未保存时，选择该选项将无法提交。模板必须包含
-          <code>{content}</code> 占位符。
-        </p>
-
-        <div class="status-row">
-          <span class="status-label">当前状态</span>
-          <span
-            :class="[
-              'status-pill',
-              summaryTemplateConfigured ? 'ok' : 'missing'
-            ]"
-          >
-            <CheckCircle2 v-if="summaryTemplateConfigured" :size="14" />
-            <AlertCircle v-else :size="14" />
-            <span>{{ summaryTemplateConfigured ? '已保存' : '未保存' }}</span>
-          </span>
-        </div>
-
-        <label for="summary-template" class="field-label">模板正文</label>
-        <textarea
-          id="summary-template"
-          v-model="summaryTemplateInput"
-          class="template-editor"
-          rows="16"
-          spellcheck="false"
-          placeholder="请输入总结模板，必须包含 {content} 占位符"
-        ></textarea>
-
-        <div class="actions">
-          <button class="submit" type="button" @click="saveSummaryTemplate">
-            <span>{{
-              summaryTemplateConfigured ? '更新模板' : '保存模板'
-            }}</span>
-          </button>
-          <button
-            class="ghost-button"
-            type="button"
-            @click="resetSummaryTemplateToDefault"
-          >
-            <span>恢复系统默认模板</span>
-          </button>
-          <button
-            class="clear-button"
-            type="button"
-            :disabled="!summaryTemplateConfigured"
-            @click="clearSummaryTemplate"
-          >
-            <span>清除</span>
-          </button>
-        </div>
-
-        <p v-if="summaryTemplateError" class="inline-error">
-          <AlertCircle :size="16" />
-          <span>{{ summaryTemplateError }}</span>
-        </p>
-        <p v-if="summaryTemplateSuccess" class="success-note">
-          <CheckCircle2 :size="16" />
-          <span>{{ summaryTemplateSuccess }}</span>
-        </p>
-      </div>
+      <SummaryTemplateCard
+        :configured="summaryTemplateConfigured"
+        :model-value="summaryTemplateInput"
+        :error="summaryTemplateError"
+        :success="summaryTemplateSuccess"
+        @update:model-value="summaryTemplateInput = $event"
+        @save="saveSummaryTemplate"
+        @reset="resetSummaryTemplateToDefault"
+        @clear="clearSummaryTemplate"
+      />
     </article>
   </section>
 </template>
@@ -786,351 +543,86 @@
   .settings-layout {
     position: relative;
     z-index: 2;
-    max-width: 1160px;
+    max-width: 980px;
     margin: 0 auto;
   }
 
   .panel-settings {
-    padding: 28px;
     display: grid;
-    gap: 14px;
+    gap: 18px;
+    padding: 28px;
   }
 
-  .provider-grid {
+  .settings-header {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 14px;
-    align-items: stretch;
+    gap: 8px;
+  }
+
+  .settings-header h2,
+  .settings-header p {
+    margin: 0;
   }
 
   .settings-header h2 {
-    margin: 12px 0 8px;
-    font-size: 1.28rem;
+    font-size: 1.3rem;
   }
 
   .settings-header p {
-    margin: 0;
-    color: var(--text-soft);
-    line-height: 1.6;
-  }
-
-  .privacy-notice {
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    padding: 14px 18px;
-    border-radius: 14px;
-    background: #f0f9ff;
-    border: 1px solid #bae6fd;
-    color: #0369a1;
-    font-size: 0.85rem;
-    line-height: 1.6;
-  }
-
-  .privacy-notice svg {
-    flex-shrink: 0;
-    margin-top: 1px;
-    color: #0284c7;
+    color: var(--text-muted);
+    font-size: 0.88rem;
+    line-height: 1.65;
   }
 
   .settings-badge {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 7px 11px;
-    border-radius: 999px;
-    border: 1px solid #99f6e4;
-    background: #ecfeff;
-    color: #0f766e;
-    font-size: 0.75rem;
+    justify-self: start;
+    gap: 5px;
+    padding: 4px 8px;
+    border-radius: 5px;
+    background: var(--brand-soft);
+    color: var(--brand-strong);
+    font-size: 0.72rem;
     font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
   }
 
-  .provider-section {
-    height: 100%;
-    padding: 22px;
-    border: 1px solid rgba(255, 255, 255, 0.6);
-    border-radius: 20px;
-    background: linear-gradient(
-      180deg,
-      rgba(255, 255, 255, 0.7) 0%,
-      rgba(248, 253, 255, 0.5) 100%
-    );
-    box-shadow: 0 8px 24px -8px rgba(15, 23, 42, 0.05);
-    display: grid;
-    gap: 12px;
-  }
-
-  .provider-title {
-    margin: 0;
-    font-size: 1.05rem;
-    font-weight: 800;
-    color: #0f172a;
+  .privacy-notice {
     display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .required-badge {
-    display: inline-block;
-    padding: 3px 8px;
-    border-radius: 999px;
-    background: #fef2f2;
-    color: #b91c1c;
-    font-size: 0.7rem;
-    font-weight: 700;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    border: 1px solid #fca5a5;
-  }
-
-  .optional-badge {
-    display: inline-block;
-    padding: 3px 8px;
-    border-radius: 999px;
-    background: #ecfeff;
-    color: #0f766e;
-    font-size: 0.7rem;
-    font-weight: 700;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    border: 1px solid #99f6e4;
-  }
-
-  .provider-desc {
-    margin: 0;
-    font-size: 0.86rem;
-    color: var(--text-muted);
-  }
-
-  .provider-link {
-    display: inline-flex;
-    align-items: center;
-    margin-left: 8px;
-    color: #0369a1;
-    font-weight: 700;
-    text-decoration: none;
-  }
-
-  .provider-link:hover {
-    text-decoration: underline;
-  }
-
-  .status-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    flex-wrap: wrap;
-  }
-
-  .status-label {
-    font-size: 0.9rem;
-    font-weight: 700;
-    color: var(--text-soft);
-  }
-
-  .status-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 10px;
-    border-radius: 999px;
-    font-size: 0.82rem;
-    font-weight: 700;
-  }
-
-  .status-pill.ok {
-    background: #ecfdf5;
-    color: #15803d;
-    border: 1px solid #86efac;
-  }
-
-  .status-pill.missing {
-    background: #fef2f2;
-    color: #b91c1c;
-    border: 1px solid #fca5a5;
-  }
-
-  .status-note {
-    margin: 0;
-    font-size: 0.84rem;
-    color: var(--text-muted);
-  }
-
-  .status-note code {
-    font-family: 'SFMono-Regular', Menlo, Monaco, Consolas, monospace;
-  }
-
-  .field-label {
-    font-size: 0.86rem;
-    color: var(--text-soft);
-    font-weight: 600;
-  }
-
-  .field-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    border: 1px solid var(--line);
-    background: rgba(255, 255, 255, 0.9);
-    border-radius: 14px;
-    padding: 0 13px;
-    min-height: 48px;
-    transition:
-      border-color 0.2s ease,
-      box-shadow 0.2s ease;
-  }
-
-  .field-row:focus-within {
-    border-color: #22d3ee;
-    box-shadow: 0 0 0 4px rgba(34, 211, 238, 0.16);
-  }
-
-  .field-row svg {
-    color: #64748b;
-    flex-shrink: 0;
-  }
-
-  .field-row input {
-    width: 100%;
-    border: none;
-    outline: none;
-    background: transparent;
-    color: var(--text-main);
-    height: 46px;
-    font-size: 0.95rem;
-  }
-
-  .template-editor {
-    width: 100%;
-    min-height: 300px;
-    resize: vertical;
-    border: 1px solid var(--line);
-    background: rgba(255, 255, 255, 0.92);
-    border-radius: 14px;
-    padding: 14px 16px;
-    color: var(--text-main);
-    font-size: 0.92rem;
-    line-height: 1.65;
-    font-family:
-      'SFMono-Regular', Menlo, Monaco, Consolas, 'Liberation Mono',
-      'Courier New', monospace;
-    transition:
-      border-color 0.2s ease,
-      box-shadow 0.2s ease;
-  }
-
-  .template-editor:focus {
-    outline: none;
-    border-color: #22d3ee;
-    box-shadow: 0 0 0 4px rgba(34, 211, 238, 0.16);
-  }
-
-  .actions {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-wrap: wrap;
-  }
-
-  .clear-button {
-    margin-top: 12px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    border-radius: 16px;
-    font-size: 1rem;
-    font-weight: 700;
-    cursor: pointer;
-    min-height: 52px;
-    padding: 0 24px;
-    border: 1px solid #fecaca;
-    color: #b91c1c;
-    background: #fff1f2;
-    transition:
-      transform 0.16s ease,
-      box-shadow 0.2s ease,
-      opacity 0.2s ease;
-  }
-
-  .ghost-button {
-    margin-top: 12px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    border-radius: 16px;
-    font-size: 1rem;
-    font-weight: 700;
-    cursor: pointer;
-    min-height: 52px;
-    padding: 0 24px;
+    align-items: flex-start;
+    gap: 9px;
+    padding: 12px 14px;
     border: 1px solid #bae6fd;
-    color: #0369a1;
+    border-radius: 8px;
     background: #f0f9ff;
-    transition:
-      transform 0.16s ease,
-      box-shadow 0.2s ease,
-      opacity 0.2s ease;
+    color: #075985;
+    font-size: 0.8rem;
+    line-height: 1.55;
   }
 
-  .ghost-button:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 10px 20px rgba(3, 105, 161, 0.1);
+  .privacy-notice svg {
+    flex: 0 0 auto;
+    margin-top: 2px;
   }
 
-  .ghost-button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-    transform: none;
-    box-shadow: none;
+  .provider-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
   }
 
-  .clear-button:hover:not(:disabled) {
-    transform: translateY(-1px);
-    box-shadow: 0 10px 20px rgba(185, 28, 28, 0.12);
+  .provider-fallback-note {
+    margin: 0 0 12px;
+    color: var(--text-muted);
+    font-size: 0.8rem;
   }
 
-  .clear-button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-    transform: none;
-    box-shadow: none;
-  }
-
-  .success-note {
-    margin: 0;
-    color: var(--success);
-    display: inline-flex;
-    gap: 6px;
-    align-items: center;
-    font-size: 0.9rem;
-  }
-
-  @media (max-width: 640px) {
+  @media (max-width: 720px) {
     .panel-settings {
-      padding: 22px;
+      padding: 20px;
     }
 
     .provider-grid {
       grid-template-columns: 1fr;
-    }
-
-    .provider-section {
-      padding: 18px;
-    }
-
-    .actions {
-      width: 100%;
-    }
-
-    .submit,
-    .clear-button {
-      width: 100%;
     }
   }
 </style>

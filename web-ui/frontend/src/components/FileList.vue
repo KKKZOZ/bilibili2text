@@ -1,18 +1,9 @@
 <script setup>
   import { computed, ref } from 'vue'
-  import {
-    AlertCircle,
-    Braces,
-    ChevronDown,
-    File,
-    Eye,
-    FileText,
-    Image as ImageIcon,
-    LoaderCircle,
-    Music,
-    Trash2,
-    Type
-  } from 'lucide-vue-next'
+  import { LoaderCircle, Trash2 } from 'lucide-vue-next'
+  import ArtifactActions from './artifacts/ArtifactActions.vue'
+  import ConfirmDialog from './common/ConfirmDialog.vue'
+  import InlineNotice from './common/InlineNotice.vue'
   import { artifactApi, historyApi, summaryApi } from '../api'
   import { useConversion } from '../composables/useConversion'
   import {
@@ -98,36 +89,6 @@
   const generatedItems = ref([])
   const previewError = ref('')
   const openPngMenuKey = ref('')
-
-  const formatIconMap = {
-    markdown: FileText,
-    txt: Type,
-    pdf: FileText,
-    html: FileText,
-    png: ImageIcon,
-    json: Braces,
-    音频: Music,
-    audio: Music
-  }
-
-  const normalizeFormatKey = (value) => (value || '').trim().toLowerCase()
-
-  const formatLabelMap = {
-    markdown: 'Markdown',
-    txt: 'TXT',
-    pdf: 'PDF',
-    html: 'HTML',
-    png: 'PNG',
-    json: 'JSON',
-    音频: '音频',
-    audio: '音频'
-  }
-
-  const getFormatIcon = (format) =>
-    formatIconMap[normalizeFormatKey(format)] || File
-
-  const getFormatLabel = (format) =>
-    formatLabelMap[normalizeFormatKey(format)] || format || '文件'
 
   const resolveSummaryPresetLabel = (presetName) => {
     let effectiveName = (presetName || '').trim()
@@ -692,7 +653,7 @@
 
   const isDeleting = (item) => deletingKeys.value.has(item.key)
 
-  const isFancyHtmlArtifact = (item) => item.kind === 'summary_fancy_html'
+  const isFancyHtmlArtifact = (item) => item?.kind === 'summary_fancy_html'
 
   const requestDeleteArtifact = (item) => {
     if (!canDeleteMarkdownArtifact(item) || isDeleting(item)) {
@@ -804,18 +765,9 @@
 
 <template>
   <div class="file-list">
-    <p v-if="conversionError" class="inline-error">
-      <AlertCircle :size="16" />
-      <span>{{ conversionError }}</span>
-    </p>
-    <p v-if="deleteError" class="inline-error">
-      <AlertCircle :size="16" />
-      <span>{{ deleteError }}</span>
-    </p>
-    <p v-if="previewError" class="inline-error">
-      <AlertCircle :size="16" />
-      <span>{{ previewError }}</span>
-    </p>
+    <InlineNotice v-if="conversionError">{{ conversionError }}</InlineNotice>
+    <InlineNotice v-if="deleteError">{{ deleteError }}</InlineNotice>
+    <InlineNotice v-if="previewError">{{ previewError }}</InlineNotice>
 
     <div v-if="displayItems.length > 0" class="all-downloads">
       <p class="all-downloads-title">{{ title }}</p>
@@ -883,263 +835,61 @@
               }}。删除父总结将同时清理此派生文件。
             </p>
           </div>
-          <div class="all-download-actions">
-            <button
-              class="download download-sm"
-              type="button"
-              :disabled="isPrimaryConverting(item)"
-              @click="handlePrimaryAction(item)"
-            >
-              <LoaderCircle
-                v-if="isPrimaryConverting(item)"
-                :size="14"
-                class="spin"
-              />
-              <template v-else-if="item.kind === 'summary_fancy_html'">
-                <Eye :size="14" />
-                <span>HTML Preview</span>
-              </template>
-              <template v-else-if="isTimelineArtifact(item)">
-                <Eye :size="14" />
-                <span>TXT Preview</span>
-              </template>
-              <template v-else>
-                <component :is="getFormatIcon(item.fileType)" :size="14" />
-                <span>{{ getFormatLabel(item.fileType) }}</span>
-              </template>
-            </button>
-            <div
-              v-if="item.kind === 'summary_fancy_html'"
-              class="png-export-menu"
-              :class="{ 'png-export-menu-open': isPngMenuOpen(item) }"
-            >
-              <button
-                class="download download-sm png-export-trigger"
-                type="button"
-                :disabled="isAnyPngModeConverting(item)"
-                :aria-expanded="isPngMenuOpen(item)"
-                aria-haspopup="menu"
-                @click="togglePngMenu(item)"
-              >
-                <LoaderCircle
-                  v-if="isAnyPngModeConverting(item)"
-                  :size="14"
-                  class="spin"
-                />
-                <template v-else>
-                  <component :is="getFormatIcon('png')" :size="14" />
-                  <span>PNG</span>
-                  <ChevronDown
-                    :size="14"
-                    class="png-export-chevron"
-                    :class="{ 'png-export-chevron-open': isPngMenuOpen(item) }"
-                  />
-                </template>
-              </button>
-              <div class="png-export-options" role="menu">
-                <button
-                  type="button"
-                  :disabled="isPngModeConverting(item, 'desktop')"
-                  @click="convertToPng(item, 'desktop')"
-                >
-                  <LoaderCircle
-                    v-if="isPngModeConverting(item, 'desktop')"
-                    :size="14"
-                    class="spin"
-                  />
-                  <span>Desktop</span>
-                </button>
-                <button
-                  type="button"
-                  :disabled="isPngModeConverting(item, 'mobile')"
-                  @click="convertToPng(item, 'mobile')"
-                >
-                  <LoaderCircle
-                    v-if="isPngModeConverting(item, 'mobile')"
-                    :size="14"
-                    class="spin"
-                  />
-                  <span>Mobile</span>
-                </button>
-              </div>
-            </div>
-            <template v-if="canConvert(item.kind)">
-              <button
-                v-if="item.kind === 'summary' || item.kind === 'rag_answer'"
-                class="download download-sm"
-                type="button"
-                :disabled="isFancyGenerating(item)"
-                @click="generateFancyHtml(item)"
-              >
-                <LoaderCircle
-                  v-if="isFancyGenerating(item)"
-                  :size="14"
-                  class="spin"
-                />
-                <template v-else>
-                  <component :is="getFormatIcon('html')" :size="14" />
-                  <span>Fancy HTML</span>
-                </template>
-              </button>
-              <button
-                v-if="!isRenderedSummaryKind(item.kind)"
-                class="download download-sm"
-                type="button"
-                :disabled="isConvertButtonLoading(item, 'txt')"
-                @click="onConvertClick(item, 'txt')"
-              >
-                <LoaderCircle
-                  v-if="isConvertButtonLoading(item, 'txt')"
-                  :size="14"
-                  class="spin"
-                />
-                <template v-else>
-                  <component :is="getFormatIcon('txt')" :size="14" />
-                  <span>{{ getFormatLabel('txt') }}</span>
-                </template>
-              </button>
-              <button
-                class="download download-sm"
-                type="button"
-                :disabled="isConvertButtonLoading(item, 'pdf')"
-                @click="onConvertClick(item, 'pdf')"
-              >
-                <LoaderCircle
-                  v-if="isConvertButtonLoading(item, 'pdf')"
-                  :size="14"
-                  class="spin"
-                />
-                <template v-else>
-                  <component :is="getFormatIcon('pdf')" :size="14" />
-                  <span>{{ getFormatLabel('pdf') }}</span>
-                </template>
-              </button>
-              <div
-                class="png-export-menu"
-                :class="{ 'png-export-menu-open': isPngMenuOpen(item) }"
-              >
-                <button
-                  class="download download-sm png-export-trigger"
-                  type="button"
-                  :disabled="isAnyPngModeConverting(item)"
-                  :aria-expanded="isPngMenuOpen(item)"
-                  aria-haspopup="menu"
-                  @click="togglePngMenu(item)"
-                >
-                  <LoaderCircle
-                    v-if="isAnyPngModeConverting(item)"
-                    :size="14"
-                    class="spin"
-                  />
-                  <template v-else>
-                    <component :is="getFormatIcon('png')" :size="14" />
-                    <span>{{ getFormatLabel('png') }}</span>
-                    <ChevronDown
-                      :size="14"
-                      class="png-export-chevron"
-                      :class="{
-                        'png-export-chevron-open': isPngMenuOpen(item)
-                      }"
-                    />
-                  </template>
-                </button>
-                <div class="png-export-options" role="menu">
-                  <button
-                    type="button"
-                    role="menuitem"
-                    :disabled="isPngModeConverting(item, 'desktop')"
-                    @click="convertToPng(item, 'desktop')"
-                  >
-                    <LoaderCircle
-                      v-if="isPngModeConverting(item, 'desktop')"
-                      :size="14"
-                      class="spin"
-                    />
-                    <span>Desktop</span>
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    :disabled="isPngModeConverting(item, 'mobile')"
-                    @click="convertToPng(item, 'mobile')"
-                  >
-                    <LoaderCircle
-                      v-if="isPngModeConverting(item, 'mobile')"
-                      :size="14"
-                      class="spin"
-                    />
-                    <span>Mobile</span>
-                  </button>
-                </div>
-              </div>
-              <button
-                v-if="isRenderedSummaryKind(item.kind)"
-                class="download download-sm"
-                type="button"
-                @click="previewRenderedHtml(item)"
-              >
-                <Eye :size="14" />
-                <span>HTML Preview</span>
-              </button>
-            </template>
-          </div>
+          <ArtifactActions
+            :item="item"
+            :primary-loading="isPrimaryConverting(item)"
+            :can-convert="canConvert(item.kind)"
+            :fancy-loading="isFancyGenerating(item)"
+            :txt-loading="isConvertButtonLoading(item, 'txt')"
+            :pdf-loading="isConvertButtonLoading(item, 'pdf')"
+            :png-open="isPngMenuOpen(item)"
+            :png-loading="isAnyPngModeConverting(item)"
+            :desktop-png-loading="isPngModeConverting(item, 'desktop')"
+            :mobile-png-loading="isPngModeConverting(item, 'mobile')"
+            :rendered-summary="isRenderedSummaryKind(item.kind)"
+            @primary="handlePrimaryAction(item)"
+            @fancy="generateFancyHtml(item)"
+            @convert="onConvertClick(item, $event)"
+            @toggle-png="togglePngMenu(item)"
+            @png="convertToPng(item, $event)"
+            @preview="previewRenderedHtml(item)"
+          />
         </li>
       </ul>
     </div>
 
-    <div
-      v-if="allowDelete && deleteConfirmItem"
-      class="modal-overlay"
-      @click="cancelDeleteArtifact"
+    <ConfirmDialog
+      :open="allowDelete && Boolean(deleteConfirmItem)"
+      :title="
+        isFancyHtmlArtifact(deleteConfirmItem)
+          ? '确认删除 Fancy HTML'
+          : '确认删除总结'
+      "
+      confirm-label="确认删除"
+      busy-label="删除中..."
+      :busy="Boolean(deleteConfirmItem && isDeleting(deleteConfirmItem))"
+      @cancel="cancelDeleteArtifact"
+      @confirm="handleDeleteArtifact"
     >
-      <div class="modal-content" @click.stop>
-        <h3>
-          {{
-            isFancyHtmlArtifact(deleteConfirmItem)
-              ? '确认删除 Fancy HTML'
-              : '确认删除总结'
-          }}
-        </h3>
-        <p v-if="isFancyHtmlArtifact(deleteConfirmItem)">
-          此操作将删除该 Fancy HTML 文件，无法恢复：
-        </p>
-        <p v-else>此操作会一次性删除以下派生文件，并且无法恢复：</p>
-        <ul class="delete-preview-list">
-          <li v-if="isFancyHtmlArtifact(deleteConfirmItem)">
-            {{ deleteConfirmItem.displayName }}
-          </li>
-          <li v-else v-for="name in deletePreviewNames" :key="name">
-            {{ name }}
-          </li>
-        </ul>
-        <div class="modal-actions">
-          <button
-            class="cancel-button"
-            type="button"
-            :disabled="isDeleting(deleteConfirmItem)"
-            @click="cancelDeleteArtifact"
-          >
-            取消
-          </button>
-          <button
-            class="confirm-delete-button"
-            type="button"
-            :disabled="isDeleting(deleteConfirmItem)"
-            @click="handleDeleteArtifact"
-          >
-            <LoaderCircle
-              v-if="isDeleting(deleteConfirmItem)"
-              :size="16"
-              class="spin"
-            />
-            <Trash2 v-else :size="16" />
-            <span>{{
-              isDeleting(deleteConfirmItem) ? '删除中...' : '确认删除'
-            }}</span>
-          </button>
-        </div>
-      </div>
-    </div>
+      <p v-if="isFancyHtmlArtifact(deleteConfirmItem)">
+        此操作将删除该 Fancy HTML 文件，无法恢复：
+      </p>
+      <p v-else>此操作会一次性删除以下派生文件，并且无法恢复：</p>
+      <ul class="delete-preview-list">
+        <li v-if="isFancyHtmlArtifact(deleteConfirmItem)">
+          {{ deleteConfirmItem?.displayName }}
+        </li>
+        <li
+          v-for="name in isFancyHtmlArtifact(deleteConfirmItem)
+            ? []
+            : deletePreviewNames"
+          :key="name"
+        >
+          {{ name }}
+        </li>
+      </ul>
+      <template #confirm-icon><Trash2 :size="16" /></template>
+    </ConfirmDialog>
   </div>
 </template>
 
@@ -1147,59 +897,12 @@
   .file-list {
     margin-top: 0;
   }
-
   .delete-preview-list {
     margin: -6px 0 16px;
     padding-left: 18px;
     color: var(--text-soft);
     font-size: 0.88rem;
     line-height: 1.6;
-  }
-
-  /* ─── Download button ────────────────────────────────────────── */
-
-  .download {
-    margin-top: 8px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    border-radius: 13px;
-    font-size: 0.95rem;
-    font-weight: 700;
-    cursor: pointer;
-    min-height: 46px;
-    padding: 0 16px;
-    transition:
-      transform 0.16s ease,
-      box-shadow 0.2s ease,
-      opacity 0.2s ease;
-    border: 1px solid #99d9d2;
-    color: #0f766e;
-    background: linear-gradient(145deg, #f6fffd, #ecfeff);
-    box-shadow: 0 2px 6px rgba(15, 118, 110, 0.08);
-  }
-
-  .download:hover {
-    transform: translateY(-1px);
-    border-color: #67c9be;
-    background: linear-gradient(145deg, #f0fdfa, #e6fffb);
-    box-shadow: 0 6px 16px rgba(15, 118, 110, 0.12);
-  }
-
-  .download:disabled {
-    opacity: 0.64;
-    cursor: not-allowed;
-    transform: none;
-    box-shadow: none;
-  }
-
-  .download-sm {
-    margin-top: 0;
-    min-height: 40px;
-    min-width: 132px;
-    padding: 0 14px;
-    font-size: 0.88rem;
   }
 
   /* ─── File list ──────────────────────────────────────────────── */
@@ -1362,89 +1065,9 @@
     color: #64748b;
   }
 
-  .all-download-actions {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    flex-shrink: 0;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
-
-  .png-export-menu {
-    position: relative;
-  }
-
-  .png-export-options {
-    position: absolute;
-    top: 100%;
-    right: 0;
-    z-index: 20;
-    min-width: 132px;
-    padding: 6px;
-    border-top: 6px solid transparent;
-    border-right: 1px solid rgba(20, 184, 166, 0.24);
-    border-bottom: 1px solid rgba(20, 184, 166, 0.24);
-    border-left: 1px solid rgba(20, 184, 166, 0.24);
-    border-radius: 12px;
-    background: rgba(255, 255, 255, 0.98);
-    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.14);
-    opacity: 0;
-    pointer-events: none;
-    transform: translateY(-4px);
-    transition:
-      opacity 0.16s ease,
-      transform 0.16s ease;
-  }
-
-  .png-export-menu-open .png-export-options {
-    opacity: 1;
-    pointer-events: auto;
-    transform: translateY(0);
-  }
-
-  .png-export-chevron {
-    transition: transform 0.16s ease;
-  }
-
-  .png-export-chevron-open {
-    transform: rotate(180deg);
-  }
-
-  .png-export-options button {
-    width: 100%;
-    min-height: 34px;
-    display: flex;
-    align-items: center;
-    justify-content: flex-start;
-    gap: 8px;
-    border: none;
-    border-radius: 9px;
-    background: transparent;
-    color: #0f766e;
-    font-size: 0.84rem;
-    font-weight: 700;
-    cursor: pointer;
-    padding: 0 10px;
-  }
-
-  .png-export-options button:hover:not(:disabled),
-  .png-export-options button:focus-visible:not(:disabled) {
-    background: #ecfeff;
-  }
-
-  .png-export-options button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
   /* ─── Responsive ─────────────────────────────────────────────── */
 
   @media (max-width: 640px) {
-    .download {
-      width: 100%;
-    }
-
     .all-download-item {
       flex-direction: column;
       align-items: stretch;
@@ -1452,24 +1075,6 @@
 
     .all-download-item-derived {
       margin-left: 10px;
-    }
-
-    .all-download-actions {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      width: 100%;
-      gap: 8px;
-    }
-
-    .all-download-actions .download-sm,
-    .png-export-menu {
-      min-width: 0;
-      width: 100%;
-    }
-
-    .png-export-options {
-      left: 0;
-      right: 0;
     }
   }
 </style>
