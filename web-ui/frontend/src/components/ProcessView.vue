@@ -16,6 +16,10 @@
     removeActiveJobId
   } from '../composables/useActiveJobs'
   import {
+    notifyJobCompletion,
+    requestJobNotificationPermission
+  } from '../composables/useJobNotifications'
+  import {
     CUSTOM_SUMMARY_PRESET_VALUE,
     useSummaryConfig,
     withCustomSummaryPreset
@@ -420,8 +424,12 @@
         ['pending', 'running'].includes(data.fancy_html_status || '')
       )
     ) {
+      void notifyJobCompletion(data, jobId.value)
       clearActiveJobId()
       return false
+    }
+    if (data.status === 'succeeded') {
+      void notifyJobCompletion(data, jobId.value)
     }
     return true
   }
@@ -508,12 +516,6 @@
           '请先在「API Key」页面保存自定义总结模板，再选择“用户自定义”模板'
         )
       }
-
-      const skipSummary = !enableSummary.value
-      currentSkipSummary.value = skipSummary
-      pollErrorCount.value = 0
-
-      let data
       if (isUploadMode.value) {
         if (!allowUpload.value) {
           throw new Error('当前模式不允许上传音频，请改为输入播客/视频链接')
@@ -522,6 +524,17 @@
         if (validationMessage) {
           throw new Error(validationMessage)
         }
+      } else if (!url.value.trim()) {
+        throw new Error('请输入播客链接或视频 URL')
+      }
+
+      const skipSummary = !enableSummary.value
+      currentSkipSummary.value = skipSummary
+      pollErrorCount.value = 0
+      requestJobNotificationPermission()
+
+      let data
+      if (isUploadMode.value) {
         const formData = new FormData()
         formData.append('file', uploadedAudioFile.value)
         formData.append('skip_summary', String(skipSummary))
@@ -556,9 +569,6 @@
         }
         data = await processApi.startFromUpload(formData)
       } else {
-        if (!url.value.trim()) {
-          throw new Error('请输入播客链接或视频 URL')
-        }
         data = await processApi.startFromUrl({
           url: url.value.trim(),
           skip_summary: skipSummary,

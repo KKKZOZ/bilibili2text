@@ -1,4 +1,6 @@
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 
 from b2t.history import (
     HistoryArtifact,
@@ -238,10 +240,15 @@ def test_history_db_migrates_legacy_artifact_table_and_falls_back_to_filename(
     assert detail is not None
     assert detail.artifacts[0].kind == ArtifactKind.SUMMARY_TIMELINE
     with sqlite3.connect(db_path) as conn:
-        columns = {
+        artifact_columns = {
             row[1] for row in conn.execute("PRAGMA table_info(transcription_artifacts)")
         }
-    assert {"derived_from", "summary_preset", "summary_profile"} <= columns
+        regeneration_table = conn.execute(
+            "SELECT name FROM sqlite_master "
+            "WHERE type = 'table' AND name = 'summary_regenerations'"
+        ).fetchone()
+    assert {"derived_from", "summary_preset", "summary_profile"} <= artifact_columns
+    assert regeneration_table is not None
 
 
 def test_classify_summary_png_artifacts() -> None:
@@ -518,3 +525,72 @@ def test_update_run_fancy_html_status_persists_for_rag_query(tmp_path) -> None:
     assert failed is not None
     assert failed.fancy_html_status == "failed"
     assert failed.fancy_html_error == "生成失败"
+
+
+def test_update_run_summary_regeneration_status_persists(tmp_path) -> None:
+    db = HistoryDB(tmp_path)
+    run_id = "summary-regeneration-status"
+    db.record_run(
+        run_id=run_id,
+        bvid="BV1AB411c7mD",
+        title="测试视频",
+        artifacts=[],
+    )
+
+    assert db.try_start_summary_regeneration(
+        run_id,
+        summary_preset="key_points",
+        summary_profile="profile-a",
+    )
+    running = db.get_run_detail(run_id)
+    assert running is not None
+    assert len(running.summary_regenerations) == 1
+    assert running.summary_regenerations[0].status == "running"
+    assert running.summary_regenerations[0].error == ""
+    assert not db.try_start_summary_regeneration(
+        run_id,
+        summary_preset="key_points",
+        summary_profile="profile-a",
+    )
+    assert db.try_start_summary_regeneration(
+        run_id,
+        summary_preset="timeline",
+        summary_profile="profile-a",
+    )
+
+    db.update_summary_regeneration_status(
+        run_id,
+        summary_preset="key_points",
+        summary_profile="profile-a",
+        status="failed",
+        error="总结失败",
+    )
+    failed = db.get_run_detail(run_id)
+    assert failed is not None
+    assert failed.summary_regenerations[0].status == "failed"
+    assert failed.summary_regenerations[0].error == "总结失败"
+
+
+def test_summary_regeneration_start_is_atomic_for_same_config(tmp_path) -> None:
+    db = HistoryDB(tmp_path)
+    run_id = "concurrent-summary-regeneration"
+    db.record_run(
+        run_id=run_id,
+        bvid="BV1AB411c7mD",
+        title="测试视频",
+        artifacts=[],
+    )
+    barrier = Barrier(2)
+
+    def start() -> bool:
+        barrier.wait()
+        return db.try_start_summary_regeneration(
+            run_id,
+            summary_preset="key_points",
+            summary_profile="profile-a",
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(lambda _: start(), range(2)))
+
+    assert sorted(results) == [False, True]

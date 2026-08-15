@@ -193,6 +193,12 @@
     return ''
   }
 
+  const storageBasename = (value) =>
+    String(value || '')
+      .replace(/\\/g, '/')
+      .split('/')
+      .pop()
+
   const displayItems = computed(() => {
     const formatPriority = {
       Markdown: 0,
@@ -205,19 +211,19 @@
     }
     const kindBaseOrder = {
       markdown: 100,
-      summary: 200,
-      summary_no_table: 210,
-      summary_png: 211,
-      summary_no_table_png: 212,
-      summary_fancy_html: 220,
-      summary_table_md: 230,
-      summary_table_png: 231,
-      summary_table_pdf: 231,
-      summary_timeline: 240,
-      text: 300,
-      summary_text: 310,
-      json: 400,
-      audio: 500,
+      text: 110,
+      json: 200,
+      summary: 300,
+      summary_no_table: 310,
+      summary_png: 311,
+      summary_no_table_png: 312,
+      summary_fancy_html: 320,
+      summary_table_md: 330,
+      summary_table_png: 331,
+      summary_table_pdf: 331,
+      summary_timeline: 340,
+      summary_text: 350,
+      audio: 400,
       rag_answer: 50
     }
 
@@ -264,6 +270,8 @@
           `${(item.presetName || '').trim()}::${(item.summaryProfile || '').trim()}`,
         summaryFamilyKey:
           overrides.summaryFamilyKey || resolveSummaryFamilyKey(item, kind),
+        derivedFrom: overrides.derivedFrom || item.derivedFrom || '',
+        summaryGroupId: overrides.summaryGroupId || item.summaryGroupId || '',
         summaryRowId:
           overrides.summaryRowId ||
           (kind === 'summary'
@@ -295,6 +303,8 @@
     )
     const summaryRowsByFamily = new Map()
     const summaryRowsBySignature = new Map()
+    const summaryRowsByFilename = new Map()
+    const summaryRowsByGroup = new Map()
 
     // Phase 1: build summary roots and synthetic summary_no_table rows.
     let summaryIndex = 0
@@ -312,9 +322,14 @@
         })
         rows.push(summaryRow)
 
+        if (item.summaryGroupId) {
+          summaryRowsByGroup.set(item.summaryGroupId, summaryRow)
+        }
+
         if (familyKey) {
           summaryRowsByFamily.set(`${familyKey}::${signature}`, summaryRow)
         }
+        summaryRowsByFilename.set(`${item.filename}::${signature}`, summaryRow)
         const bucket = summaryRowsBySignature.get(signature) || []
         bucket.push(summaryRow)
         summaryRowsBySignature.set(signature, bucket)
@@ -329,7 +344,8 @@
               order: summaryRow.order + 0.1,
               parentSummaryRowId: summaryId,
               summarySignature: signature,
-              summaryFamilyKey: familyKey
+              summaryFamilyKey: familyKey,
+              summaryGroupId: item.summaryGroupId || ''
             })
           )
         }
@@ -352,9 +368,19 @@
         const signature = `${(item.presetName || '').trim()}::${(item.summaryProfile || '').trim()}`
         const familyKey = resolveSummaryFamilyKey(item, item.kind)
         const compositeKey = familyKey ? `${familyKey}::${signature}` : ''
-        let parentSummary = compositeKey
-          ? summaryRowsByFamily.get(compositeKey) || null
+        const explicitParentFilename = storageBasename(item.derivedFrom)
+        let parentSummary = item.summaryGroupId
+          ? summaryRowsByGroup.get(item.summaryGroupId) || null
           : null
+        if (!parentSummary && explicitParentFilename) {
+          parentSummary =
+            summaryRowsByFilename.get(
+              `${explicitParentFilename}::${signature}`
+            ) || null
+        }
+        if (!parentSummary && compositeKey) {
+          parentSummary = summaryRowsByFamily.get(compositeKey) || null
+        }
         if (!parentSummary) {
           const sameSignature = summaryRowsBySignature.get(signature) || []
           parentSummary =
@@ -379,6 +405,7 @@
             parentSummaryRowId: parentSummary?.summaryRowId || '',
             summarySignature: signature,
             summaryFamilyKey: familyKey,
+            summaryGroupId: item.summaryGroupId || '',
             order: parentSummary
               ? parentSummary.order + derivedOffset
               : undefined
@@ -397,7 +424,31 @@
       return a.order - b.order
     })
 
-    return sortedRows
+    const summaryRoots = sortedRows.filter((item) => item.kind === 'summary')
+    if (summaryRoots.length === 0) {
+      return sortedRows
+    }
+
+    const childCounts = new Map()
+    for (const item of sortedRows) {
+      if (!item.parentSummaryRowId) continue
+      childCounts.set(
+        item.parentSummaryRowId,
+        (childCounts.get(item.parentSummaryRowId) || 0) + 1
+      )
+    }
+
+    let summaryGroupIndex = 0
+    return sortedRows.map((item) => {
+      if (item.kind !== 'summary') return item
+      summaryGroupIndex += 1
+      return {
+        ...item,
+        showSummaryGroupHeading: true,
+        summaryGroupIndex,
+        summaryGroupFileCount: 1 + (childCounts.get(item.summaryRowId) || 0)
+      }
+    })
   })
 
   const canConvert = (kind) => {
@@ -479,7 +530,9 @@
         url: artifact.download_url,
         filename: artifact.filename,
         presetName: artifact.summary_preset || '',
-        summaryProfile: artifact.summary_profile || ''
+        summaryProfile: artifact.summary_profile || '',
+        derivedFrom: artifact.derived_from || '',
+        summaryGroupId: artifact.summary_group_id || ''
       }
     ]
   }
@@ -580,7 +633,8 @@
           filename: data.filename,
           summary_preset: item.presetName || '',
           summary_profile:
-            item.summaryProfile || effectiveSelectedSummaryProfile.value || ''
+            item.summaryProfile || effectiveSelectedSummaryProfile.value || '',
+          summary_group_id: item.summaryGroupId || ''
         })
       }
       download(data.download_url, data.filename)
@@ -760,88 +814,102 @@
     <div v-if="displayItems.length > 0" class="all-downloads">
       <p class="all-downloads-title">{{ title }}</p>
       <ul class="all-download-list">
-        <li
-          v-for="item in displayItems"
-          :key="item.key"
-          :class="[
-            'all-download-item',
-            {
-              'all-download-item-wide': item.isWideLayout,
-              'all-download-item-derived': item.derivedFromSummary
-            }
-          ]"
-        >
-          <div class="all-download-main">
-            <div class="all-download-title-row">
-              <p class="all-download-name">{{ item.displayName }}</p>
-              <div class="all-download-title-meta">
-                <span class="all-download-format">{{ item.fileType }}</span>
-                <button
-                  v-if="canDeleteMarkdownArtifact(item)"
-                  class="all-download-delete-icon"
-                  type="button"
-                  :disabled="isDeleting(item)"
-                  :title="
-                    item.kind === 'summary_fancy_html'
-                      ? '删除该 Fancy HTML'
-                      : '删除该总结'
-                  "
-                  :aria-label="
-                    item.kind === 'summary_fancy_html'
-                      ? '删除该 Fancy HTML'
-                      : '删除该总结'
-                  "
-                  @click="requestDeleteArtifact(item)"
-                >
-                  <LoaderCircle
-                    v-if="isDeleting(item)"
-                    :size="14"
-                    class="spin"
-                  />
-                  <Trash2 v-else :size="14" />
-                </button>
+        <template v-for="item in displayItems" :key="item.key">
+          <li v-if="item.showSummaryGroupHeading" class="summary-group-heading">
+            <div class="summary-group-identity">
+              <span>总结版本 {{ item.summaryGroupIndex }}</span>
+              <strong class="summary-context-preset">{{
+                item.presetLabel || '默认模板'
+              }}</strong>
+              <i aria-hidden="true"></i>
+              <strong class="summary-context-profile">{{
+                item.modelProfileLabel || '默认模型'
+              }}</strong>
+            </div>
+            <span>{{ item.summaryGroupFileCount }} 个文件</span>
+          </li>
+          <li
+            :class="[
+              'all-download-item',
+              {
+                'all-download-item-wide': item.isWideLayout,
+                'all-download-item-derived': item.derivedFromSummary
+              }
+            ]"
+          >
+            <div class="all-download-main">
+              <div class="all-download-title-row">
+                <p class="all-download-name">{{ item.displayName }}</p>
+                <div class="all-download-title-meta">
+                  <span class="all-download-format">{{ item.fileType }}</span>
+                  <button
+                    v-if="canDeleteMarkdownArtifact(item)"
+                    class="all-download-delete-icon"
+                    type="button"
+                    :disabled="isDeleting(item)"
+                    :title="
+                      item.kind === 'summary_fancy_html'
+                        ? '删除该 Fancy HTML'
+                        : '删除该总结'
+                    "
+                    :aria-label="
+                      item.kind === 'summary_fancy_html'
+                        ? '删除该 Fancy HTML'
+                        : '删除该总结'
+                    "
+                    @click="requestDeleteArtifact(item)"
+                  >
+                    <LoaderCircle
+                      v-if="isDeleting(item)"
+                      :size="14"
+                      class="spin"
+                    />
+                    <Trash2 v-else :size="14" />
+                  </button>
+                </div>
+              </div>
+              <div
+                v-if="
+                  item.presetLabel &&
+                  (!item.derivedFromSummary || !item.parentSummaryRowId) &&
+                  !item.showSummaryGroupHeading
+                "
+                class="all-download-tags"
+              >
+                <span class="all-download-tag-label">总结模板</span>
+                <strong class="summary-context-preset">{{
+                  item.presetLabel
+                }}</strong>
+                <template v-if="item.modelProfileLabel">
+                  <i aria-hidden="true"></i>
+                  <span class="all-download-tag-label">模型</span>
+                  <strong class="summary-context-profile">{{
+                    item.modelProfileLabel
+                  }}</strong>
+                </template>
               </div>
             </div>
-            <div
-              v-if="
-                item.presetLabel &&
-                (!item.derivedFromSummary || !item.parentSummaryRowId)
-              "
-              class="all-download-tags"
-            >
-              <span class="all-download-tag-label">总结模板</span>
-              <strong class="summary-context-preset">{{
-                item.presetLabel
-              }}</strong>
-              <template v-if="item.modelProfileLabel">
-                <i aria-hidden="true"></i>
-                <span class="all-download-tag-label">模型</span>
-                <strong class="summary-context-profile">{{
-                  item.modelProfileLabel
-                }}</strong>
-              </template>
-            </div>
-          </div>
-          <ArtifactActions
-            :item="item"
-            :primary-loading="isPrimaryConverting(item)"
-            :can-convert="canConvert(item.kind)"
-            :fancy-loading="isFancyGenerating(item)"
-            :txt-loading="isConvertButtonLoading(item, 'txt')"
-            :pdf-loading="isConvertButtonLoading(item, 'pdf')"
-            :png-open="isPngMenuOpen(item)"
-            :png-loading="isAnyPngModeConverting(item)"
-            :desktop-png-loading="isPngModeConverting(item, 'desktop')"
-            :mobile-png-loading="isPngModeConverting(item, 'mobile')"
-            :rendered-summary="isRenderedSummaryKind(item.kind)"
-            @primary="handlePrimaryAction(item)"
-            @fancy="generateFancyHtml(item)"
-            @convert="onConvertClick(item, $event)"
-            @toggle-png="togglePngMenu(item)"
-            @png="convertToPng(item, $event)"
-            @preview="previewRenderedHtml(item)"
-          />
-        </li>
+            <ArtifactActions
+              :item="item"
+              :primary-loading="isPrimaryConverting(item)"
+              :can-convert="canConvert(item.kind)"
+              :fancy-loading="isFancyGenerating(item)"
+              :txt-loading="isConvertButtonLoading(item, 'txt')"
+              :pdf-loading="isConvertButtonLoading(item, 'pdf')"
+              :png-open="isPngMenuOpen(item)"
+              :png-loading="isAnyPngModeConverting(item)"
+              :desktop-png-loading="isPngModeConverting(item, 'desktop')"
+              :mobile-png-loading="isPngModeConverting(item, 'mobile')"
+              :rendered-summary="isRenderedSummaryKind(item.kind)"
+              @primary="handlePrimaryAction(item)"
+              @fancy="generateFancyHtml(item)"
+              @convert="onConvertClick(item, $event)"
+              @toggle-png="togglePngMenu(item)"
+              @png="convertToPng(item, $event)"
+              @preview="previewRenderedHtml(item)"
+            />
+          </li>
+        </template>
       </ul>
     </div>
 
@@ -926,6 +994,65 @@
     border-radius: 8px;
     background: #fff;
     padding: 12px;
+  }
+
+  .summary-group-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 4px;
+    padding: 10px 12px;
+    border-left: 3px solid var(--brand);
+    border-radius: 0 6px 6px 0;
+    background: #f1f7f6;
+    color: #64748b;
+    font-size: 0.75rem;
+  }
+
+  .summary-group-identity {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .summary-group-identity > span:first-child {
+    color: var(--brand-strong);
+    font-weight: 800;
+  }
+
+  .summary-group-identity strong {
+    display: inline-flex;
+    align-items: center;
+    min-width: 0;
+    min-height: 22px;
+    overflow: hidden;
+    padding: 0 7px;
+    border: 1px solid transparent;
+    border-radius: 5px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .summary-group-identity .summary-context-preset {
+    border-color: #f4d58b;
+    background: #fff9e9;
+    color: #8a5814;
+  }
+
+  .summary-group-identity .summary-context-profile {
+    border-color: #a9dfbf;
+    background: #effaf4;
+    color: #247044;
+  }
+
+  .summary-group-identity i {
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: #a7b3bf;
   }
 
   .all-download-item-derived {
@@ -1071,6 +1198,12 @@
   /* ─── Responsive ─────────────────────────────────────────────── */
 
   @media (max-width: 640px) {
+    .summary-group-heading {
+      align-items: flex-start;
+      flex-direction: column;
+      gap: 5px;
+    }
+
     .all-download-item {
       flex-direction: column;
       align-items: stretch;

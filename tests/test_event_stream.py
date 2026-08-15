@@ -1,5 +1,6 @@
 import asyncio
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from threading import Thread
 from types import SimpleNamespace
@@ -138,3 +139,47 @@ def test_history_event_stream_sends_terminal_snapshot(monkeypatch) -> None:
     assert len(chunks) == 1
     assert chunks[0].startswith("event: history\n")
     assert '"fancy_html_status": "succeeded"' in chunks[0]
+
+
+def test_history_event_stream_tracks_summary_regeneration(monkeypatch) -> None:
+    @dataclass
+    class Regeneration:
+        summary_preset: str
+        summary_profile: str
+        status: str
+        error: str = ""
+
+    regeneration = Regeneration("key_points", "profile-a", "running")
+    detail = SimpleNamespace(
+        run_id="summary-regeneration-run",
+        bvid="BV1AB411c7mD",
+        title="Summary regeneration",
+        author="",
+        pubdate="",
+        created_at="2026-08-15T00:00:00+00:00",
+        has_summary=True,
+        artifacts=[],
+        record_type="transcription",
+        fancy_html_status="idle",
+        fancy_html_error="",
+        summary_regenerations=[regeneration],
+    )
+    database = SimpleNamespace(get_run_detail=lambda run_id: detail)
+    monkeypatch.setattr(history, "get_history_db", lambda: database)
+
+    async def collect() -> list[str]:
+        response = await history.history_events(detail.run_id)
+        iterator = response.body_iterator
+        initial = await anext(iterator)
+        regeneration.status = "succeeded"
+        history.event_broker.publish(history.history_channel(detail.run_id))
+        terminal = await asyncio.wait_for(anext(iterator), timeout=1)
+        return [initial, terminal]
+
+    chunks = asyncio.run(collect())
+
+    assert (
+        '"summary_regenerations": [{"summary_preset": "key_points", '
+        '"summary_profile": "profile-a", "status": "running"'
+    ) in chunks[0]
+    assert '"summary_profile": "profile-a", "status": "succeeded"' in chunks[1]

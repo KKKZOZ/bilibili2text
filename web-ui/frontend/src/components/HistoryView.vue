@@ -61,7 +61,7 @@
   const showHistoryDetail = ref(false)
   const deleteConfirmRunId = ref(null)
   const deleteLoading = ref(false)
-  const regenerateLoading = ref(false)
+  const regenerateRequestLoading = ref(false)
   const regenerateError = ref('')
   const regenerateSuccess = ref('')
   const regenerateOverwriteConfirm = ref(false)
@@ -167,7 +167,9 @@
       url: artifact.download_url,
       filename: artifact.filename,
       presetName: artifact.summary_preset || '',
-      summaryProfile: artifact.summary_profile || ''
+      summaryProfile: artifact.summary_profile || '',
+      derivedFrom: artifact.derived_from || '',
+      summaryGroupId: artifact.summary_group_id || ''
     }))
   })
 
@@ -293,7 +295,9 @@
       ) {
         return
       }
+      selectActiveRegeneration(data)
       historyDetail.value = data
+      applyRegenerationFeedback(data)
       ragFancyHtmlError.value = data.fancy_html_error || ''
       syncRagFancyHtmlUpdates()
       if (data.record_type === 'rag_query') {
@@ -318,6 +322,49 @@
 
   const closeHistoryDetail = () => {
     router.push('/history')
+  }
+
+  const selectedRegeneration = (detail) =>
+    detail?.summary_regenerations?.find(
+      (task) =>
+        task.summary_preset === selectedRegeneratePresetName.value &&
+        task.summary_profile === selectedRegenerateProfileName.value
+    )
+
+  const isSelectedRegenerationRunning = (detail) =>
+    selectedRegeneration(detail)?.status === 'running'
+
+  const regenerateLoading = computed(
+    () =>
+      regenerateRequestLoading.value ||
+      isSelectedRegenerationRunning(historyDetail.value)
+  )
+
+  const hasActiveHistoryUpdate = (detail) =>
+    ['pending', 'running'].includes(detail?.fancy_html_status || '') ||
+    detail?.summary_regenerations?.some((task) => task.status === 'running')
+
+  const selectActiveRegeneration = (detail) => {
+    if (isSelectedRegenerationRunning(detail)) return
+    const activeTask = detail?.summary_regenerations?.find(
+      (task) => task.status === 'running'
+    )
+    if (!activeTask) return
+    selectedHistorySummaryPreset.value = activeTask.summary_preset
+    selectedHistorySummaryProfile.value = activeTask.summary_profile
+  }
+
+  const applyRegenerationFeedback = (detail, wasRunning = false) => {
+    const task = selectedRegeneration(detail)
+    if (task?.status === 'failed') {
+      regenerateError.value = task.error || '重新生成总结失败'
+      regenerateSuccess.value = ''
+      return
+    }
+    if (wasRunning && task?.status === 'succeeded') {
+      regenerateError.value = ''
+      regenerateSuccess.value = '总结重新生成完成，文件已持久化到存储后端。'
+    }
   }
 
   const stopRagFancyHtmlPolling = () => {
@@ -348,11 +395,15 @@
       try {
         const data = await historyApi.getDetail(runId)
         if (historyDetail.value?.run_id !== runId) return
+        const wasRegenerating = isSelectedRegenerationRunning(
+          historyDetail.value
+        )
         historyDetail.value = data
+        applyRegenerationFeedback(data, wasRegenerating)
         if (data.record_type === 'rag_query') {
           ragFancyHtmlError.value = data.fancy_html_error || ''
         }
-        if (data.fancy_html_status !== 'running') {
+        if (!hasActiveHistoryUpdate(data)) {
           stopRagFancyHtmlPolling()
           await loadHistory()
         }
@@ -369,11 +420,7 @@
     ragFancyConnectionNotice.value = ''
     const runId = historyDetail.value?.run_id
     const shouldSubscribe =
-      showHistoryDetail.value &&
-      historyDetail.value?.record_type === 'rag_query' &&
-      ['pending', 'running'].includes(
-        historyDetail.value?.fancy_html_status || ''
-      )
+      showHistoryDetail.value && hasActiveHistoryUpdate(historyDetail.value)
     if (!shouldSubscribe || !runId) return
 
     stopRagFancyHtmlEvents = subscribeSse({
@@ -381,11 +428,13 @@
       eventName: 'history',
       onEvent: (data) => {
         if (historyDetail.value?.run_id !== runId) return false
-        historyDetail.value = data
-        ragFancyHtmlError.value = data.fancy_html_error || ''
-        const isActive = ['pending', 'running'].includes(
-          data.fancy_html_status || ''
+        const wasRegenerating = isSelectedRegenerationRunning(
+          historyDetail.value
         )
+        historyDetail.value = data
+        applyRegenerationFeedback(data, wasRegenerating)
+        ragFancyHtmlError.value = data.fancy_html_error || ''
+        const isActive = hasActiveHistoryUpdate(data)
         if (!isActive) loadHistory()
         return isActive
       },
@@ -500,7 +549,7 @@
     }
 
     regenerateOverwriteConfirm.value = false
-    regenerateLoading.value = true
+    regenerateRequestLoading.value = true
     regenerateError.value = ''
     regenerateSuccess.value = ''
     try {
@@ -517,15 +566,26 @@
       })
 
       historyDetail.value = data
+      syncRagFancyHtmlUpdates()
       regenerateSuccess.value = overwriteExisting
         ? '总结重新生成完成，原有同配置结果已覆盖。'
         : '总结重新生成完成，文件已持久化到存储后端。'
       await loadHistory()
     } catch (err) {
+      if (err?.status === 409) {
+        try {
+          const data = await historyApi.getDetail(runId)
+          if (routeRunId.value === runId) {
+            selectActiveRegeneration(data)
+            historyDetail.value = data
+            syncRagFancyHtmlUpdates()
+          }
+        } catch {}
+      }
       regenerateError.value =
         err instanceof Error ? err.message : '重新生成总结失败'
     } finally {
-      regenerateLoading.value = false
+      regenerateRequestLoading.value = false
     }
   }
 

@@ -12,6 +12,8 @@ class ArtifactRecord(Protocol):
     filename: str
     storage_key: str
     derived_from: str
+    summary_preset: str
+    summary_profile: str
 
 
 class ArtifactCollection(Protocol):
@@ -28,6 +30,93 @@ def storage_parent_key(storage_key: str) -> str:
 def sibling_storage_key(storage_key: str, filename: str) -> str:
     parent = storage_parent_key(storage_key)
     return f"{parent}/{filename}" if parent else filename
+
+
+def _summary_family_stem(filename: str) -> str:
+    stem = Path(filename).stem
+    for suffix in ("_no_table", "_fancy", "_table", "_timeline"):
+        if stem.lower().endswith(suffix):
+            return stem[: -len(suffix)]
+    return stem
+
+
+def summary_artifact_group_ids(
+    artifacts: list[ArtifactRecord],
+) -> dict[str, str]:
+    """Assign summary roots and their derivatives to deterministic groups."""
+    indexed_roots = [
+        (index, artifact)
+        for index, artifact in enumerate(artifacts)
+        if artifact.kind == "summary"
+    ]
+    if not indexed_roots:
+        return {}
+
+    group_ids = {
+        artifact.storage_key: f"summary-{group_index}"
+        for group_index, (_, artifact) in enumerate(indexed_roots, start=1)
+    }
+    artifacts_by_key = {artifact.storage_key: artifact for artifact in artifacts}
+
+    def explicit_group_id(artifact: ArtifactRecord) -> str:
+        parent_key = artifact.derived_from.strip()
+        visited: set[str] = set()
+        while parent_key and parent_key not in visited:
+            if parent_key in group_ids:
+                return group_ids[parent_key]
+            visited.add(parent_key)
+            parent = artifacts_by_key.get(parent_key)
+            if parent is None:
+                break
+            parent_key = parent.derived_from.strip()
+        return ""
+
+    unresolved: list[tuple[int, ArtifactRecord]] = []
+    for index, artifact in enumerate(artifacts):
+        if artifact.kind not in SUMMARY_ARTIFACT_KINDS or artifact.kind == "summary":
+            continue
+        resolved_group_id = explicit_group_id(artifact)
+        if resolved_group_id:
+            group_ids[artifact.storage_key] = resolved_group_id
+        else:
+            unresolved.append((index, artifact))
+
+    for artifact_index, artifact in unresolved:
+        candidates = indexed_roots
+        same_config = [
+            candidate
+            for candidate in candidates
+            if candidate[1].summary_preset.strip() == artifact.summary_preset.strip()
+            and candidate[1].summary_profile.strip() == artifact.summary_profile.strip()
+        ]
+        if same_config:
+            candidates = same_config
+
+        family_stem = _summary_family_stem(artifact.filename)
+        same_family = [
+            candidate
+            for candidate in candidates
+            if _summary_family_stem(candidate[1].filename) == family_stem
+        ]
+        if same_family:
+            candidates = same_family
+
+        parent_key = storage_parent_key(artifact.storage_key)
+        same_parent = [
+            candidate
+            for candidate in candidates
+            if storage_parent_key(candidate[1].storage_key) == parent_key
+        ]
+        if same_parent:
+            candidates = same_parent
+
+        preceding = [
+            candidate for candidate in candidates if candidate[0] <= artifact_index
+        ]
+        selected = max(preceding or candidates, key=lambda candidate: candidate[0])
+        group_ids[artifact.storage_key] = group_ids[selected[1].storage_key]
+
+    return group_ids
 
 
 def materialize_artifact(

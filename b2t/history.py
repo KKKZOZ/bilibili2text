@@ -6,7 +6,7 @@ import sqlite3
 import threading
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -64,6 +64,16 @@ CREATE TABLE IF NOT EXISTS transcription_artifacts (
 
 CREATE INDEX IF NOT EXISTS idx_artifacts_run_id ON transcription_artifacts(run_id);
 
+CREATE TABLE IF NOT EXISTS summary_regenerations (
+    run_id          TEXT NOT NULL REFERENCES transcription_runs(run_id) ON DELETE CASCADE,
+    summary_preset  TEXT NOT NULL,
+    summary_profile TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'idle',
+    error           TEXT NOT NULL DEFAULT '',
+    updated_at      TEXT NOT NULL,
+    PRIMARY KEY (run_id, summary_preset, summary_profile)
+);
+
 CREATE TABLE IF NOT EXISTS stock_status_cache (
     bvid        TEXT NOT NULL,
     as_of_date  TEXT NOT NULL,
@@ -108,6 +118,16 @@ class HistoryArtifact:
 
 
 @dataclass(frozen=True)
+class SummaryRegeneration:
+    """Regeneration state for one summary preset and model profile."""
+
+    summary_preset: str
+    summary_profile: str
+    status: str
+    error: str = ""
+
+
+@dataclass(frozen=True)
 class HistoryDetail:
     """Full detail for a single run."""
 
@@ -122,6 +142,7 @@ class HistoryDetail:
     record_type: str = "transcription"
     fancy_html_status: str = "idle"
     fancy_html_error: str = ""
+    summary_regenerations: list[SummaryRegeneration] = field(default_factory=list)
     tid: int = 0
 
 
@@ -289,7 +310,8 @@ class HistoryDB:
                 INSERT INTO transcription_runs
                     (
                         run_id, bvid, title, author, pubdate, tid, created_at,
-                        has_summary, file_count, record_type, fancy_html_status, fancy_html_error
+                        has_summary, file_count, record_type,
+                        fancy_html_status, fancy_html_error
                     )
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(run_id) DO UPDATE SET
@@ -461,6 +483,71 @@ class HistoryDB:
             has_more=(offset + page_size) < total,
         )
 
+    def replace_summary_artifacts(
+        self,
+        run_id: str,
+        *,
+        artifacts: list[HistoryArtifact],
+        replaced_storage_keys: set[str],
+        author: str,
+        pubdate: str,
+    ) -> None:
+        """Atomically replace one summary configuration's artifacts."""
+        conn = self._conn()
+        artifact_keys = {artifact.storage_key for artifact in artifacts}
+        storage_keys_to_remove = replaced_storage_keys | artifact_keys
+        with conn:
+            if storage_keys_to_remove:
+                conn.executemany(
+                    """\
+                    DELETE FROM transcription_artifacts
+                    WHERE run_id = ? AND storage_key = ?
+                    """,
+                    [(run_id, storage_key) for storage_key in storage_keys_to_remove],
+                )
+            conn.executemany(
+                """\
+                INSERT INTO transcription_artifacts
+                    (
+                        run_id, kind, filename, storage_key, backend,
+                        derived_from, summary_preset, summary_profile
+                    )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        run_id,
+                        self._normalize_artifact_kind(
+                            artifact.kind,
+                            artifact.filename,
+                        ),
+                        artifact.filename,
+                        artifact.storage_key,
+                        artifact.backend,
+                        artifact.derived_from,
+                        artifact.summary_preset,
+                        artifact.summary_profile,
+                    )
+                    for artifact in artifacts
+                ],
+            )
+            conn.execute(
+                """\
+                UPDATE transcription_runs
+                SET
+                    author = ?,
+                    pubdate = ?,
+                    has_summary = 1,
+                    file_count = (
+                        SELECT COUNT(*)
+                        FROM transcription_artifacts
+                        WHERE run_id = ?
+                    )
+                WHERE run_id = ?
+                """,
+                (author, pubdate, run_id, run_id),
+            )
+
     def get_run_detail(self, run_id: str) -> HistoryDetail | None:
         """Get full detail including artifacts for one run."""
         conn = self._conn()
@@ -499,6 +586,24 @@ class HistoryDB:
             )
             for r in artifact_rows
         ]
+        regeneration_rows = conn.execute(
+            """\
+            SELECT summary_preset, summary_profile, status, error
+            FROM summary_regenerations
+            WHERE run_id = ?
+            ORDER BY updated_at DESC
+            """,
+            (run_id,),
+        ).fetchall()
+        summary_regenerations = [
+            SummaryRegeneration(
+                summary_preset=row["summary_preset"],
+                summary_profile=row["summary_profile"],
+                status=row["status"] or "idle",
+                error=row["error"] or "",
+            )
+            for row in regeneration_rows
+        ]
 
         return HistoryDetail(
             run_id=run_row["run_id"],
@@ -512,6 +617,7 @@ class HistoryDB:
             record_type=run_row["record_type"] or "transcription",
             fancy_html_status=run_row["fancy_html_status"] or "idle",
             fancy_html_error=run_row["fancy_html_error"] or "",
+            summary_regenerations=summary_regenerations,
             tid=int(run_row["tid"] or 0),
         )
 
@@ -531,6 +637,61 @@ class HistoryDB:
                 WHERE run_id = ?
                 """,
                 (status.strip() or "idle", error.strip(), run_id),
+            )
+
+    def try_start_summary_regeneration(
+        self,
+        run_id: str,
+        *,
+        summary_preset: str,
+        summary_profile: str,
+    ) -> bool:
+        now = datetime.now(tz=UTC).isoformat()
+        conn = self._conn()
+        with conn:
+            cursor = conn.execute(
+                """\
+                INSERT INTO summary_regenerations
+                    (
+                        run_id, summary_preset, summary_profile,
+                        status, error, updated_at
+                    )
+                VALUES (?, ?, ?, 'running', '', ?)
+                ON CONFLICT(run_id, summary_preset, summary_profile) DO UPDATE SET
+                    status = 'running',
+                    error = '',
+                    updated_at = excluded.updated_at
+                WHERE summary_regenerations.status != 'running'
+                """,
+                (run_id, summary_preset.strip(), summary_profile.strip(), now),
+            )
+        return cursor.rowcount == 1
+
+    def update_summary_regeneration_status(
+        self,
+        run_id: str,
+        *,
+        summary_preset: str,
+        summary_profile: str,
+        status: str,
+        error: str = "",
+    ) -> None:
+        conn = self._conn()
+        with conn:
+            conn.execute(
+                """\
+                UPDATE summary_regenerations
+                SET status = ?, error = ?, updated_at = ?
+                WHERE run_id = ? AND summary_preset = ? AND summary_profile = ?
+                """,
+                (
+                    status.strip() or "idle",
+                    error.strip(),
+                    datetime.now(tz=UTC).isoformat(),
+                    run_id,
+                    summary_preset.strip(),
+                    summary_profile.strip(),
+                ),
             )
 
     def list_bvids_missing_tid(self) -> list[str]:

@@ -295,6 +295,14 @@ class HistoryDetailArtifactResponse(BaseModel):
     summary_preset: str = ""
     summary_profile: str = ""
     derived_from: str = ""
+    summary_group_id: str = ""
+
+
+class HistorySummaryRegenerationResponse(BaseModel):
+    summary_preset: str
+    summary_profile: str
+    status: Literal["idle", "running", "succeeded", "failed"]
+    error: str = ""
 
 
 class HistoryDetailResponse(BaseModel):
@@ -312,6 +320,9 @@ class HistoryDetailResponse(BaseModel):
         "idle"
     )
     fancy_html_error: str | None = None
+    summary_regenerations: list[HistorySummaryRegenerationResponse] = Field(
+        default_factory=list
+    )
 
 
 class HistoryRegenerateSummaryRequest(SummarySelectionRequest):

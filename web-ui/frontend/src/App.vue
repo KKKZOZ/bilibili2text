@@ -1,5 +1,5 @@
 <script setup>
-  import { computed, onMounted, watch } from 'vue'
+  import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
   import { useRoute, useRouter } from 'vue-router'
   import {
     AudioLines,
@@ -9,6 +9,7 @@
     Sparkles
   } from 'lucide-vue-next'
   import { usePublicCredentials } from './composables/usePublicCredentials'
+  import { startJobCompletionNotificationMonitor } from './composables/useJobNotifications'
   import { useRuntimeFeatures } from './composables/useRuntimeFeatures'
   import { useSummaryConfig } from './composables/useSummaryConfig'
 
@@ -17,6 +18,7 @@
   const { isOpenPublic, loadRuntimeFeatures } = useRuntimeFeatures()
   const { refreshCredentials } = usePublicCredentials()
   const { initializeSummaryConfig } = useSummaryConfig()
+  let stopJobCompletionNotificationMonitor = null
 
   const navigation = computed(() => [
     { key: 'process', label: '新建转录', path: '/process', icon: Sparkles },
@@ -50,6 +52,8 @@
   )
 
   onMounted(() => {
+    stopJobCompletionNotificationMonitor =
+      startJobCompletionNotificationMonitor()
     refreshCredentials()
     void initializeSummaryConfig()
     void (async () => {
@@ -58,6 +62,10 @@
         router.push('/process')
       }
     })()
+  })
+
+  onBeforeUnmount(() => {
+    stopJobCompletionNotificationMonitor?.()
   })
 
   watch(isOpenPublic, (openPublic) => {
