@@ -255,6 +255,7 @@ def list_history(
                 created_at=item.created_at,
                 has_summary=item.has_summary,
                 file_count=item.file_count,
+                summary_version_count=item.summary_version_count,
                 tid=item.tid,
                 tname=get_bilibili_tname(item.tid),
                 parent_tname=get_bilibili_parent_tname(item.tid),

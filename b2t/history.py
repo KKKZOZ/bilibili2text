@@ -100,6 +100,7 @@ class HistoryItem:
     created_at: str
     has_summary: bool
     file_count: int
+    summary_version_count: int = 0
     record_type: str = "transcription"  # "transcription" | "rag_query"
     tid: int = 0
 
@@ -450,7 +451,21 @@ class HistoryDB:
         offset = (max(1, page) - 1) * page_size
         rows = conn.execute(
             f"""\
-            SELECT run_id, bvid, title, author, pubdate, tid, created_at, has_summary, file_count, record_type
+            SELECT
+                run_id, bvid, title, author, pubdate, tid, created_at,
+                has_summary, file_count, record_type,
+                (
+                    SELECT COUNT(*)
+                    FROM transcription_artifacts AS artifact
+                    WHERE artifact.run_id = transcription_runs.run_id
+                    AND (
+                        artifact.kind = 'summary'
+                        OR (
+                            artifact.kind IN ('', 'file')
+                            AND substr(lower(artifact.filename), -11) = '_summary.md'
+                        )
+                    )
+                ) AS summary_version_count
             FROM transcription_runs
             {where}
             ORDER BY created_at DESC
@@ -469,6 +484,7 @@ class HistoryDB:
                 created_at=r["created_at"],
                 has_summary=bool(r["has_summary"]),
                 file_count=r["file_count"],
+                summary_version_count=int(r["summary_version_count"] or 0),
                 record_type=r["record_type"] or "transcription",
                 tid=int(r["tid"] or 0),
             )

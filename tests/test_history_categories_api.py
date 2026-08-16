@@ -3,9 +3,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "web-ui"))
 
-from backend.routes import history as history_routes  # noqa: E402
+from backend.routes import history as history_routes
 
-from b2t.history import HistoryItem, HistoryPage  # noqa: E402
+from b2t.history import HistoryItem, HistoryPage
 
 
 def test_history_list_resolves_parent_and_child_partition_names(monkeypatch) -> None:
@@ -20,6 +20,7 @@ def test_history_list_resolves_parent_and_child_partition_names(monkeypatch) -> 
                 created_at="2026-08-15T11:00:00+08:00",
                 has_summary=True,
                 file_count=4,
+                summary_version_count=2,
                 tid=207,
             )
         ],
@@ -46,6 +47,7 @@ def test_history_list_resolves_parent_and_child_partition_names(monkeypatch) -> 
     )
 
     assert response.items[0].tid == 207
+    assert response.items[0].summary_version_count == 2
     assert response.items[0].parent_tname == "知识"
     assert response.items[0].tname == "财经商业"
     assert set(fake_db.received_filters["category_tids"]) == {

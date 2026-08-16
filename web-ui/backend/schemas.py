@@ -252,6 +252,7 @@ class HistoryItemResponse(BaseModel):
     created_at: str
     has_summary: bool
     file_count: int
+    summary_version_count: int
     tid: int = 0
     tname: str = ""
     parent_tname: str = ""

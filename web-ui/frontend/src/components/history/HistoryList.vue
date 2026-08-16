@@ -4,9 +4,9 @@
     CalendarDays,
     ChevronRight,
     Clock,
-    Files,
     FileText,
     FolderTree,
+    Layers3,
     Trash2,
     User
   } from 'lucide-vue-next'
@@ -114,8 +114,8 @@
               }}
               {{ formatTime(item.created_at) }}
             </span>
-            <span title="生成文件数">
-              <Files :size="13" />{{ item.file_count }} 个文件
+            <span title="总结版本数">
+              <Layers3 :size="13" />{{ item.summary_version_count }} 个总结版本
             </span>
           </div>
         </div>

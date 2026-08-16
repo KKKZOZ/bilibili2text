@@ -76,10 +76,59 @@ def test_record_pipeline_run_persists_summary_metadata(tmp_path) -> None:
     assert len(summary_artifacts) == 1
     assert summary_artifacts[0].summary_preset == "key_points"
     assert summary_artifacts[0].summary_profile == "openrouter_default"
+    assert db.list_runs().items[0].summary_version_count == 1
     markdown_artifacts = [a for a in detail.artifacts if a.kind == "markdown"]
     assert len(markdown_artifacts) == 1
     assert markdown_artifacts[0].summary_preset == ""
     assert markdown_artifacts[0].summary_profile == ""
+
+
+def test_list_runs_counts_summary_roots_as_versions(tmp_path) -> None:
+    db = HistoryDB(tmp_path)
+    db.record_run(
+        run_id="summary-versions",
+        bvid="BV1AB411c7mD",
+        title="多版本总结",
+        artifacts=[
+            HistoryArtifact(
+                kind="markdown",
+                filename="video_transcription.md",
+                storage_key="run/transcription.md",
+                backend="local",
+            ),
+            HistoryArtifact(
+                kind="summary",
+                filename="video_summary.md",
+                storage_key="run/summary-a.md",
+                backend="local",
+            ),
+            HistoryArtifact(
+                kind="summary_png",
+                filename="video_summary.png",
+                storage_key="run/summary-a.png",
+                backend="local",
+                derived_from="run/summary-a.md",
+            ),
+            HistoryArtifact(
+                kind="summary",
+                filename="video_summary.md",
+                storage_key="run/summary-b.md",
+                backend="local",
+            ),
+            HistoryArtifact(
+                kind="summary_fancy_html",
+                filename="video_summary_fancy.html",
+                storage_key="run/summary-b.html",
+                backend="local",
+                derived_from="run/summary-b.md",
+            ),
+        ],
+    )
+
+    item = db.list_runs().items[0]
+
+    assert item.file_count == 5
+    assert item.summary_version_count == 2
 
 
 def test_list_runs_combines_multi_category_and_author_filters(tmp_path) -> None:
