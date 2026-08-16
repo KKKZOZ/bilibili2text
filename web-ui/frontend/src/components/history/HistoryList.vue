@@ -26,7 +26,12 @@
     deleteLoading: Boolean
   })
 
-  const emit = defineEmits(['open', 'delete'])
+  const emit = defineEmits([
+    'open',
+    'delete',
+    'filter-category',
+    'filter-author'
+  ])
 </script>
 
 <template>
@@ -47,17 +52,19 @@
   </div>
   <ul v-else class="history-list">
     <li v-for="item in items" :key="item.run_id" class="history-item">
-      <button
-        class="history-item-content"
-        type="button"
-        @click="emit('open', item.run_id)"
-      >
+      <div class="history-item-content" @click="emit('open', item.run_id)">
         <div class="history-item-copy">
           <div class="history-item-primary">
             <span v-if="item.record_type === 'rag_query'" class="rag-badge">
               <Brain :size="12" />知识库查询
             </span>
-            <span class="history-title">{{ item.title || item.bvid }}</span>
+            <button
+              class="history-title"
+              type="button"
+              @click.stop="emit('open', item.run_id)"
+            >
+              {{ item.title || item.bvid }}
+            </button>
           </div>
 
           <div
@@ -85,22 +92,31 @@
             >
               {{ resourceDisplayLabel(item.bvid, item.page) }}
             </span>
-            <span v-if="item.author" class="history-author">
+            <button
+              v-if="item.author"
+              class="history-author history-filter-link"
+              type="button"
+              :title="`筛选 UP 主：${item.author}`"
+              @click.stop="emit('filter-author', item.author)"
+            >
               <User :size="13" />{{ resourceAuthorLabel(item.bvid) }}
               {{ item.author }}
-            </span>
+            </button>
           </div>
 
           <div class="history-item-meta">
-            <span
+            <button
               v-if="item.parent_tname || item.tname"
-              class="history-category"
+              class="history-category history-filter-link"
+              type="button"
+              :title="`筛选分区：${item.tname || item.parent_tname}`"
+              @click.stop="emit('filter-category', item.tid)"
             >
               <FolderTree :size="13" />
               <span v-if="item.parent_tname">{{ item.parent_tname }}</span>
               <i v-if="item.parent_tname && item.tname">/</i>
               <span v-if="item.tname">{{ item.tname }}</span>
-            </span>
+            </button>
             <span v-if="item.pubdate" title="发布时间">
               <CalendarDays :size="13" />发布 {{ item.pubdate }}
             </span>
@@ -119,8 +135,15 @@
             </span>
           </div>
         </div>
-        <ChevronRight class="history-item-chevron" :size="19" />
-      </button>
+        <button
+          class="history-item-open"
+          type="button"
+          :aria-label="`打开历史记录：${item.title || item.bvid}`"
+          @click.stop="emit('open', item.run_id)"
+        >
+          <ChevronRight class="history-item-chevron" :size="19" />
+        </button>
+      </div>
       <button
         v-if="allowDelete"
         class="history-item-delete"
@@ -224,10 +247,15 @@
   }
 
   .history-title {
+    padding: 0;
+    border: 0;
+    background: transparent;
     color: #0f172a;
+    cursor: pointer;
     font-size: 0.96rem;
     font-weight: 700;
     line-height: 1.45;
+    text-align: left;
   }
 
   .history-bvid {
@@ -266,8 +294,54 @@
   }
 
   .history-category i {
-    color: #a7b3bf;
+    color: #8aa4a1;
     font-style: normal;
+  }
+
+  .history-item-meta .history-category {
+    gap: 4px;
+    color: #3f716d;
+    font-weight: 600;
+  }
+
+  .history-item-meta .history-category svg {
+    color: #719590;
+  }
+
+  .history-filter-link {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+  }
+
+  .history-filter-link:hover,
+  .history-filter-link:focus-visible {
+    color: #0b8076;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .history-item-meta .history-category:hover,
+  .history-item-meta .history-category:focus-visible {
+    color: #0b8076;
+  }
+
+  .history-filter-link:hover svg,
+  .history-filter-link:focus-visible svg,
+  .history-item-meta .history-category:hover svg,
+  .history-item-meta .history-category:focus-visible svg {
+    color: #0b8076;
+  }
+
+  .history-title:focus-visible,
+  .history-filter-link:focus-visible,
+  .history-item-open:focus-visible {
+    border-radius: 3px;
+    outline: 2px solid #5bb7ad;
+    outline-offset: 2px;
   }
 
   .rag-badge {
@@ -281,14 +355,31 @@
 
   .history-item-chevron {
     flex: 0 0 auto;
-    color: #a7b3bf;
     transition:
       color 160ms ease,
       transform 160ms ease;
   }
 
-  .history-item:hover .history-item-chevron {
+  .history-item-open {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: #a7b3bf;
+    cursor: pointer;
+  }
+
+  .history-item:hover .history-item-open {
     color: #0f8f83;
+  }
+
+  .history-item:hover .history-item-chevron {
     transform: translateX(2px);
   }
 
@@ -398,7 +489,7 @@
       gap: 6px 12px;
     }
 
-    .history-item-chevron {
+    .history-item-open {
       margin-top: 2px;
     }
 

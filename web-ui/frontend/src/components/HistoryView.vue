@@ -613,6 +613,16 @@
   const updateHistoryAuthors = (values) =>
     updateHistoryFilter(historyAuthors, values)
 
+  const filterHistoryByCategory = (tid) => {
+    const normalizedTid = Number.parseInt(String(tid), 10)
+    if (normalizedTid > 0) updateHistoryCategories([normalizedTid])
+  }
+
+  const filterHistoryByAuthor = (author) => {
+    const normalizedAuthor = String(author || '').trim()
+    if (normalizedAuthor) updateHistoryAuthors([normalizedAuthor])
+  }
+
   const resetHistoryFilters = () => {
     historyPlatforms.value = []
     historyCategoryTids.value = []
@@ -829,6 +839,8 @@
         :delete-loading="deleteLoading"
         @open="openHistoryDetail"
         @delete="confirmDelete"
+        @filter-category="filterHistoryByCategory"
+        @filter-author="filterHistoryByAuthor"
       />
 
       <HistoryPagination
