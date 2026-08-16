@@ -164,6 +164,10 @@ class ProcessStatusResponse(BaseModel):
     expires_at: str | None = None
 
 
+class JobSnapshotsResponse(BaseModel):
+    jobs: list[ProcessStatusResponse]
+
+
 class SummaryPresetItemResponse(BaseModel):
     name: str
     label: str

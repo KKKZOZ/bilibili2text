@@ -113,6 +113,40 @@ def test_process_event_stream_pushes_repository_changes(monkeypatch) -> None:
     assert '"status": "succeeded"' in chunks[1]
 
 
+def test_aggregate_job_event_stream_includes_terminal_snapshot(monkeypatch) -> None:
+    repository = JobRepository(
+        limit=10,
+        on_change=lambda job_id: process.event_broker.publish(job_channel(job_id)),
+    )
+    job_id = _create_job(repository)
+    repository.patch(job_id, JobPatch(status="running", progress=20))
+    monkeypatch.setattr(process, "_get_job", repository.get)
+
+    async def collect() -> list[str]:
+        response = await process.active_job_events([job_id])
+        iterator = response.body_iterator
+        initial = await anext(iterator)
+        repository.patch(
+            job_id,
+            JobPatch(status="succeeded", stage="completed", progress=100),
+        )
+        terminal = await asyncio.wait_for(anext(iterator), timeout=1)
+        try:
+            await anext(iterator)
+        except StopAsyncIteration:
+            pass
+        else:
+            raise AssertionError("aggregate SSE stream did not close")
+        return [initial, terminal]
+
+    chunks = asyncio.run(collect())
+
+    assert chunks[0].startswith("event: jobs\n")
+    assert '"status": "running"' in chunks[0]
+    assert '"status": "succeeded"' in chunks[1]
+    assert '"logs":' in chunks[1]
+
+
 def test_history_event_stream_sends_terminal_snapshot(monkeypatch) -> None:
     detail = SimpleNamespace(
         run_id="rag-query-deadbeef",

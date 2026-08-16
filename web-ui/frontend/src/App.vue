@@ -8,8 +8,8 @@
     KeyRound,
     Sparkles
   } from 'lucide-vue-next'
+  import { startJobStore, stopJobStore } from './composables/useJobStore'
   import { usePublicCredentials } from './composables/usePublicCredentials'
-  import { startJobCompletionNotificationMonitor } from './composables/useJobNotifications'
   import { useRuntimeFeatures } from './composables/useRuntimeFeatures'
   import { useSummaryConfig } from './composables/useSummaryConfig'
 
@@ -18,7 +18,6 @@
   const { isOpenPublic, loadRuntimeFeatures } = useRuntimeFeatures()
   const { refreshCredentials } = usePublicCredentials()
   const { initializeSummaryConfig } = useSummaryConfig()
-  let stopJobCompletionNotificationMonitor = null
 
   const navigation = computed(() => [
     { key: 'process', label: '新建转录', path: '/process', icon: Sparkles },
@@ -52,8 +51,7 @@
   )
 
   onMounted(() => {
-    stopJobCompletionNotificationMonitor =
-      startJobCompletionNotificationMonitor()
+    startJobStore()
     refreshCredentials()
     void initializeSummaryConfig()
     void (async () => {
@@ -65,7 +63,7 @@
   })
 
   onBeforeUnmount(() => {
-    stopJobCompletionNotificationMonitor?.()
+    stopJobStore()
   })
 
   watch(isOpenPublic, (openPublic) => {

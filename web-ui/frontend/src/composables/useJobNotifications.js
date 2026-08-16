@@ -1,6 +1,3 @@
-import { ApiError, processApi } from '../api'
-import { readActiveJobIds, removeActiveJobId } from './useActiveJobs'
-
 const NOTIFIED_JOB_IDS_KEY = 'b2t.notified-job-ids'
 const MAX_NOTIFIED_JOB_IDS = 100
 let notificationPermissionRequest = null
@@ -87,48 +84,5 @@ export const notifyJobCompletion = async (job, fallbackJobId = '') => {
     return true
   } catch {
     return false
-  }
-}
-
-export const startJobCompletionNotificationMonitor = () => {
-  let stopped = false
-  let loading = false
-
-  const check = async () => {
-    if (stopped || loading) return
-    const jobIds = readActiveJobIds()
-    if (jobIds.length === 0) return
-
-    loading = true
-    try {
-      const results = await Promise.allSettled(
-        jobIds.map((jobId) => processApi.getJob(jobId))
-      )
-      results.forEach((result, index) => {
-        const jobId = jobIds[index]
-        if (result.status === 'fulfilled') {
-          const job = result.value
-          if (job.status === 'succeeded') {
-            void notifyJobCompletion(job, jobId)
-          }
-          if (!['queued', 'running'].includes(job.status)) {
-            removeActiveJobId(jobId)
-          }
-          return
-        }
-        if (result.reason instanceof ApiError && result.reason.status === 404) {
-          removeActiveJobId(jobId)
-        }
-      })
-    } finally {
-      loading = false
-    }
-  }
-
-  void check()
-  const timer = window.setInterval(check, 2000)
-  return () => {
-    stopped = true
-    window.clearInterval(timer)
   }
 }

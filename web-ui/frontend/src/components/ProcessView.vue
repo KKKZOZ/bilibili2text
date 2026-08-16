@@ -1,5 +1,5 @@
 <script setup>
-  import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+  import { computed, onMounted, ref, watch } from 'vue'
   import { useRoute, useRouter } from 'vue-router'
   import { ArrowLeft, LoaderCircle } from 'lucide-vue-next'
   import ProgressPanel from './ProgressPanel.vue'
@@ -8,17 +8,11 @@
   import ProcessSourceInput from './process/ProcessSourceInput.vue'
   import ProcessSummaryConfig from './process/ProcessSummaryConfig.vue'
   import ProcessVideoMetadata from './process/ProcessVideoMetadata.vue'
-  import { ApiError, processApi, subscribeSse } from '../api'
+  import { processApi } from '../api'
+  import { useJobStore } from '../composables/useJobStore'
   import { usePublicCredentials } from '../composables/usePublicCredentials'
   import { useRuntimeFeatures } from '../composables/useRuntimeFeatures'
-  import {
-    addActiveJobId,
-    removeActiveJobId
-  } from '../composables/useActiveJobs'
-  import {
-    notifyJobCompletion,
-    requestJobNotificationPermission
-  } from '../composables/useJobNotifications'
+  import { requestJobNotificationPermission } from '../composables/useJobNotifications'
   import {
     CUSTOM_SUMMARY_PRESET_VALUE,
     useSummaryConfig,
@@ -28,6 +22,13 @@
 
   const route = useRoute()
   const router = useRouter()
+  const {
+    connectionNotice,
+    getJob: getStoredJob,
+    loadJob,
+    trackJob,
+    untrackJob
+  } = useJobStore()
   const { runtimeFeatures } = useRuntimeFeatures()
   const allowUpload = computed(() => runtimeFeatures.value.allow_upload_audio)
   const requiresApiKey = computed(
@@ -59,7 +60,6 @@
 
   const url = ref('')
   const error = ref('')
-  const connectionNotice = ref('')
   const inputMode = ref('url')
   const uploadedAudioFile = ref(null)
   const enableSummary = ref(true)
@@ -70,8 +70,6 @@
   const downloadAllComments = ref(false)
   const currentSkipSummary = ref(false)
   const isStarting = ref(false)
-  const isPolling = ref(false)
-  const pollErrorCount = ref(0)
   const jobId = ref('')
   const job = ref({
     status: 'idle',
@@ -118,10 +116,7 @@
     expires_at: ''
   })
 
-  let pollTimer = null
-  let stopJobEvents = null
   let lastRenderedJobSignature = ''
-  const maxPollErrors = 3
   const uploadAccept =
     '.aac,.flac,.m4a,.mp3,.ogg,.opus,.wav,.webm,.avi,.m4v,.mkv,.mov,.mp4'
   const uploadFilenamePattern =
@@ -162,7 +157,7 @@
   })
 
   const clearActiveJobId = () => {
-    if (jobId.value) removeActiveJobId(jobId.value)
+    if (jobId.value) untrackJob(jobId.value)
     jobId.value = ''
   }
 
@@ -228,20 +223,6 @@
       summaryProfile: job.value.summary_profile || selectedSummaryProfile.value
     }))
   })
-
-  const stopPolling = () => {
-    if (pollTimer !== null) {
-      clearInterval(pollTimer)
-      pollTimer = null
-    }
-  }
-
-  const stopEventSubscription = () => {
-    if (stopJobEvents !== null) {
-      stopJobEvents()
-      stopJobEvents = null
-    }
-  }
 
   const getLogSignature = (logs) => {
     if (!Array.isArray(logs) || logs.length === 0) {
@@ -403,7 +384,6 @@
         userSummaryPromptTemplate.value = data.summary_prompt_template
       }
     }
-    pollErrorCount.value = 0
     error.value = ''
     const currentLogCount = Array.isArray(data.logs) ? data.logs.length : 0
     if (shouldRenderJob && currentLogCount !== previousLogCount) {
@@ -411,11 +391,9 @@
 
     if (data.status === 'failed') {
       error.value = data.error || '处理失败'
-      clearActiveJobId()
       return false
     } else if (data.status === 'cancelled') {
       error.value = data.error || '任务已取消'
-      clearActiveJobId()
       return false
     } else if (
       data.status === 'succeeded' &&
@@ -424,82 +402,14 @@
         ['pending', 'running'].includes(data.fancy_html_status || '')
       )
     ) {
-      void notifyJobCompletion(data, jobId.value)
-      clearActiveJobId()
       return false
     }
-    if (data.status === 'succeeded') {
-      void notifyJobCompletion(data, jobId.value)
-    }
     return true
-  }
-
-  const pollStatus = async () => {
-    if (!jobId.value || isPolling.value) {
-      return
-    }
-
-    isPolling.value = true
-    try {
-      const data = await processApi.getJob(jobId.value)
-      if (!applyJobUpdate(data)) stopPolling()
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 404) {
-        clearActiveJobId()
-        stopPolling()
-      }
-      pollErrorCount.value += 1
-      const message = err instanceof Error ? err.message : '获取任务进度失败'
-      if (pollErrorCount.value >= maxPollErrors) {
-        error.value = message
-        stopPolling()
-      } else {
-        error.value = `${message}，正在重试（${pollErrorCount.value}/${maxPollErrors}）`
-      }
-    } finally {
-      isPolling.value = false
-    }
-  }
-
-  const startPollingFallback = () => {
-    connectionNotice.value = '实时连接不可用，已切换为兼容模式。'
-    stopPolling()
-    pollStatus()
-    pollTimer = setInterval(pollStatus, 1200)
-  }
-
-  const startJobEvents = () => {
-    stopEventSubscription()
-    stopPolling()
-    connectionNotice.value = ''
-    const subscribedJobId = jobId.value
-    if (!subscribedJobId) return
-
-    stopJobEvents = subscribeSse({
-      url: processApi.jobEventsUrl(subscribedJobId),
-      eventName: 'job',
-      onEvent: (data) => {
-        if (jobId.value !== subscribedJobId) return false
-        return applyJobUpdate(data)
-      },
-      onDeleted: () => {
-        if (jobId.value !== subscribedJobId) return
-        clearActiveJobId()
-        error.value = '任务不存在或已过期'
-      },
-      onFallback: () => {
-        stopJobEvents = null
-        if (jobId.value === subscribedJobId) startPollingFallback()
-      }
-    })
   }
 
   const submit = async () => {
     isStarting.value = true
     error.value = ''
-    connectionNotice.value = ''
-    stopEventSubscription()
-    stopPolling()
     clearActiveJobId()
     resetJob()
 
@@ -530,7 +440,6 @@
 
       const skipSummary = !enableSummary.value
       currentSkipSummary.value = skipSummary
-      pollErrorCount.value = 0
       requestJobNotificationPermission()
 
       let data
@@ -600,10 +509,9 @@
       }
 
       jobId.value = data.job_id
-      addActiveJobId(data.job_id)
+      trackJob(data.job_id)
       // Navigate to the job detail URL
       await router.push(`/process/${data.job_id}`)
-      startJobEvents()
     } catch (err) {
       error.value = err instanceof Error ? err.message : '提交任务失败'
     } finally {
@@ -611,29 +519,39 @@
     }
   }
 
-  onMounted(async () => {
+  onMounted(() => {
     loadLocalSummaryPromptTemplate()
-    if (!routeJobId.value) {
-      return
-    }
-
-    jobId.value = routeJobId.value
-    pollErrorCount.value = 0
-    await pollStatus()
-    if (
-      jobId.value &&
-      (job.value.status === 'queued' ||
-        job.value.status === 'running' ||
-        (job.value.status === 'succeeded' && isFancyHtmlPending.value))
-    ) {
-      startJobEvents()
-    }
   })
 
-  onBeforeUnmount(() => {
-    stopEventSubscription()
-    stopPolling()
-  })
+  watch(
+    () => getStoredJob(jobId.value),
+    (data) => {
+      if (data) applyJobUpdate(data)
+    }
+  )
+
+  watch(
+    routeJobId,
+    async (nextJobId) => {
+      if (!nextJobId) {
+        jobId.value = ''
+        resetJob()
+        return
+      }
+      jobId.value = nextJobId
+      const cached = getStoredJob(nextJobId)
+      if (cached) applyJobUpdate(cached)
+      try {
+        const data = await loadJob(nextJobId)
+        if (routeJobId.value === nextJobId) applyJobUpdate(data)
+      } catch (err) {
+        if (routeJobId.value === nextJobId) {
+          error.value = err instanceof Error ? err.message : '获取任务进度失败'
+        }
+      }
+    },
+    { immediate: true }
+  )
 
   watch(
     summaryDefaultPromptTemplate,

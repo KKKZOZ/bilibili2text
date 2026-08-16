@@ -9,7 +9,7 @@
   import HistoryPagination from './history/HistoryPagination.vue'
   import ActiveJobsPanel from './jobs/ActiveJobsPanel.vue'
   import { artifactApi, historyApi, subscribeSse, summaryApi } from '../api'
-  import { useActiveJobs } from '../composables/useActiveJobs'
+  import { useJobStore } from '../composables/useJobStore'
   import { usePublicCredentials } from '../composables/usePublicCredentials'
   import { useRuntimeFeatures } from '../composables/useRuntimeFeatures'
   import {
@@ -81,11 +81,8 @@
   const {
     activeJobs,
     connectionNotice: activeJobsConnectionNotice,
-    cancel: cancelTrackedJob,
-    onStorage: onActiveJobsStorage,
-    sync: syncActiveJobEvents,
-    stop: stopActiveJobs
-  } = useActiveJobs()
+    cancelJob: cancelTrackedJob
+  } = useJobStore()
 
   const cancelActiveJob = async (jobId) => {
     try {
@@ -609,6 +606,13 @@
     loadHistory()
   }
 
+  const updateHistoryPlatforms = (values) =>
+    updateHistoryFilter(historyPlatforms, values)
+  const updateHistoryCategories = (values) =>
+    updateHistoryFilter(historyCategoryTids, values)
+  const updateHistoryAuthors = (values) =>
+    updateHistoryFilter(historyAuthors, values)
+
   const resetHistoryFilters = () => {
     historyPlatforms.value = []
     historyCategoryTids.value = []
@@ -697,8 +701,6 @@
     if (routeRunId.value) {
       loadHistoryDetail(routeRunId.value)
     }
-    syncActiveJobEvents()
-    window.addEventListener('storage', onActiveJobsStorage)
   })
 
   watch(routeRunId, (runId) => {
@@ -740,8 +742,6 @@
     historyDetailRequestVersion += 1
     stopRagFancyHtmlEventStream()
     stopRagFancyHtmlPolling()
-    stopActiveJobs()
-    window.removeEventListener('storage', onActiveJobsStorage)
   })
 </script>
 
@@ -815,9 +815,9 @@
         :category-label="historyCategoryFilterLabel"
         :author-label="historyAuthorFilterLabel"
         :loading="historyFiltersLoading"
-        @update:platforms="updateHistoryFilter(historyPlatforms, $event)"
-        @update:categories="updateHistoryFilter(historyCategoryTids, $event)"
-        @update:authors="updateHistoryFilter(historyAuthors, $event)"
+        @update:platforms="updateHistoryPlatforms"
+        @update:categories="updateHistoryCategories"
+        @update:authors="updateHistoryAuthors"
         @reset="resetHistoryFilters"
       />
 

@@ -19,6 +19,7 @@ from backend.runner import _run_job
 from backend.schemas import (
     ActiveJobItem,
     ActiveJobsResponse,
+    JobSnapshotsResponse,
     ProcessRequest,
     ProcessStartResponse,
     ProcessStatusResponse,
@@ -247,7 +248,7 @@ def process_video(payload: ProcessRequest) -> ProcessStartResponse:
 
 @router.post("/api/process/upload", response_model=ProcessStartResponse)
 def process_uploaded_audio(
-    file: UploadFile = File(..., description="待转录的音频文件"),
+    file: UploadFile = File(..., description="待转录的音频文件"),  # noqa: B008
     skip_summary: bool = Form(default=False),
     summary_preset: str | None = Form(default=None),
     summary_profile: str | None = Form(default=None),
@@ -367,9 +368,19 @@ def _serialize_sse(event: str, payload: object) -> str:
     return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
-def _active_jobs_response(job_ids: set[str]) -> ActiveJobsResponse:
-    jobs = [job for job in _list_active_jobs() if str(job["job_id"]) in job_ids]
-    return ActiveJobsResponse(jobs=[ActiveJobItem(**job) for job in jobs])
+def _job_snapshots_response(job_ids: tuple[str, ...]) -> JobSnapshotsResponse:
+    jobs = [job for job_id in job_ids if (job := _get_job(job_id)) is not None]
+    return JobSnapshotsResponse(jobs=[_to_process_status_response(job) for job in jobs])
+
+
+def _process_response_is_active(response: ProcessStatusResponse) -> bool:
+    if response.status in {"queued", "running"}:
+        return True
+    return (
+        response.status == "succeeded"
+        and response.auto_generate_fancy_html
+        and (response.fancy_html_status in {"pending", "running"})
+    )
 
 
 @router.get("/api/jobs/events")
@@ -384,11 +395,11 @@ async def active_job_events(
         subscription = event_broker.subscribe(job_channel(value) for value in job_ids)
         try:
             while True:
-                response = _active_jobs_response(set(job_ids))
+                response = _job_snapshots_response(job_ids)
                 yield _serialize_sse("jobs", response.model_dump(mode="json"))
-                if not response.jobs:
+                if not any(_process_response_is_active(job) for job in response.jobs):
                     return
-                while not await subscription.wait():
+                if not await subscription.wait():
                     yield ": keep-alive\n\n"
         finally:
             subscription.close()
