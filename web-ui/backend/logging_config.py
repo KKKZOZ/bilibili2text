@@ -83,7 +83,7 @@ def _configure_logging() -> None:
             ):
                 handler.addFilter(_SENSITIVE_DATA_FILTER)
 
-    # The job log panel relies on INFO-level logs; these loggers may default to WARNING via inheritance.
+    # Keep application progress visible while suppressing per-request HTTP chatter.
     logging.getLogger("b2t").setLevel(logging.INFO)
     logging.getLogger("dashscope").setLevel(logging.INFO)
-    logging.getLogger("httpx").setLevel(logging.INFO)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
