@@ -12,7 +12,11 @@ from b2t.download.comments import DEFAULT_COMMENT_LIMIT
 from b2t.download.platform import Platform
 from b2t.download.url_detect import detect_platform, extract_platform_id
 from b2t.download.ximalaya import resolve_ximalaya_sound_url
-from b2t.download.yutto_cli import extract_bvid, normalize_bilibili_target
+from b2t.download.yutto_cli import (
+    extract_bilibili_target_id,
+    extract_bvid,
+    normalize_bilibili_target,
+)
 from b2t.pipeline import run_pipeline
 from backend.bvid_locks import bvid_transcription_locks
 from backend.dependencies import (
@@ -57,7 +61,7 @@ def _infer_resource_id_from_url(url: str) -> tuple[str, str | None]:
             normalized_url = normalize_bilibili_target(normalized_url)
         except Exception:
             pass
-        return normalized_url, extract_bvid(normalized_url)
+        return normalized_url, extract_bilibili_target_id(normalized_url)
 
     if platform == Platform.XIMALAYA:
         try:
@@ -106,8 +110,8 @@ def _run_job(
     bvid = (input_bvid or "").strip() or None
     transcription_id = bvid
     if bvid is None and normalized_url:
-        normalized_url, bvid = _infer_resource_id_from_url(normalized_url)
-        transcription_id = bvid
+        normalized_url, transcription_id = _infer_resource_id_from_url(normalized_url)
+        bvid = extract_bvid(normalized_url) or transcription_id
 
     upload_temp_dir: Path | None = None
     if normalized_audio_path:
