@@ -83,7 +83,31 @@
       preview
       @update:model-value="emit('update:selectedPreset', $event)"
       @retry="emit('retryPresets')"
-    />
+    >
+      <template #label-addon>
+        <HelpTooltip
+          id="summary-preset-help-tooltip"
+          label="查看总结模板选择建议"
+        >
+          <span class="template-guidance">
+            <span
+              ><strong>金融主题：</strong>单人投资复盘、直播或个股分析。</span
+            >
+            <span
+              ><strong>投资播客：</strong
+              >需要区分发言者和观点的多人投资对话。</span
+            >
+            <span
+              ><strong>学习笔记：</strong>课程、讲座或教程，适合复习整理。</span
+            >
+            <span><strong>通用总结：</strong>访谈、资讯及其他一般内容。</span>
+            <span v-if="isOpenPublic">
+              <strong>用户自定义：</strong>已有明确结构或特殊整理要求。
+            </span>
+          </span>
+        </HelpTooltip>
+      </template>
+    </SummaryPresetPicker>
   </div>
 </template>
 
@@ -119,5 +143,14 @@
     display: flex;
     align-items: center;
     gap: 3px;
+  }
+
+  .template-guidance {
+    display: grid;
+    gap: 5px;
+  }
+
+  .template-guidance strong {
+    color: var(--text-main);
   }
 </style>

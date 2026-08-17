@@ -97,7 +97,10 @@
 
 <template>
   <div ref="root" class="summary-preset-field" :class="{ compact }">
-    <label :for="id">{{ label }}</label>
+    <div class="summary-preset-label">
+      <label :for="id">{{ label }}</label>
+      <slot name="label-addon"></slot>
+    </div>
     <div v-if="!preview" class="summary-preset-control">
       <select
         :id="id"
@@ -190,7 +193,13 @@
     min-width: 0;
   }
 
-  .summary-preset-field > label {
+  .summary-preset-label {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+  }
+
+  .summary-preset-label label {
     color: var(--text-soft);
     font-size: 0.88rem;
     font-weight: 700;
