@@ -1,13 +1,14 @@
 <script setup>
   import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
   import {
-    ArrowDownToLine,
     Check,
     CheckCircle2,
+    ChevronsDown,
     Copy,
     LoaderCircle,
     Maximize2,
-    Minimize2
+    Minimize2,
+    Pause
   } from 'lucide-vue-next'
   import FileList from '../FileList.vue'
   import InlineNotice from '../common/InlineNotice.vue'
@@ -190,13 +191,14 @@
         </div>
         <div class="log-toolbar" role="toolbar" aria-label="日志工具">
           <span class="follow-state" :class="{ paused: !followLogs }">
-            <span aria-hidden="true"></span>
-            {{ followLogs ? '自动跟随' : '已暂停' }}
+            <span v-if="followLogs" class="live-dot" aria-hidden="true"></span>
+            <Pause v-else :size="13" aria-hidden="true" />
+            {{ followLogs ? '自动跟随' : '已暂停跟随' }}
           </span>
           <button
             v-if="!followLogs"
             type="button"
-            class="log-tool-button latest-button"
+            class="log-tool-button log-latest-button"
             :title="
               pendingLogCount > 0
                 ? '跳到最新（' + pendingLogCount + ' 条新日志）'
@@ -209,8 +211,9 @@
             "
             @click="scrollToLatest()"
           >
-            <ArrowDownToLine :size="16" aria-hidden="true" />
-            <span v-if="pendingLogCount > 0" class="pending-count">
+            <ChevronsDown :size="16" aria-hidden="true" />
+            <span>查看最新</span>
+            <span v-if="pendingLogCount > 0" class="new-log-count">
               {{ pendingLogCount > 99 ? '99+' : pendingLogCount }}
             </span>
           </button>
@@ -388,7 +391,7 @@
     font-weight: 650;
   }
 
-  .follow-state > span {
+  .live-dot {
     width: 7px;
     height: 7px;
     border-radius: 50%;
@@ -399,8 +402,8 @@
     color: var(--warning);
   }
 
-  .follow-state.paused > span {
-    background: #f59e0b;
+  .follow-state.paused svg {
+    flex: 0 0 auto;
   }
 
   .log-tool-button {
@@ -441,20 +444,24 @@
     color: var(--danger);
   }
 
-  .pending-count {
-    position: absolute;
-    top: -6px;
-    right: -6px;
-    min-width: 17px;
-    height: 17px;
-    padding: 0 4px;
-    border: 2px solid #fff;
-    border-radius: 9px;
-    background: var(--warning);
-    color: #fff;
-    font-size: 0.6rem;
-    font-weight: 750;
-    line-height: 13px;
+  .log-tool-button.log-latest-button {
+    width: auto;
+    min-width: 32px;
+    gap: 5px;
+    padding: 0 9px;
+    border-color: #fcd34d;
+    background: #fffbeb;
+    color: #92400e;
+    font-size: 0.76rem;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .new-log-count {
+    min-width: 1.4em;
+    color: #b45309;
+    font-size: 0.7rem;
+    font-variant-numeric: tabular-nums;
     text-align: center;
   }
 

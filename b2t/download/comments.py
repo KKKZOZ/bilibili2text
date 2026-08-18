@@ -116,7 +116,7 @@ class PlatformComment:
     ctime: str
     ctime_timestamp: int
     is_up_reply: bool = False
-    replies: tuple["PlatformComment", ...] = ()
+    replies: tuple[PlatformComment, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -1091,21 +1091,21 @@ def write_comments_markdown(bundle: PlatformCommentBundle, path: Path) -> Path:
 
 
 __all__ = [
+    "DEFAULT_COMMENT_LIMIT",
     "BilibiliComment",
     "BilibiliCommentBundle",
-    "DEFAULT_COMMENT_LIMIT",
     "PlatformComment",
     "PlatformCommentBundle",
+    "comment_platform_from_metadata",
+    "comment_platform_label",
+    "comments_to_markdown",
+    "count_comment_replies",
+    "count_up_replies",
     "fetch_bilibili_comments",
     "fetch_bilibili_comments_async",
     "fetch_platform_comments",
     "fetch_xiaoyuzhou_comments",
     "fetch_xiaoyuzhou_comments_async",
-    "comments_to_markdown",
-    "comment_platform_from_metadata",
-    "comment_platform_label",
-    "count_comment_replies",
-    "count_up_replies",
     "write_comments_json",
     "write_comments_markdown",
 ]

@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 import queue
 import threading
 import time
+from pathlib import Path
 
 from b2t.history import HistoryDB
 from b2t.stock_status import (

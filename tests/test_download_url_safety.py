@@ -1,9 +1,9 @@
 import httpx
 import pytest
 
+from b2t.download import ximalaya
 from b2t.download.platform import Platform
 from b2t.download.url_detect import detect_platform, extract_platform_id
-from b2t.download import ximalaya
 
 
 @pytest.mark.parametrize(

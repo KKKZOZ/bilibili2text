@@ -1,10 +1,11 @@
-from dataclasses import replace
 import sys
+from dataclasses import replace
 from io import BytesIO
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "web-ui"))
 
+from backend import services as services_module
 from backend.existing_transcriptions import (
     ExistingTranscriptionService,
     _has_current_timeline_schema,
@@ -26,12 +27,11 @@ from b2t.config import (
     SummaryPreset,
     SummaryPresetsConfig,
 )
+from b2t.download.metadata import VideoMetadata
+from b2t.download.platform import Platform, PlatformMetadata
 from b2t.history import HistoryArtifact, HistoryDetail
-from b2t.download.metadata import VideoMetadata  # noqa: E402
-from b2t.download.platform import Platform, PlatformMetadata  # noqa: E402
 from b2t.storage.base import StoredArtifact
-from b2t.storage.local import LocalStorageBackend  # noqa: E402
-from backend import services as services_module  # noqa: E402
+from b2t.storage.local import LocalStorageBackend
 
 
 def _config() -> AppConfig:

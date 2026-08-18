@@ -4,9 +4,10 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from PIL import Image
+
 import b2t.converter.md_to_png as md_to_png_module
 from b2t.converter.md_to_png import MarkdownToPngConverter
-from PIL import Image
 
 
 def test_normalize_markdown_for_tables_rewrites_fullwidth_table_chars() -> None:

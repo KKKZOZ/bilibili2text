@@ -1,22 +1,23 @@
+import sys
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
-import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "web-ui"))
 
+from backend.postprocess import PostProcessScheduler
+from backend.services import _generate_summary_png_exports
+from backend.stock_cache import get_or_fetch_stock_statuses
+
 from b2t.config import (
-    ConverterConfig,
     STOCK_STATUS_MODE_BACKGROUND_HYBRID,
     STOCK_STATUS_MODE_BLOCKING_YFINANCE,
+    ConverterConfig,
     _load_converter_config,
     create_app_config,
 )
 from b2t.stock_status import StockDailyStatus
 from b2t.storage import StoredArtifact
-from backend.postprocess import PostProcessScheduler
-from backend.stock_cache import get_or_fetch_stock_statuses
-from backend.services import _generate_summary_png_exports
 
 
 class _FakeStorage:

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import ipaddress
 import logging
-from pathlib import Path
 import socket
+from pathlib import Path
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import httpx
@@ -248,8 +248,7 @@ def _download_audio_file(audio_url: str, audio_path: Path) -> None:
     ) as stream:
         stream.raise_for_status()
         with open(audio_path, "wb") as file_obj:
-            for chunk in stream.iter_bytes(chunk_size=1024 * 1024):
-                file_obj.write(chunk)
+            file_obj.writelines(stream.iter_bytes(chunk_size=1024 * 1024))
 
     file_size_mb = audio_path.stat().st_size / 1024 / 1024
     logger.info("Audio downloaded: %.1f MB", file_size_mb)

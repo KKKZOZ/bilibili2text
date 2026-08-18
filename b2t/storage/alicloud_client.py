@@ -1,11 +1,11 @@
 """Aliyun OSS storage backend."""
 
-from datetime import timedelta
 import mimetypes
 import tempfile
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import timedelta
 from pathlib import Path
 from typing import BinaryIO
 from urllib.parse import quote

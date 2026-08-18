@@ -15,9 +15,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from b2t.config import load_config  # noqa: E402
-from b2t.history import HistoryDB  # noqa: E402
-from b2t.storage import StoredArtifact, create_storage_backend  # noqa: E402
+from b2t.config import load_config
+from b2t.history import HistoryDB
+from b2t.storage import StoredArtifact, create_storage_backend
 
 _BVID_RE = re.compile(r"(BV[0-9A-Za-z]{10})", re.IGNORECASE)
 _HISTORY_FRAGMENT_RE = re.compile(r"(?:^|[#/])history/([^/?#]+)", re.IGNORECASE)

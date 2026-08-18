@@ -1,10 +1,10 @@
 """Xiaoyuzhou FM downloader — extract metadata and audio from episode pages."""
 
-from collections.abc import Mapping
-from dataclasses import dataclass
 import json
 import logging
 import re
+from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -13,8 +13,8 @@ import httpx
 
 from b2t.download.platform import (
     Platform,
-    PlatformMetadata,
     PlatformDownloader,
+    PlatformMetadata,
     build_filename_component,
     sanitize_filename_component,
 )
@@ -340,8 +340,7 @@ class XiaoyuzhouDownloader(PlatformDownloader):
         ) as stream:
             stream.raise_for_status()
             with open(audio_path, "wb") as f:
-                for chunk in stream.iter_bytes(chunk_size=1024 * 1024):
-                    f.write(chunk)
+                f.writelines(stream.iter_bytes(chunk_size=1024 * 1024))
 
         file_size_mb = audio_path.stat().st_size / 1024 / 1024
         logger.info("Audio downloaded: %.1f MB", file_size_mb)
