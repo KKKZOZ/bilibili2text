@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=900">
+<title>{{TITLE}}</title>
+<style>
+/* Brief only. Keep these styles inline; do not import Standard components. */
+:root{color-scheme:light;--brief-ink:#243249;--brief-muted:#59677b;--brief-canvas:#f6f7fc;--brief-sky:#dfefff;--brief-yellow:#fff5cc;--brief-mint:#d8f5e7;--brief-coral:#ffe2d8;--brief-lilac:#eae3ff;--brief-blue:#52677f;--brief-line:#d7dce7}
+*{box-sizing:border-box}body{margin:0;background:var(--brief-canvas);color:var(--brief-ink);font-family:"Avenir Next","PingFang SC","Microsoft YaHei",sans-serif;font-size:18px;line-height:1.65;-webkit-font-smoothing:antialiased}.brief-paper{max-width:900px;margin:24px auto;padding:38px;background:#fff;border-radius:26px;counter-reset:brief-section;overflow-wrap:anywhere}h1,h2,h3,p{margin:0}h1,h2,h3{color:var(--brief-ink);font-weight:750}h1{font-family:"Arial Rounded MT Bold","PingFang SC",sans-serif;font-size:38px;line-height:1.35;letter-spacing:-.025em}h2{font-size:30px;line-height:1.4;margin-bottom:20px}.brief-section{counter-increment:brief-section}.brief-section>h2::before{content:counter(brief-section,decimal-leading-zero);margin-right:16px;color:var(--brief-blue);font-variant-numeric:tabular-nums}h3{font-size:22px;line-height:1.4;margin-bottom:9px}strong{font-weight:750}p+p{margin-top:10px}a{color:var(--brief-blue);text-underline-offset:3px}:focus-visible{outline:2px solid var(--brief-blue);outline-offset:4px}::selection{background:var(--brief-yellow)}
+.brief-intro{margin-bottom:26px}.brief-subtitle{margin-top:10px;font-size:20px;line-height:1.45;font-weight:600;color:var(--brief-muted)}.brief-lead{margin-top:16px;font-size:18px}.brief-meta{margin-top:18px;font-size:15px;color:var(--brief-muted);line-height:1.7}.brief-meta a{color:inherit;text-decoration:underline}.brief-section{margin-top:44px}
+.brief-feature{padding:24px 26px;background:var(--brief-sky);border-radius:22px;margin:18px 0}.brief-feature h3{font-size:22px}.brief-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;align-items:stretch;margin:18px 0}.brief-card{padding:22px 24px;border-radius:21px;background:var(--brief-mint);min-width:0}.brief-card p{font-size:18px;line-height:1.65}.brief-feature[data-tone="yellow"],.brief-card[data-tone="yellow"]{background:var(--brief-yellow)}.brief-feature[data-tone="lilac"],.brief-card[data-tone="lilac"]{background:var(--brief-lilac)}.brief-feature[data-tone="coral"],.brief-card[data-tone="coral"]{background:var(--brief-coral)}.brief-feature[data-tone="mint"],.brief-card[data-tone="mint"]{background:var(--brief-mint)}.brief-card[data-tone="sky"]{background:var(--brief-sky)}
+.brief-condition{padding:4px 0;background:transparent;display:block;margin:14px 0;font-size:18px}.brief-condition>strong{margin-right:8px}.brief-condition p{display:inline;margin:0}.brief-flow{display:grid;grid-template-columns:1fr;gap:16px;list-style:none;padding:0;margin:20px 0;counter-reset:brief-step}.brief-step{padding:8px 8px 4px;background:transparent;counter-increment:brief-step;min-width:0}.brief-step::before{content:counter(brief-step);display:block;font-size:18px;font-weight:650;line-height:1;margin-bottom:12px;color:#334660}.brief-step h3{font-size:22px}.brief-step p{font-size:18px}
+.brief-feature-split{display:grid;grid-template-columns:1fr 260px;gap:26px;align-items:center}.brief-frequencies{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}.brief-frequencies>span{font-family:ui-monospace,monospace;text-align:center;background:#ffffffa8;border-radius:14px;padding:9px 0;font-size:21px;font-weight:650}.brief-frequencies small{font-size:18px}.brief-measure{font-size:18px;margin-top:9px;color:#40577a}.brief-path{display:grid;grid-template-columns:1fr 58px 1fr 58px 1fr;align-items:stretch;margin:20px 0}.brief-path>.brief-step::before{display:none}.brief-path .brief-step h3{font-size:18px}.brief-connector{align-self:center;text-align:center;font-size:18px;line-height:1.5;color:#40577a}.brief-connector b{display:block;font-size:26px;line-height:1.2;font-weight:400}.brief-minor-pair{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px}.brief-minor-pair h3{font-size:18px}.brief-minor-pair p{font-size:18px;color:var(--brief-ink)}.brief-context span{display:inline-block;padding:3px 8px;border-radius:8px;background:#ffffff99;margin-right:6px}.brief-context i{font-style:normal;margin-right:6px}.brief-example{font-size:18px;color:var(--brief-ink);margin-top:7px}.brief-usecase small{display:block;font-size:18px;color:#42536b;margin-bottom:4px}
+.brief-facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;padding:16px;margin:22px 0;background:#f1f6fc;border:1px solid #dde6ee;border-radius:16px}.brief-fact{padding:8px 10px;min-width:0}.brief-fact strong{display:block;font-size:26px;line-height:1.35;margin-bottom:8px;font-variant-numeric:tabular-nums}.brief-fact span{display:block;font-size:18px}.brief-feedback{display:flex;align-items:baseline;gap:18px;padding:13px 0;margin:18px 0;font-size:18px}.brief-feedback>strong{flex-shrink:0}.brief-note{margin:18px 0;padding-top:4px;display:block;font-size:18px;color:var(--brief-ink)}.brief-note>strong{color:var(--brief-ink);margin-right:8px}.brief-note p{display:inline}.brief-caption{margin-top:8px;font-size:18px;color:var(--brief-ink)}
+.brief-list{padding-left:1.2em;margin:12px 0}.brief-list>li+li{margin-top:8px}.brief-list>li::marker{color:var(--brief-blue)}.brief-table{border-collapse:separate;border-spacing:0;width:100%;max-width:100%;margin:18px 0;font-size:18px;line-height:1.6}.brief-table th,.brief-table td{text-align:left;vertical-align:top;padding:12px 14px;border-bottom:1px solid var(--brief-line)}.brief-table th{background:var(--brief-lilac)}.brief-table tbody tr:nth-child(even){background:#f4f7fc}.brief-map{margin:18px 0}.brief-map svg{display:block;width:100%;height:auto}.brief-map text{fill:var(--brief-ink);font-family:inherit;font-size:20px}.brief-map figcaption{margin-top:8px;font-size:18px;color:var(--brief-ink)}.brief-usecase{margin-top:12px;font-size:18px}.brief-usecase strong{display:block;margin-bottom:5px}.brief-context{padding:0;margin:12px 0 16px;font-size:18px}
+/* Two short label columns followed by two explanation columns; opt in only for this structure. */
+.brief-table-wrap{overflow-x:auto}
+.brief-table[data-layout="labels"]{table-layout:fixed;min-width:760px}
+.brief-table[data-layout="labels"] th,.brief-table[data-layout="labels"] td{padding:14px 16px;overflow-wrap:break-word;word-break:normal}
+.brief-table[data-layout="labels"] th:nth-child(1){width:16%}.brief-table[data-layout="labels"] th:nth-child(2){width:10%}.brief-table[data-layout="labels"] th:nth-child(3){width:38%}.brief-table[data-layout="labels"] th:nth-child(4){width:36%}
+.brief-table[data-layout="labels"] :is(th,td):nth-child(-n+2){white-space:nowrap}
+.brief-table[data-layout="labels"] :is(th,td):nth-child(3){border-right:1px solid var(--brief-line)}
+
+code{font-family:ui-monospace,monospace;font-size:.9em}pre{white-space:pre-wrap;overflow-wrap:anywhere;padding:16px;background:#f3f5fa;border-radius:12px}details{margin-top:30px;padding-top:18px;border-top:1px solid var(--brief-line);font-size:13px;color:var(--brief-muted)}.brief-intro+details{margin-top:0;padding:0 0 18px;border-top:0;border-bottom:1px solid var(--brief-line)}summary{cursor:pointer;color:var(--brief-ink);width:fit-content}details[open] summary{margin-bottom:12px}.video-description-text{white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}.brief-footer{display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-top:26px;font-size:14px;color:var(--brief-muted)}.brief-footer a{color:inherit;text-decoration:underline}
+@media print{body{background:#fff}.brief-paper{margin:0 auto;border-radius:0}.brief-card,.brief-step,.brief-feature{break-inside:avoid}h2,h3{break-after:avoid}}
+
+/* Selected compact expressions: A2, A3, B1, B3, B4. */
+.brief-branch-group{margin:24px 0}.brief-branch-origin{display:flex;align-items:center;gap:16px;font-weight:750;margin-bottom:18px}.brief-branch-origin::after{content:"";height:1px;background:var(--brief-line);flex:1}.brief-branches{display:grid;grid-template-columns:1fr 1fr;gap:28px}.brief-branch{padding-left:18px;border-left:2px solid #c9dff5;min-width:0}.brief-branch:nth-child(2){border-color:#dfd5f0}.brief-branch-label{color:#42657f;font-size:18px;font-weight:650;margin-bottom:8px}.brief-branch h3{font-size:22px}
+.brief-change{display:grid;grid-template-columns:1fr 40px 1fr 1.2fr;gap:16px;align-items:center;margin:22px 0}.brief-change-label{display:block;font-size:18px}.brief-change-value{font-size:28px;font-weight:750;font-variant-numeric:tabular-nums}.brief-change-arrow{font-size:28px;color:var(--brief-blue)}.brief-change-result{border-left:1px solid var(--brief-line);padding-left:22px}.brief-change-result strong{font-size:24px;background:linear-gradient(transparent 65%,var(--brief-yellow) 65%)}
+.brief-open-card{position:relative;padding:24px 26px;margin:24px 0;background:#fff}.brief-open-card::before,.brief-open-card::after{content:"";position:absolute;width:28px;height:28px;border-style:solid;border-color:#b8d2e4;pointer-events:none}.brief-open-card::before{left:0;top:0;border-width:2px 0 0 2px}.brief-open-card::after{right:0;bottom:0;border-width:0 2px 2px 0}.brief-boundary{display:grid;grid-template-columns:max-content 1fr;gap:12px 20px;margin:16px 0}.brief-boundary dt{font-weight:750;max-width:8em}.brief-boundary dd{margin:0;min-width:0}
+.brief-case-card{border:1px solid var(--brief-line);border-radius:12px;margin:24px 0}.brief-case-card>h3{padding:22px 24px 16px;margin:0}.brief-case-params{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;background:#f1f6fc;padding:16px 24px}.brief-case-params span{display:block;font-size:18px}.brief-case-params strong{font-size:20px}.brief-case-result{position:relative;padding:22px 24px 22px 58px}.brief-case-result::before{content:"↳";position:absolute;left:24px;top:20px;font-size:24px;color:var(--brief-blue)}.brief-case-result>strong{font-size:22px}.brief-case-result p{margin-top:6px}
+.brief-fold-card{position:relative;background:var(--brief-yellow);padding:24px 28px;margin:24px 0;border-radius:4px}.brief-fold-card::before{content:"";position:absolute;right:0;top:0;width:0;height:0;border-style:solid;border-width:0 30px 30px 0;border-color:transparent #fff #f0dfa0 transparent;pointer-events:none}.brief-fold-card h3{padding-right:18px}.brief-fold-scope{margin:16px 0;font-weight:750;font-size:22px}.brief-fold-card p{font-size:18px}
+
+/* Events have an axis; watch items expose conditions and consequences. */
+.brief-timeline{position:relative;list-style:none;margin:26px 0;padding:0 0 18px;--brief-axis:22px}.brief-timeline::before{content:"";position:absolute;left:var(--brief-axis);top:14px;bottom:12px;width:2px;background:#9db6c9;transform:translateX(-50%)}.brief-timeline::after{content:"";position:absolute;left:var(--brief-axis);bottom:0;border:7px solid transparent;border-top:12px solid #9db6c9;border-bottom:0;transform:translateX(-50%)}.brief-timeline>li{position:relative;padding:0 0 26px 62px;min-width:0}.brief-timeline>li::before{content:"";position:absolute;left:22px;top:12px;width:14px;height:14px;background:#fff;border:3px solid #7698b3;border-radius:50%;transform:translateX(-50%)}.brief-time-body time{display:block;font-size:18px;font-weight:750;color:#42657f;margin-bottom:8px}.brief-time-body h3{font-size:22px}.brief-time-body p{font-size:18px}.brief-timeline[data-layout="alternating"]{--brief-axis:50%}.brief-timeline[data-layout="alternating"]>li{display:grid;grid-template-columns:minmax(0,1fr) 58px minmax(0,1fr);padding:0 0 18px}.brief-timeline[data-layout="alternating"]>li::before{left:50%;top:23px}.brief-timeline[data-layout="alternating"]>li::after{content:"";position:absolute;top:30px;left:calc(50% - 29px);width:22px;height:1px;background:#9db6c9}.brief-timeline[data-layout="alternating"]>li:nth-child(even)::after{left:calc(50% + 7px)}.brief-timeline[data-layout="alternating"] .brief-time-body{grid-column:1;padding:16px 20px;background:#f1f6fc;border-radius:12px}.brief-timeline[data-layout="alternating"]>li:nth-child(even) .brief-time-body{grid-column:3;background:#f2f7f4}
+.brief-watch{margin:24px 0;display:grid;gap:14px}.brief-watch-item{padding:20px 22px;border:1px solid #dde6ee;border-radius:12px;background:#fff}.brief-watch-item h3{font-size:22px;margin-bottom:12px}.brief-watch-body{display:grid;grid-template-columns:1fr 1fr;gap:22px}.brief-watch-body>div{min-width:0}.brief-watch-label{display:block;font-size:18px;font-weight:750;color:#42657f;margin-bottom:6px}.brief-watch-item:nth-child(even){background:#f1f6fc}
+
+/* Dimensions follow the actual item count; multi-row groups share a heading without tree lines. */
+.brief-topic{margin:32px 0}.brief-topic-title{display:flex;align-items:center;gap:14px;margin-bottom:16px;font-size:22px}.brief-topic-title::after{content:"";height:1px;background:var(--brief-line);flex:1}.brief-topic-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:28px}.brief-topic-pair>div{min-width:0}.brief-topic-pair>div+div{border-left:2px solid #c9dff5;padding-left:24px}.brief-topic-pair h4{font-size:22px;margin:0 0 10px}
+.brief-dimension-group{--dimension-count:3;--dimension-gap:16px;background:#fff;border:1px solid #e8e2ef;border-radius:16px;padding:0 24px 24px;margin:32px 0;overflow:hidden}.brief-dimension-group:has(>.brief-dimensions>.brief-dimension:only-child){--dimension-count:1}.brief-dimension-group:has(>.brief-dimensions>.brief-dimension:nth-child(2):last-child){--dimension-count:2}.brief-dimension-group>h3{text-align:center;font-size:22px;margin:0 -24px;padding:18px 24px;background:#eee7f7;color:#584368}.brief-dimension-tree{height:38px;position:relative;margin:0 calc((100% - (var(--dimension-count) - 1)*var(--dimension-gap))/(2*var(--dimension-count)));border-bottom:2px solid #b6a6d5}.brief-dimension-tree::before{content:"";position:absolute;left:50%;height:100%;border-left:2px solid #b6a6d5;transform:translateX(-50%)}.brief-dimensions{display:grid;grid-template-columns:repeat(var(--dimension-count),minmax(0,1fr));gap:var(--dimension-gap)}.brief-dimension{position:relative;padding:20px 14px 8px;min-width:0}.brief-dimension::before{content:"";position:absolute;left:50%;top:-2px;height:14px;border-left:2px solid #b6a6d5;transform:translateX(-50%)}.brief-dimension h4{text-align:center;font-size:22px;margin:4px 0 10px;color:#675078}.brief-dimension p{font-size:18px}.brief-dimension-group>p{margin-top:22px;padding-top:18px;border-top:1px solid #cfc2e8}
+/* Four or more dimensions use two readable columns, without disconnected branches. */
+.brief-dimension-group:has(>.brief-dimensions>.brief-dimension:nth-child(n+4)){--dimension-count:2}.brief-dimension-group:has(>.brief-dimensions>.brief-dimension:nth-child(n+4))>.brief-dimension-tree{display:none}.brief-dimension-group:has(>.brief-dimensions>.brief-dimension:nth-child(n+4))>.brief-dimensions{margin-top:20px;row-gap:24px}.brief-dimension-group:has(>.brief-dimensions>.brief-dimension:nth-child(n+4))>.brief-dimensions>.brief-dimension{padding-top:0}.brief-dimension-group:has(>.brief-dimensions>.brief-dimension:nth-child(n+4))>.brief-dimensions>.brief-dimension::before{display:none}.brief-dimension-group:has(>.brief-dimensions>.brief-dimension:nth-child(n+4)) .brief-dimension h4{text-align:left}
+
+.b2t-report-links{display:flex;align-items:center;gap:10px 20px;flex-wrap:wrap;margin-top:14px;font-size:12px;line-height:1.6;color:#64748b}.b2t-report-links a{color:inherit;text-decoration:underline;text-underline-offset:3px;overflow-wrap:anywhere}.b2t-report-links>span{min-width:0}.b2t-report-links .b2t-project-link{display:inline-flex;align-items:center;gap:6px}.b2t-project-link svg{flex-shrink:0}
+</style>
+</head>
+<body><main class="brief-paper">
+<header class="brief-intro">
+<h1>{{TITLE}}</h1>
+<!-- 副标题无新增角度时删除。导语固定保留，简短交代对象与核心问题，不预先复述正文。 -->
+<p class="brief-subtitle">{{SUBTITLE}}</p>
+<p class="brief-lead">{{LEAD}}</p>
+<!-- 平台；UP 主；《原视频完整标题》；完整可见且可点击的原视频 URL。只省略缺失字段。 -->
+<p class="brief-meta">{{ATTRIBUTION}}</p>
+<div class="b2t-report-links">
+<span>转录网址：<a href="http://b2t.kkkzoz.top:27676/#/process" target="_blank" rel="noopener noreferrer">http://b2t.kkkzoz.top:27676/#/process</a></span>
+<a class="b2t-project-link" href="https://github.com/KKKZOZ/bilibili2text" target="_blank" rel="noopener noreferrer" aria-label="GitHub 项目 KKKZOZ/bilibili2text"><svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 .75a11.25 11.25 0 0 0-3.56 21.92c.56.1.77-.24.77-.54v-2.1c-3.13.68-3.79-1.33-3.79-1.33-.51-1.3-1.25-1.65-1.25-1.65-1.02-.7.08-.69.08-.69 1.13.08 1.72 1.16 1.72 1.16 1 1.72 2.64 1.22 3.28.93.1-.73.39-1.22.71-1.5-2.5-.28-5.13-1.25-5.13-5.56 0-1.23.44-2.23 1.16-3.02-.12-.28-.5-1.43.11-2.98 0 0 .95-.3 3.1 1.16a10.8 10.8 0 0 1 5.63 0c2.15-1.46 3.1-1.16 3.1-1.16.61 1.55.23 2.7.11 2.98.72.79 1.16 1.79 1.16 3.02 0 4.32-2.63 5.27-5.14 5.55.4.35.76 1.04.76 2.1v3.09c0 .3.2.65.77.54A11.25 11.25 0 0 0 12 .75Z"/></svg><span>KKKZOZ/bilibili2text</span></a>
+</div>
+</header>
+{{VIDEO_DESCRIPTION}}
+{{BODY}}
+<details><summary>来源与处理说明</summary>{{SOURCES}}</details>
+<footer class="brief-footer"><span>视频报告·速览</span><a href="https://github.com/KKKZOZ/bilibili2text">b2t</a></footer>
+</main></body>
+</html>
+<!-- BRIEF_EXAMPLES_START
+以下均为合成组件样例，不是正文目录或本次来源事实。根据真实信息关系选用，不要求全部出现；删除示例注释，替换真实内容与来源 ID。每种结构承载自己的判断、依据和限定，不在相邻正文重复解释。保持标题编号、正文18px与无时间戳约定。
+
+<section class="brief-section"><h2>先理解作用边界</h2>
+<div class="brief-branch-group" data-source-units="example-001"><div class="brief-branch-origin">增加输入校验</div><div class="brief-branches"><div class="brief-branch"><div class="brief-branch-label">可以识别</div><h3>格式问题</h3><p>必填字段缺失或格式错误时，提示修正。</p></div><div class="brief-branch"><div class="brief-branch-label">不能直接证明</div><h3>内容真实性</h3><p>格式通过不代表内容真实，仍需核对来源。</p></div></div></div>
+<article class="brief-open-card" data-source-units="example-002"><h3>本地预览检查版面</h3><p>预览可以检查版面是否正确呈现，内容仍需另行审核。</p></article>
+</section>
+
+<section class="brief-section"><h2>变化需要带上比较口径</h2>
+<p data-source-units="example-003">合成算例：同一设备、同一输入下的一次处理观测。</p>
+<div class="brief-change" data-source-units="example-003"><div><span class="brief-change-label">调整前</span><strong class="brief-change-value">200 ms</strong></div><span class="brief-change-arrow" aria-hidden="true">→</span><div><span class="brief-change-label">调整后</span><strong class="brief-change-value">160 ms</strong></div><div class="brief-change-result"><span class="brief-change-label">本次差值</span><strong>减少 40 ms</strong></div></div>
+</section>
+
+<section class="brief-section"><h2>结果与参数一起阅读</h2>
+<article class="brief-case-card" data-source-units="example-004"><h3>文件总大小如何得到</h3><div class="brief-case-params"><div><span>文件数量</span><strong>3 个</strong></div><div><span>每个文件</span><strong>2 MB</strong></div><div><span>统计范围</span><strong>仅文件内容</strong></div></div><div class="brief-case-result"><strong>内容合计 6 MB</strong><p>此合成算例不包含文件系统额外开销。</p></div></article>
+<article class="brief-fold-card" data-source-units="example-005"><h3>作者建议先小范围试用</h3><p>探索阶段先用少量样本试用，再决定是否扩大使用范围。</p></article>
+</section>
+
+<section class="brief-section"><h2>一组关键数字</h2>
+<div class="brief-facts"><div class="brief-fact" data-source-units="example-006"><strong>3 个</strong><span>参与本次演示的文件</span></div><div class="brief-fact" data-source-units="example-006"><strong>2 MB</strong><span>每个文件的内容大小</span></div><div class="brief-fact" data-source-units="example-006"><strong>6 MB</strong><span>合成算例中的内容合计</span></div></div>
+<div class="brief-pair"><article class="brief-card" data-tone="sky" data-source-units="example-007"><h3>校验之前</h3><p>先核对输入格式及必填字段，避免缺失材料。</p></article><article class="brief-card" data-tone="mint" data-source-units="example-007"><h3>校验之后</h3><p>通过后再提交任务。</p></article></div>
+</section>
+<section class="brief-section"><h2>事件沿时间轴推进</h2>
+<!-- 默认左轴适合较长说明；data-layout="alternating" 为中轴左右交替，按正文长度选择。日期为事件日期，不是视频来源时间戳。 -->
+<ol class="brief-timeline" data-layout="alternating">
+<li data-source-units="example-008"><div class="brief-time-body"><time>周一</time><h3>发现问题</h3><p>样本显示部分输入缺失关键字段。</p></div></li>
+<li data-source-units="example-009"><div class="brief-time-body"><time>周二</time><h3>调整校验</h3><p>新增字段检查，并保留具体错误说明。</p></div></li>
+<li data-source-units="example-010"><div class="brief-time-body"><time>周五</time><h3>再次观察</h3><p>核对是否解决原来的缺失问题。</p></div></li>
+</ol>
+</section>
+<section class="brief-section"><h2>后续观察条件</h2>
+<div class="brief-watch">
+<article class="brief-watch-item" data-source-units="example-011"><h3>输入质量</h3><p>若仍有字段缺失，需要检查输入环节；格式通过也不能证明内容真实。</p></article>
+<article class="brief-watch-item" data-source-units="example-012"><h3>处理速度</h3><p>目前只观测了同一输入条件下的一次处理，更换设备或任务规模后是否仍有提速，还需实测。</p></article>
+</div>
+</section>
+
+<section class="brief-section"><h2>整理资料与准备分享</h2>
+<div class="brief-topic"><h3 class="brief-topic-title">先整理资料</h3><p data-source-units="example-013">将同一主题的材料放在一起，保留各自来源，方便查找。</p></div>
+<div class="brief-dimension-group" data-source-units="example-014"><h3>分享前的三项准备</h3><div class="brief-dimension-tree" aria-hidden="true"></div><div class="brief-dimensions">
+<div class="brief-dimension"><h4>内容</h4><p>选出与本次主题有关的材料。</p></div>
+<div class="brief-dimension"><h4>来源</h4><p>附上材料出处，方便读者回查。</p></div>
+<div class="brief-dimension"><h4>呈现</h4><p>检查标题和图文是否清楚可读。</p></div>
+</div></div>
+</section>
+
+<section class="brief-section"><h2>比较处理方式</h2>
+<!-- 仅适用于前两列为短标签、后两列为说明的四列表格。其他结构不要套用该列宽。 -->
+<div class="brief-table-wrap" role="region" aria-label="处理方式对照，可横向滚动" tabindex="0"><table class="brief-table" data-layout="labels">
+<thead><tr><th scope="col">方式</th><th scope="col">对象</th><th scope="col">操作</th><th scope="col">结果</th></tr></thead>
+<tbody><tr data-source-units="example-015"><td><strong>格式校验</strong></td><td>文本</td><td>检查必填字段是否存在，保留原始内容。</td><td>指出缺失字段，不据此判断内容真实性。</td></tr>
+<tr data-source-units="example-016"><td><strong>人工核对</strong></td><td>图表</td><td>对照来源检查数字、单位与必要条件。</td><td>记录具体疑点，无法确认时保留不确定性。</td></tr></tbody>
+</table></div>
+</section>
+BRIEF_EXAMPLES_END -->

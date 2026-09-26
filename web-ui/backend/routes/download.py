@@ -11,6 +11,7 @@ from fastapi.responses import HTMLResponse, PlainTextResponse, StreamingResponse
 from b2t.converter.converter import ConversionFormat, convert_file
 from b2t.converter.md_remove_table import MarkdownRemoveTableConverter
 from b2t.converter.md_to_png import MarkdownToPngConverter
+from b2t.report.generate import REPORT_CSP
 from b2t.storage import ArtifactKind, StoredArtifact
 from b2t.storage.base import resolve_artifact_kind
 from backend.artifacts import materialize_artifact, sibling_storage_key
@@ -394,7 +395,10 @@ def preview_rendered_html(
         return HTMLResponse(
             html,
             headers={
-                "Content-Disposition": f"inline; filename*=UTF-8''{quoted_filename}"
+                "Content-Disposition": f"inline; filename*=UTF-8''{quoted_filename}",
+                "Content-Security-Policy": REPORT_CSP + "; sandbox allow-popups",
+                "Referrer-Policy": "no-referrer",
+                "X-Content-Type-Options": "nosniff",
             },
         )
 

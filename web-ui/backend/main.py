@@ -17,6 +17,7 @@ from backend.routes.health import router as health_router
 from backend.routes.history import router as history_router
 from backend.routes.process import router as process_router
 from backend.routes.rag import router as rag_router
+from backend.routes.report import router as report_router
 from backend.routes.runtime_routes import router as runtime_router
 from backend.routes.summary import router as summary_router
 from backend.task_queue import shutdown_task_queues
@@ -60,4 +61,5 @@ app.include_router(config_router)
 app.include_router(history_router)
 app.include_router(download_router)
 app.include_router(summary_router)
+app.include_router(report_router)
 app.include_router(rag_router)

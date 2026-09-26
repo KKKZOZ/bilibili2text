@@ -13,6 +13,7 @@
   import FileList from '../FileList.vue'
   import InlineNotice from '../common/InlineNotice.vue'
   import HistorySummaryConfig from './HistorySummaryConfig.vue'
+  import HistoryReportConfig from './HistoryReportConfig.vue'
   import {
     formatTime,
     resourceAuthorLabel,
@@ -31,6 +32,9 @@
     profiles: { type: Array, default: () => [] },
     presets: { type: Array, default: () => [] },
     regenerateLoading: Boolean,
+    reportLoading: Boolean,
+    reportError: { type: String, default: '' },
+    defaultReportProfile: { type: String, default: '' },
     requiresApiKey: Boolean,
     customPromptTemplate: { type: String, default: '' },
     fallbackPromptTemplate: { type: String, default: '' },
@@ -52,6 +56,7 @@
     'update:selectedProfile',
     'update:selectedPreset',
     'regenerate',
+    'generateReport',
     'generateFancy',
     'artifactDeleted',
     'artifactGenerated'
@@ -110,23 +115,42 @@
         </button>
       </div>
 
-      <HistorySummaryConfig
+      <div
         v-if="detail.record_type !== 'rag_query'"
-        :selected-profile="selectedProfile"
-        :selected-preset="selectedPreset"
-        :profiles="profiles"
-        :presets="presets"
-        :loading="regenerateLoading"
-        :requires-api-key="requiresApiKey"
-        :custom-prompt-template="customPromptTemplate"
-        :fallback-prompt-template="fallbackPromptTemplate"
-        :custom-preset-value="customPresetValue"
-        :error="regenerateError"
-        :success="regenerateSuccess"
-        @update:selected-profile="emit('update:selectedProfile', $event)"
-        @update:selected-preset="emit('update:selectedPreset', $event)"
-        @regenerate="emit('regenerate')"
-      />
+        class="history-generation-columns"
+      >
+        <HistorySummaryConfig
+          :selected-profile="selectedProfile"
+          :selected-preset="selectedPreset"
+          :profiles="profiles"
+          :presets="presets"
+          :loading="regenerateLoading"
+          :requires-api-key="requiresApiKey"
+          :custom-prompt-template="customPromptTemplate"
+          :fallback-prompt-template="fallbackPromptTemplate"
+          :custom-preset-value="customPresetValue"
+          :error="regenerateError"
+          :success="regenerateSuccess"
+          @update:selected-profile="emit('update:selectedProfile', $event)"
+          @update:selected-preset="emit('update:selectedPreset', $event)"
+          @regenerate="emit('regenerate')"
+        />
+        <HistoryReportConfig
+          :key="detail.run_id"
+          :profiles="profiles"
+          :default-profile="defaultReportProfile"
+          :loading="
+            reportLoading ||
+            ['pending', 'running'].includes(detail.fancy_html_status)
+          "
+          :status="detail.fancy_html_status"
+          :error="reportError || detail.fancy_html_error || ''"
+          :has-transcript="
+            detail.artifacts?.some((item) => item.kind === 'markdown')
+          "
+          @generate="emit('generateReport', $event)"
+        />
+      </div>
 
       <div v-if="detail.record_type === 'rag_query'" class="rag-preview">
         <div class="rag-preview-head">
@@ -239,6 +263,48 @@
 </template>
 
 <style scoped>
+  .history-generation-columns {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 28px;
+    align-items: start;
+  }
+  .history-generation-columns > * {
+    min-width: 0;
+  }
+  @media (min-width: 1001px) {
+    .history-generation-columns {
+      grid-template-rows: auto auto auto auto;
+      row-gap: 16px;
+    }
+    .history-generation-columns > * {
+      grid-row: 1 / span 4;
+      grid-template-rows: subgrid;
+      align-items: start;
+    }
+    .history-generation-columns > :first-child {
+      grid-column: 1;
+    }
+    .history-generation-columns > :last-child {
+      grid-column: 2;
+    }
+    .history-generation-columns :deep(.history-regenerate-grid),
+    .history-generation-columns :deep(.report-options) {
+      align-items: start;
+    }
+    .history-generation-columns :deep(.mode-trigger span) {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+  @media (max-width: 1000px) {
+    .history-generation-columns {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 0;
+    }
+  }
+
   .history-detail {
     padding: 28px;
     border: 1px solid var(--line);

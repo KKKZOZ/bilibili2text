@@ -1,0 +1,6 @@
+FROM node:22-bookworm-slim
+RUN npm install --global @earendil-works/pi-coding-agent@0.85.0 \
+    && npm cache clean --force
+ENV PI_OFFLINE=1 PI_TELEMETRY=0
+WORKDIR /work
+ENTRYPOINT ["pi"]

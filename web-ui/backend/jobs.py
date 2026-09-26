@@ -10,6 +10,7 @@ def _create_job(
     summary_profile: str | None,
     summary_prompt_template: str | None,
     auto_generate_fancy_html: bool,
+    report_options: dict | None = None,
 ) -> dict[str, JobValue]:
     return job_repository.create(
         skip_summary=skip_summary,
@@ -17,6 +18,7 @@ def _create_job(
         summary_profile=summary_profile,
         summary_prompt_template=summary_prompt_template,
         auto_generate_fancy_html=auto_generate_fancy_html,
+        report_options=report_options or {},
     )
 
 

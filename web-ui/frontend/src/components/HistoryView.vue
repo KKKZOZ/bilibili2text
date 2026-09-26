@@ -17,6 +17,7 @@
     useSummaryConfig,
     withCustomSummaryPreset
   } from '../composables/useSummaryConfig'
+  import { resourceUrl } from '../utils/fileUtils'
   import { extractRagReferenceItems, renderMarkdown } from '../utils/markdown'
 
   const route = useRoute()
@@ -31,6 +32,7 @@
     summaryDefaultPreset,
     summaryDefaultPromptTemplate,
     summaryProfiles,
+    defaultReportProfile,
     selectedSummaryPreset,
     selectedSummaryProfile
   } = useSummaryConfig()
@@ -61,6 +63,8 @@
   const showHistoryDetail = ref(false)
   const deleteConfirmRunId = ref(null)
   const deleteLoading = ref(false)
+  const reportRequestLoading = ref(false)
+  const reportRequestError = ref('')
   const regenerateRequestLoading = ref(false)
   const regenerateError = ref('')
   const regenerateSuccess = ref('')
@@ -274,6 +278,7 @@
     historyDetailLoading.value = true
     showHistoryDetail.value = true
     historyDetail.value = null
+    reportRequestError.value = ''
     ragAnswerMarkdown.value = ''
     ragAnswerError.value = ''
     ragFancyHtmlError.value = ''
@@ -447,6 +452,35 @@
         }
       }
     })
+  }
+
+  const generateReadingReport = async (options) => {
+    const detail = historyDetail.value
+    if (!detail || reportRequestLoading.value) return
+    const runId = detail.run_id
+    reportRequestLoading.value = true
+    reportRequestError.value = ''
+    try {
+      const data = await historyApi.generateReport(runId, {
+        report_options: options,
+        source_url: resourceUrl(detail.bvid, detail.page) || '',
+        api_key: requiresApiKey.value ? getApiKey() || null : null,
+        deepseek_api_key: requiresApiKey.value
+          ? getDeepseekApiKey() || null
+          : null,
+        ...getCustomLlmPayload(requiresApiKey.value)
+      })
+      if (historyDetail.value?.run_id !== runId) return
+      historyDetail.value = data
+      syncRagFancyHtmlUpdates()
+    } catch (err) {
+      if (historyDetail.value?.run_id === runId) {
+        reportRequestError.value =
+          err instanceof Error ? err.message : '生成阅读报告失败'
+      }
+    } finally {
+      reportRequestLoading.value = false
+    }
   }
 
   const generateRagFancyHtml = async () => {
@@ -770,6 +804,9 @@
       :profiles="summaryProfiles"
       :presets="historyPresetOptions"
       :regenerate-loading="regenerateLoading"
+      :default-report-profile="defaultReportProfile"
+      :report-loading="reportRequestLoading"
+      :report-error="reportRequestError"
       :requires-api-key="requiresApiKey"
       :custom-prompt-template="getSummaryTemplate(summaryDefaultPromptTemplate)"
       :fallback-prompt-template="summaryDefaultPromptTemplate"
@@ -789,6 +826,7 @@
       @update:selected-preset="selectedHistorySummaryPreset = $event"
       @regenerate="regenerateSummary(false)"
       @generate-fancy="generateRagFancyHtml"
+      @generate-report="generateReadingReport"
       @artifact-deleted="onHistoryArtifactDeleted"
       @artifact-generated="onHistoryArtifactGenerated"
     />

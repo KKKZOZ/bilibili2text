@@ -27,6 +27,7 @@ const summaryPresets = ref([])
 const summaryDefaultPreset = ref('')
 const summaryDefaultPromptTemplate = ref('')
 const summaryProfiles = ref([])
+const defaultReportProfile = ref('')
 const selectedSummaryPreset = ref('')
 const selectedSummaryProfile = ref('')
 const summaryPresetError = ref('')
@@ -98,6 +99,11 @@ const loadSummaryProfiles = async () => {
       }
     }
     summaryProfiles.value = profiles
+    defaultReportProfile.value =
+      data.default_report_profile ||
+      data.default_profile ||
+      profiles[0]?.name ||
+      ''
     if (profiles.length === 0) {
       selectedSummaryProfile.value = ''
       return
@@ -110,6 +116,7 @@ const loadSummaryProfiles = async () => {
   } catch (error) {
     console.error(error)
     summaryProfiles.value = []
+    defaultReportProfile.value = ''
     selectedSummaryProfile.value = ''
     summaryProfileError.value =
       error instanceof Error
@@ -144,6 +151,7 @@ export function useSummaryConfig() {
     summaryDefaultPreset: readonly(summaryDefaultPreset),
     summaryDefaultPromptTemplate: readonly(summaryDefaultPromptTemplate),
     summaryProfiles: readonly(summaryProfiles),
+    defaultReportProfile: readonly(defaultReportProfile),
     selectedSummaryPreset,
     selectedSummaryProfile,
     summaryPresetError: readonly(summaryPresetError),

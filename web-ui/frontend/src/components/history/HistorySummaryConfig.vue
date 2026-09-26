@@ -66,12 +66,18 @@
       <LoaderCircle v-if="loading" :size="16" class="spin" />
       <span>{{ loading ? '生成中...' : '重新生成总结' }}</span>
     </button>
-    <InlineNotice v-if="error">{{ error }}</InlineNotice>
-    <InlineNotice v-if="success" kind="success">{{ success }}</InlineNotice>
+    <div class="generation-feedback">
+      <InlineNotice v-if="error">{{ error }}</InlineNotice>
+      <InlineNotice v-if="success" kind="success">{{ success }}</InlineNotice>
+    </div>
   </div>
 </template>
 
 <style scoped>
+  .generation-feedback {
+    display: grid;
+    gap: 10px;
+  }
   .history-regenerate {
     display: grid;
     gap: 16px;

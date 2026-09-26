@@ -37,7 +37,7 @@ const writeActiveJobIds = (ids) => {
 const isJobActive = (job) => {
   if (['queued', 'running'].includes(job?.status)) return true
   return (
-    job?.status === 'succeeded' &&
+    job?.status !== 'cancelled' &&
     Boolean(job.auto_generate_fancy_html) &&
     ['pending', 'running'].includes(job.fancy_html_status || '')
   )

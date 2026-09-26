@@ -52,6 +52,15 @@ _postprocess_queue = BoundedTaskQueue(
 )
 
 
+_report_queue = BoundedTaskQueue(
+    max_workers=2, max_queued=8, thread_name_prefix="b2t-report"
+)
+
+
+def submit_report(fn, /, *args, **kwargs) -> Future:
+    return _report_queue.submit(fn, *args, **kwargs)
+
+
 def submit_job(fn, /, *args, **kwargs) -> Future:
     return _main_queue.submit(fn, *args, **kwargs)
 
@@ -61,6 +70,7 @@ def submit_postprocess(fn, /, *args, **kwargs) -> Future:
 
 
 def shutdown_task_queues() -> None:
+    _report_queue.shutdown()
     _main_queue.shutdown()
     _postprocess_queue.shutdown()
 

@@ -205,6 +205,7 @@ def run_pipeline(
     include_comments: bool = False,
     comment_limit: int | None = DEFAULT_COMMENT_LIMIT,
     cancellation_token: CancellationToken | None = None,
+    transcript_ready_callback: Callable[[dict[str, object]], None] | None = None,
 ) -> dict[str, StoredArtifact]:
     """Run the full transcription pipeline
 
@@ -224,6 +225,7 @@ def run_pipeline(
         prefer_bilibili_subtitle: Try Bilibili native subtitles before downloading
             audio. Ignored for local uploads.
         metadata_callback: Called as soon as source metadata is available.
+        transcript_ready_callback: Called with persisted source artifacts before summarization.
         comment_status_callback: Called with status, fetched top-level count,
             and fetched reply count while comments are processed.
         include_comments: Fetch platform comments and append summarized viewpoints
@@ -438,6 +440,58 @@ def run_pipeline(
         md_path = convert_json_to_md(json_path, min_length=config.converter.min_length)
         local_results["markdown"] = md_path
 
+        storage_prefix = f"{transcription_id}-{uuid4().hex[:8]}"
+
+        def persist_artifacts() -> None:
+            newly_stored: list[StoredArtifact] = []
+            try:
+                for artifact_key, artifact_path in local_results.items():
+                    if artifact_key in results:
+                        continue
+                    token.raise_if_cancelled()
+                    object_key = f"{storage_prefix}/{artifact_path.name}"
+
+                    def _store_artifact(
+                        path: Path = artifact_path,
+                        key: str = object_key,
+                    ) -> StoredArtifact:
+                        return storage_backend.store_file(
+                            path,
+                            object_key=key,
+                        )
+
+                    stored = token.run_if_active(_store_artifact)
+                    derived_from = ""
+                    if artifact_key == ArtifactKind.SUMMARY:
+                        derived_from = results["markdown"].storage_key
+                    elif artifact_key in {
+                        ArtifactKind.SUMMARY_TABLE_MD,
+                        ArtifactKind.SUMMARY_TIMELINE,
+                    }:
+                        derived_from = results["summary"].storage_key
+                    newly_stored.append(stored)
+                    results[artifact_key] = replace(
+                        stored,
+                        kind=artifact_key,
+                        derived_from=derived_from,
+                    )
+            except Exception:
+                for artifact in newly_stored:
+                    try:
+                        storage_backend.delete_file(artifact.storage_key)
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning(
+                            "清理未完成任务产物失败: %s: %s",
+                            artifact.storage_key,
+                            exc,
+                        )
+                raise
+
+        if transcript_ready_callback is not None:
+            persist_artifacts()
+            token.raise_if_cancelled()
+            transcript_ready_callback(dict(results))
+
         # 4. LLM Summarization
         if not skip_summary:
             token.raise_if_cancelled()
@@ -467,46 +521,7 @@ def run_pipeline(
             if summary_timeline_path is not None:
                 local_results["summary_timeline"] = summary_timeline_path
 
-        storage_prefix = f"{transcription_id}-{uuid4().hex[:8]}"
-        try:
-            for artifact_key, artifact_path in local_results.items():
-                token.raise_if_cancelled()
-                object_key = f"{storage_prefix}/{artifact_path.name}"
-
-                def _store_artifact(
-                    path: Path = artifact_path,
-                    key: str = object_key,
-                ) -> StoredArtifact:
-                    return storage_backend.store_file(
-                        path,
-                        object_key=key,
-                    )
-
-                stored = token.run_if_active(_store_artifact)
-                derived_from = ""
-                if artifact_key == ArtifactKind.SUMMARY:
-                    derived_from = results["markdown"].storage_key
-                elif artifact_key in {
-                    ArtifactKind.SUMMARY_TABLE_MD,
-                    ArtifactKind.SUMMARY_TIMELINE,
-                }:
-                    derived_from = results["summary"].storage_key
-                results[artifact_key] = replace(
-                    stored,
-                    kind=artifact_key,
-                    derived_from=derived_from,
-                )
-        except Exception:
-            for artifact in results.values():
-                try:
-                    storage_backend.delete_file(artifact.storage_key)
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning(
-                        "清理未完成任务产物失败: %s: %s",
-                        artifact.storage_key,
-                        exc,
-                    )
-            raise
+        persist_artifacts()
 
         emit_progress("completed", "处理完成", 100)
         logger.info(

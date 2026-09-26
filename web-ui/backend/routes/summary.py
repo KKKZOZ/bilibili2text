@@ -46,7 +46,8 @@ def generate_fancy_html(payload: GenerateFancyHtmlRequest) -> GenerateFancyHtmlR
 
     try:
         config = get_runtime_app_config(
-            require_public_api_key=True,
+            require_public_api_key=False,
+            user_credentials_only=True,
             **payload.runtime_config_kwargs(),
         )
         storage_backend = get_storage_backend()

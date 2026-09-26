@@ -12,6 +12,9 @@ from typing import Annotated
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 
+from b2t.config import resolve_summarize_model_profile
+from b2t.report.options import ReportOptions
+from b2t.report.pi import check_runtime, model_config
 from backend.event_stream import event_broker, job_channel
 from backend.job_store import JobCapacityError, job_manager
 from backend.jobs import _create_job, _get_job, _list_active_jobs
@@ -161,10 +164,14 @@ def _ensure_runtime_ready(
     custom_llm_api_key: str | None = None,
     custom_llm_model: str | None = None,
     summary_profile: str | None = None,
+    report_options: ReportOptions | None = None,
+    skip_summary: bool = False,
+    require_transcription_key: bool = True,
 ) -> None:
     try:
         config = get_runtime_app_config(
-            require_public_api_key=True,
+            require_public_api_key=require_transcription_key,
+            user_credentials_only=report_options is not None,
             api_key=api_key,
             deepseek_api_key=deepseek_api_key,
             custom_llm_base_url=custom_llm_base_url,
@@ -183,6 +190,19 @@ def _ensure_runtime_ready(
             status_code=503,
             detail=f"初始化配置失败: {exc}",
         ) from exc
+
+    if report_options is not None:
+        try:
+            check_runtime()
+            selected = report_options.profile.strip() or config.fancy_html.profile
+            model_config(
+                resolve_summarize_model_profile(config.summarize, override=selected),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+
+    if skip_summary:
+        return
 
     # Validate that the selected profile has a usable API key.
     profile_name = summary_profile or config.summarize.profile
@@ -214,6 +234,11 @@ def process_video(payload: ProcessRequest) -> ProcessStartResponse:
     _ensure_runtime_ready(
         **payload.runtime_config_kwargs(),
         summary_profile=summary_profile,
+        report_options=payload.report_options
+        if payload.auto_generate_fancy_html
+        else None,
+        skip_summary=payload.skip_summary,
+        require_transcription_key=False,
     )
 
     try:
@@ -223,6 +248,7 @@ def process_video(payload: ProcessRequest) -> ProcessStartResponse:
             summary_profile=summary_profile,
             summary_prompt_template=summary_prompt_template,
             auto_generate_fancy_html=payload.auto_generate_fancy_html,
+            report_options=payload.report_options.model_dump(),
         )
     except JobCapacityError as exc:
         raise HTTPException(status_code=429, detail=str(exc)) from None
@@ -254,6 +280,7 @@ def process_uploaded_audio(
     summary_profile: str | None = Form(default=None),
     summary_prompt_template: str | None = Form(default=None),
     auto_generate_fancy_html: bool = Form(default=False),
+    report_options: str = Form(default="{}"),
     api_key: str | None = Form(default=None),
     deepseek_api_key: str | None = Form(default=None),
     custom_llm_base_url: str | None = Form(default=None),
@@ -266,6 +293,9 @@ def process_uploaded_audio(
             detail="当前模式不允许直接上传文件，请改为输入视频 URL 或 BV 号",
         )
     try:
+        report_settings = ReportOptions.model_validate_json(
+            report_options if isinstance(report_options, str) else "{}"
+        )
         options = SummarySelectionRequest(
             summary_preset=summary_preset,
             summary_profile=summary_profile,
@@ -281,6 +311,8 @@ def process_uploaded_audio(
     _ensure_runtime_ready(
         **options.runtime_config_kwargs(),
         summary_profile=options.summary_profile,
+        report_options=report_settings if auto_generate_fancy_html else None,
+        skip_summary=skip_summary,
     )
 
     open_public = is_open_public_mode()
@@ -330,6 +362,7 @@ def process_uploaded_audio(
             summary_profile=cleaned_summary_profile,
             summary_prompt_template=cleaned_summary_prompt_template,
             auto_generate_fancy_html=auto_generate_fancy_html,
+            report_options=report_settings.model_dump(),
         )
     except JobCapacityError as exc:
         shutil.rmtree(temp_dir, ignore_errors=True)
@@ -377,7 +410,7 @@ def _process_response_is_active(response: ProcessStatusResponse) -> bool:
     if response.status in {"queued", "running"}:
         return True
     return (
-        response.status == "succeeded"
+        response.status != "cancelled"
         and response.auto_generate_fancy_html
         and (response.fancy_html_status in {"pending", "running"})
     )
@@ -443,12 +476,7 @@ async def process_events(job_id: str) -> StreamingResponse:
                     return
                 response = _to_process_status_response(job)
                 yield _serialize_sse("job", response.model_dump(mode="json"))
-                fancy_html_active = response.auto_generate_fancy_html and (
-                    response.fancy_html_status in {"pending", "running"}
-                )
-                if response.status in {"failed", "cancelled"} or (
-                    response.status == "succeeded" and not fancy_html_active
-                ):
+                if not _process_response_is_active(response):
                     return
                 while not await subscription.wait():
                     yield ": keep-alive\n\n"

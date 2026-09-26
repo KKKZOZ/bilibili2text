@@ -133,7 +133,7 @@
   <section class="download-layout">
     <article class="panel panel-download">
       <div class="download-card">
-        <template v-if="isDone">
+        <template v-if="isDone || downloadRows.length > 0">
           <p v-if="job.already_transcribed" class="cache-hit-note">
             <CheckCircle2 :size="16" />
             <span>{{
@@ -159,7 +159,7 @@
           </div>
           <p v-if="isFancyHtmlPending" class="cache-hit-note">
             <LoaderCircle :size="16" class="spin" />
-            <span>Fancy HTML 正在后台生成，稍后会自动加入文件列表。</span>
+            <span>阅读报告正在后台生成，稍后会自动加入文件列表。</span>
           </p>
           <InlineNotice
             v-else-if="
@@ -168,7 +168,7 @@
               job.fancy_html_error
             "
           >
-            Fancy HTML 自动生成失败：{{ job.fancy_html_error }}
+            阅读报告自动生成失败：{{ job.fancy_html_error }}
           </InlineNotice>
           <FileList
             :items="downloadRows"

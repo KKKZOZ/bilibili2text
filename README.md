@@ -44,7 +44,7 @@
 | 多平台输入 | 解析 Bilibili、小宇宙、喜马拉雅链接；Web UI 支持上传常见音频与视频文件 |
 | 语音转录 | 优先使用 Bilibili 原生字幕，并支持 Groq Whisper、阿里云 DashScope / Qwen ASR |
 | LLM 总结 | 通过 LiteLLM 兼容接口连接不同模型，支持总结模板、模型配置、评论观点与 UP 主术语上下文 |
-| 内容导出 | 生成 Markdown、TXT、PDF、PNG、HTML、表格和时间线等派生产物 |
+| 内容导出 | 生成 Markdown、TXT、PDF、PNG、HTML、表格和时间线等派生产物；可用 Pi 从完整转写生成精读/速览报告 |
 | 历史与检索 | 在 Web UI 中管理转录记录，并使用可选 RAG 知识库跨视频检索和问答 |
 | 存储后端 | 支持本地目录、MinIO 与阿里云 OSS |
 | 自动化 | 监控指定 Bilibili UP 主的新视频，自动转录总结，并通过飞书机器人发送通知 |
@@ -230,6 +230,9 @@ bun run dev --backend-port 8001
 
 ### Web UI
 
+新建转录页可独立开启「生成阅读报告」，选择精读/速览和报告模型，使用自己的 API Key。
+该功能替代视频总结的 Fancy HTML 生成；需先[安装 Pi 报告镜像](docs/reports.md)。
+
 Web UI 提供新建转录、实时进度、视频元数据、历史记录、总结版本管理、产物转换、API Key 配置与知识库问答等完整工作流。允许浏览器通知后，任务完成时可以从系统通知直接返回对应任务详情。
 
 ### CLI
@@ -411,6 +414,14 @@ bun run build
 </p>
 
 </details>
+
+## 致谢
+
+感谢以下开源项目为 b2t 提供支持与灵感：
+
+- [yutto](https://github.com/yutto-dev/yutto)：Bilibili 音视频下载。
+- [yfinance](https://github.com/ranaroussi/yfinance)：金融行情数据获取。
+- [video-report-agent](https://github.com/imexlovery/video-report-agent)：阅读报告的生成流程、Skill 与 HTML 模板。
 
 ## License
 

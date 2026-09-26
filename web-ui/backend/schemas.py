@@ -4,6 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from b2t.report.options import ReportOptions
 from b2t.summarize.llm import validate_summary_prompt_template
 
 
@@ -56,6 +57,7 @@ class SummarySelectionRequest(RuntimeCredentialsRequest):
 
 
 class ProcessRequest(SummarySelectionRequest):
+    report_options: ReportOptions = Field(default_factory=ReportOptions)
     url: str = Field(
         ...,
         min_length=1,
@@ -67,7 +69,7 @@ class ProcessRequest(SummarySelectionRequest):
     )
     auto_generate_fancy_html: bool = Field(
         default=False,
-        description="总结完成后是否自动异步生成 fancy HTML",
+        description="转录完成后是否异步生成 Pi 阅读报告",
     )
     prefer_bilibili_subtitle: bool = Field(
         default=True,
@@ -113,6 +115,7 @@ class ActiveJobsResponse(BaseModel):
 
 
 class ProcessStatusResponse(BaseModel):
+    report_options: ReportOptions = Field(default_factory=ReportOptions)
     job_id: str
     status: Literal["queued", "running", "succeeded", "failed", "cancelled"]
     skip_summary: bool = False
@@ -188,6 +191,7 @@ class SummaryProfileItemResponse(BaseModel):
 
 
 class SummaryProfileListResponse(BaseModel):
+    default_report_profile: str = ""
     default_profile: str
     selected_profile: str
     profiles: list[SummaryProfileItemResponse]
@@ -335,6 +339,11 @@ class HistoryRegenerateSummaryRequest(SummarySelectionRequest):
         default=False,
         description="确认覆盖相同模型配置与总结模板生成的已有结果",
     )
+
+
+class HistoryReportRequest(RuntimeCredentialsRequest):
+    report_options: ReportOptions = Field(default_factory=ReportOptions)
+    source_url: str = ""
 
 
 class GenerateFancyHtmlRequest(RuntimeCredentialsRequest):

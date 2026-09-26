@@ -274,7 +274,7 @@ def build_open_public_config(
             if not bailian_fallback_profile:
                 bailian_fallback_profile = name
         else:
-            public_summarize_profiles[name] = profile
+            public_summarize_profiles[name] = replace(profile, api_key="")
 
     if use_custom_llm:
         public_summarize_profiles[OPEN_PUBLIC_CUSTOM_LLM_PROFILE] = (
@@ -293,7 +293,7 @@ def build_open_public_config(
         selected_profile = bailian_fallback_profile
     elif config.summarize.profiles:
         selected_profile = next(iter(config.summarize.profiles))
-    fancy_html_profile = selected_profile
+    fancy_html_profile = config.fancy_html.profile
 
     public_summarize_config = SummarizeConfig(
         profile=selected_profile,
@@ -336,6 +336,7 @@ def build_open_public_config(
 def get_runtime_app_config(
     *,
     require_public_api_key: bool = False,
+    user_credentials_only: bool = False,
     api_key: str | None = None,
     deepseek_api_key: str | None = None,
     custom_llm_base_url: str | None = None,
@@ -346,12 +347,16 @@ def get_runtime_app_config(
     if not is_open_public_mode():
         return config
 
-    resolved_key = (api_key or "").strip() or get_public_api_key()
+    resolved_key = (api_key or "").strip() or (
+        "" if user_credentials_only else get_public_api_key()
+    )
     if require_public_api_key and not resolved_key:
         raise ValueError(
             "open-public 模式下请先在「API Key」页面配置阿里云 DashScope API Key"
         )
-    resolved_ds_key = (deepseek_api_key or "").strip() or get_public_deepseek_api_key()
+    resolved_ds_key = (deepseek_api_key or "").strip() or (
+        "" if user_credentials_only else get_public_deepseek_api_key()
+    )
     return build_open_public_config(
         config,
         resolved_key,

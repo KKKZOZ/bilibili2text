@@ -77,6 +77,7 @@ def summarize_profiles() -> SummaryProfileListResponse:
         for name, profile in config.summarize.profiles.items()
     ]
     return SummaryProfileListResponse(
+        default_report_profile=config.fancy_html.profile,
         default_profile=config.summarize.profile,
         selected_profile=config.summarize.profile,
         profiles=profiles,

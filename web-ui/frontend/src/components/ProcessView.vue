@@ -7,6 +7,7 @@
   import ProcessJobOutput from './process/ProcessJobOutput.vue'
   import ProcessSourceInput from './process/ProcessSourceInput.vue'
   import ProcessSummaryConfig from './process/ProcessSummaryConfig.vue'
+  import ProcessReportConfig from './process/ProcessReportConfig.vue'
   import ProcessVideoMetadata from './process/ProcessVideoMetadata.vue'
   import { processApi } from '../api'
   import { useJobStore } from '../composables/useJobStore'
@@ -38,6 +39,7 @@
     summaryPresets,
     summaryDefaultPromptTemplate,
     summaryProfiles,
+    defaultReportProfile,
     selectedSummaryPreset,
     selectedSummaryProfile,
     summaryPresetError,
@@ -65,6 +67,14 @@
   const enableSummary = ref(true)
   const preferBilibiliSubtitle = ref(true)
   const autoGenerateFancyHtml = ref(false)
+  const reportOptions = ref({
+    mode: 'standard',
+    profile: ''
+  })
+  const effectiveReportOptions = computed(() => ({
+    ...reportOptions.value,
+    profile: reportOptions.value.profile || defaultReportProfile.value || ''
+  }))
   const includeComments = ref(true)
   const commentLimit = ref(200)
   const downloadAllComments = ref(false)
@@ -391,7 +401,10 @@
 
     if (data.status === 'failed') {
       error.value = data.error || '处理失败'
-      return false
+      return (
+        Boolean(data.auto_generate_fancy_html) &&
+        ['pending', 'running'].includes(data.fancy_html_status || '')
+      )
     } else if (data.status === 'cancelled') {
       error.value = data.error || '任务已取消'
       return false
@@ -414,7 +427,11 @@
     resetJob()
 
     try {
-      if (requiresApiKey.value && !apiKeyConfigured.value) {
+      if (
+        requiresApiKey.value &&
+        isUploadMode.value &&
+        !apiKeyConfigured.value
+      ) {
         throw new Error('请先在「API Key」页面配置阿里云 DashScope API Key')
       }
       if (
@@ -464,12 +481,14 @@
             effectiveSummaryPromptTemplate.value
           )
         }
-        if (!skipSummary) {
-          formData.append(
-            'auto_generate_fancy_html',
-            String(autoGenerateFancyHtml.value)
-          )
-        }
+        formData.append(
+          'auto_generate_fancy_html',
+          String(autoGenerateFancyHtml.value)
+        )
+        formData.append(
+          'report_options',
+          JSON.stringify(effectiveReportOptions.value)
+        )
         if (requiresApiKey.value) {
           formData.append('api_key', getApiKey())
           const dsKey = getDeepseekApiKey()
@@ -493,9 +512,8 @@
             skipSummary || !effectiveSummaryPromptTemplate.value
               ? null
               : effectiveSummaryPromptTemplate.value,
-          auto_generate_fancy_html: skipSummary
-            ? false
-            : autoGenerateFancyHtml.value,
+          auto_generate_fancy_html: autoGenerateFancyHtml.value,
+          report_options: effectiveReportOptions.value,
           prefer_bilibili_subtitle: preferBilibiliSubtitle.value,
           include_comments:
             !skipSummary && includeComments.value && !isUploadMode.value,
@@ -590,9 +608,6 @@
             v-model:input-mode="inputMode"
             v-model:url="url"
             v-model:prefer-bilibili-subtitle="preferBilibiliSubtitle"
-            v-model:include-comments="includeComments"
-            v-model:download-all-comments="downloadAllComments"
-            v-model:comment-limit="commentLimit"
             :allow-upload="allowUpload"
             :is-open-public="isOpenPublic"
             :disabled="isStarting || isRunning"
@@ -601,8 +616,12 @@
           />
 
           <ProcessSummaryConfig
+            v-model:include-comments="includeComments"
+            v-model:download-all-comments="downloadAllComments"
+            v-model:comment-limit="commentLimit"
+            :allow-comments="!isUploadMode"
+            :disabled="isStarting || isRunning"
             :enabled="enableSummary"
-            :auto-generate-fancy-html="autoGenerateFancyHtml"
             :is-open-public="isOpenPublic"
             :selected-profile="selectedSummaryProfile"
             :selected-preset="selectedSummaryPreset"
@@ -616,11 +635,20 @@
             :fallback-prompt-template="summaryDefaultPromptTemplate"
             :custom-preset-value="CUSTOM_SUMMARY_PRESET_VALUE"
             @update:enabled="enableSummary = $event"
-            @update:auto-generate-fancy-html="autoGenerateFancyHtml = $event"
             @update:selected-profile="selectedSummaryProfile = $event"
             @update:selected-preset="selectedSummaryPreset = $event"
             @retry-profiles="loadSummaryProfiles"
             @retry-presets="loadSummaryPresets"
+          />
+
+          <ProcessReportConfig
+            v-model:enabled="autoGenerateFancyHtml"
+            v-model:options="reportOptions"
+            :profiles="summaryProfiles"
+            :default-profile="defaultReportProfile"
+            :loading="isLoadingSummaryProfiles"
+            :error="summaryProfileError"
+            @retry="loadSummaryProfiles"
           />
 
           <div v-if="isJobDetailMode" class="new-job-hint">

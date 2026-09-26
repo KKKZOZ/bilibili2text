@@ -421,6 +421,7 @@ dependencies = [
     { name = "minio" },
     { name = "openai" },
     { name = "playwright" },
+    { name = "pydantic" },
     { name = "pydub" },
     { name = "reportlab" },
     { name = "requests" },
@@ -463,6 +464,7 @@ requires-dist = [
     { name = "minio", specifier = ">=7.2.12" },
     { name = "openai", specifier = ">=2.17.0" },
     { name = "playwright", specifier = ">=1.52.0" },
+    { name = "pydantic", specifier = ">=2.0" },
     { name = "pydub", specifier = ">=0.25.1" },
     { name = "python-multipart", marker = "extra == 'web'", specifier = ">=0.0.20" },
     { name = "questionary", marker = "extra == 'cli'", specifier = ">=2.0.0" },
@@ -3260,7 +3262,7 @@ name = "shadowcopy"
 version = "0.0.4"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "wmi", marker = "sys_platform == 'win32'" },
+    { name = "wmi" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/12/44/c00420a3b7bcdf830529b933392b566c876a4944a24f31e126eb6fd28647/shadowcopy-0.0.4.tar.gz", hash = "sha256:ed89817dda065f893607a04c0b7d6b3b34c3507a4711f441111a4bcb1b1826c0" }
 wheels = [
@@ -3749,7 +3751,7 @@ name = "wmi"
 version = "1.5.1"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "pywin32", marker = "sys_platform == 'win32'" },
+    { name = "pywin32" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/d4/66/6364deb0a03415f96c66803d8c4379f808f2401da3bdb183348487b10510/WMI-1.5.1.tar.gz", hash = "sha256:b6a6be5711b1b6c8d55bda7a8befd75c48c12b770b9d227d31c1737dbf0d40a6", size = 26254, upload-time = "2020-04-28T08:22:58.096Z" }
 wheels = [

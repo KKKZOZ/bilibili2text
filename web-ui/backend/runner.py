@@ -106,6 +106,7 @@ def _run_job(
     cancellation_token: CancellationToken | None = None,
 ) -> None:
     normalized_url = (url or "").strip()
+    _update_job(job_id, report_source_url=normalized_url)
     normalized_audio_path = (input_audio_path or "").strip()
     bvid = (input_bvid or "").strip() or None
     transcription_id = bvid
@@ -123,7 +124,8 @@ def _run_job(
 
     try:
         config = get_runtime_app_config(
-            require_public_api_key=True,
+            require_public_api_key=bool(normalized_audio_path),
+            user_credentials_only=auto_generate_fancy_html,
             api_key=api_key,
             deepseek_api_key=deepseek_api_key,
             custom_llm_base_url=custom_llm_base_url,
@@ -266,6 +268,28 @@ def _run_job(
         progress=5,
     )
 
+    report_started = False
+
+    def _transcript_ready(source_results):
+        nonlocal report_started
+        report_started = True
+        try:
+            postprocess_scheduler.start_report_from_transcript(
+                job_id=job_id,
+                bvid=bvid,
+                results=source_results,
+                config=config,
+                storage_backend=storage_backend,
+                summary_preset=summary_preset,
+                summary_profile=summary_profile,
+                ephemeral_upload=ephemeral_upload,
+            )
+        except PipelineCancelled:
+            raise
+        except Exception as exc:
+            logger.exception("阅读报告启动失败")
+            _update_job(job_id, fancy_html_status="failed", fancy_html_error=str(exc))
+
     try:
 
         def _progress(stage: str, label: str, progress: int) -> None:
@@ -295,6 +319,9 @@ def _run_job(
                     prefer_bilibili_subtitle=False,
                     include_comments=False,
                     progress_callback=_progress,
+                    transcript_ready_callback=_transcript_ready
+                    if auto_generate_fancy_html
+                    else None,
                     metadata_callback=_metadata_ready,
                     comment_status_callback=_comment_status,
                     bilibili_subtitle_used_callback=lambda: _update_job(
@@ -317,6 +344,9 @@ def _run_job(
                     include_comments=include_comments,
                     comment_limit=comment_limit,
                     progress_callback=_progress,
+                    transcript_ready_callback=_transcript_ready
+                    if auto_generate_fancy_html
+                    else None,
                     metadata_callback=_metadata_ready,
                     comment_status_callback=_comment_status,
                     bilibili_subtitle_used_callback=lambda: _update_job(
@@ -483,13 +513,23 @@ def _run_job(
                 _update_job(
                     job_id,
                     notice="临时上传转录结果将在完成后 2 小时自动删除。",
-                    fancy_html_status="idle",
                 )
 
             if cancellation_token is not None:
                 cancellation_token.run_if_active(_finish_ephemeral)
             else:
                 _finish_ephemeral()
+            if auto_generate_fancy_html and not report_started:
+                postprocess_scheduler.trigger_fancy_html_generation(
+                    job_id=job_id,
+                    bvid=None,
+                    results=results,
+                    config=config,
+                    storage_backend=storage_backend,
+                    run_id=None,
+                    summary_preset=summary_preset,
+                    summary_profile=summary_profile,
+                )
         elif bvid is not None:
 
             def _persist_and_succeed() -> str | None:
@@ -515,7 +555,7 @@ def _run_job(
                 config=config,
                 storage_backend=storage_backend,
             )
-            if auto_generate_fancy_html:
+            if auto_generate_fancy_html and not report_started:
                 postprocess_scheduler.trigger_fancy_html_generation(
                     job_id=job_id,
                     bvid=bvid,
@@ -526,14 +566,15 @@ def _run_job(
                     summary_preset=summary_preset,
                     summary_profile=summary_profile,
                 )
-            else:
+            elif not auto_generate_fancy_html:
                 _update_job(job_id, fancy_html_status="idle")
             postprocess_scheduler.trigger_rag_index(_run_id, config)
         else:
 
             def _finish_without_bvid() -> None:
                 _mark_succeeded()
-                _update_job(job_id, fancy_html_status="idle")
+                if not auto_generate_fancy_html:
+                    _update_job(job_id, fancy_html_status="idle")
 
             if cancellation_token is not None:
                 cancellation_token.run_if_active(_finish_without_bvid)

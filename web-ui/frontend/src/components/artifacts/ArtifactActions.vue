@@ -74,13 +74,15 @@
 
     <template v-else-if="canConvert">
       <button
-        v-if="item.kind === 'summary' || item.kind === 'rag_answer'"
+        v-if="item.kind === 'rag_answer'"
         type="button"
         :disabled="fancyLoading"
         @click="emit('fancy')"
       >
         <LoaderCircle v-if="fancyLoading" :size="14" class="spin" />
-        <FileText v-else :size="14" /><span>Fancy HTML</span>
+        <FileText v-else :size="14" /><span>{{
+          item.kind === 'rag_answer' ? 'Fancy HTML' : '阅读报告'
+        }}</span>
       </button>
       <button
         v-if="!renderedSummary"

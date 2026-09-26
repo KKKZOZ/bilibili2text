@@ -205,6 +205,7 @@ class ExistingTranscriptionService:
                 storage_backend=storage_backend,
                 config=config,
                 existing_results=existing_results,
+                auto_generate_fancy_html=auto_generate_fancy_html,
                 include_comments=include_comments,
                 comment_status_callback=comment_status_callback,
                 cancellation_token=cancellation_token,
@@ -238,6 +239,7 @@ class ExistingTranscriptionService:
         config,
         existing_results,
         include_comments: bool,
+        auto_generate_fancy_html: bool = False,
         comment_status_callback=None,
         cancellation_token: CancellationToken | None = None,
     ) -> bool:
@@ -290,6 +292,17 @@ class ExistingTranscriptionService:
         except PipelineCancelled:
             return True
         _append_info(job_id, notice)
+        if auto_generate_fancy_html:
+            postprocess_scheduler.trigger_fancy_html_generation(
+                job_id=job_id,
+                bvid=bvid,
+                results=existing_results,
+                config=config,
+                storage_backend=storage_backend,
+                run_id=run_id,
+                summary_preset=None,
+                summary_profile=None,
+            )
         postprocess_scheduler.trigger_rag_index(run_id, config)
         return True
 
@@ -314,6 +327,23 @@ class ExistingTranscriptionService:
     ) -> bool:
         if cancellation_token is not None and cancellation_token.is_cancelled():
             return True
+        if auto_generate_fancy_html:
+            try:
+                postprocess_scheduler.start_report_from_transcript(
+                    job_id=job_id,
+                    bvid=bvid,
+                    results=existing_results,
+                    config=config,
+                    storage_backend=storage_backend,
+                    summary_preset=summary_preset,
+                    summary_profile=summary_profile,
+                )
+            except PipelineCancelled:
+                return True
+            except Exception as exc:  # noqa: BLE001
+                _update_job(
+                    job_id, fancy_html_status="failed", fancy_html_error=str(exc)
+                )
         resolved_preset, resolved_profile = _resolve_requested_summary_selection(
             config=config,
             summary_preset=summary_preset,
@@ -465,19 +495,6 @@ class ExistingTranscriptionService:
         except PipelineCancelled:
             return True
         _append_info(job_id, notice)
-        if auto_generate_fancy_html:
-            postprocess_scheduler.trigger_fancy_html_generation(
-                job_id=job_id,
-                bvid=bvid,
-                results=combined_results,
-                config=config,
-                storage_backend=storage_backend,
-                run_id=run_id,
-                summary_preset=summary_preset,
-                summary_profile=summary_profile,
-            )
-        else:
-            _update_job(job_id, fancy_html_status="idle")
         postprocess_scheduler.trigger_rag_index(run_id, config)
         return True
 

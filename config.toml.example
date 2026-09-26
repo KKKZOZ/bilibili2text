@@ -78,6 +78,12 @@ model = "qwen3-max"
 api_base = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 api_key = "your-dashscope-api-key"
 
+[summarize.profiles.deepseek-flash]
+provider = "deepseek"
+model = "deepseek-flash"
+api_base = "https://api.deepseek.com"
+api_key = ""
+
 [summarize.profiles.openrouter-main]
 provider = "openrouter"
 model = "moonshotai/kimi-k2.5"
@@ -95,7 +101,7 @@ api_key = "your-groq-api-key"
 [fancy_html]
 # Fancy HTML 默认使用的 profile。
 # 这里必须显式配置，不再回退到 summarize.profile。
-profile = "openrouter-main"
+profile = "deepseek-flash"
 
 [converter]
 min_length = 60
@@ -166,3 +172,7 @@ output_dir = ""
 # uid = 123456
 # name = "creator-name"
 # check_interval = 300
+
+# Pi 报告容器网络；B2T_REPORT_NETWORK 环境变量可覆盖此配置。
+[report]
+docker_network = "bridge"

@@ -806,6 +806,23 @@ def _run_fancy_html_only_from_summary(
     ):
         raise ValueError("仅支持基于总结 Markdown 或知识库回答生成 fancy HTML")
 
+    if (
+        resolve_artifact_kind(summary_artifact.kind, summary_artifact.filename)
+        == ArtifactKind.SUMMARY
+    ):
+        from b2t.report.options import ReportOptions
+        from backend.report_service import (
+            generate_stored_report,
+            transcript_for_summary,
+        )
+
+        return generate_stored_report(
+            source_artifact=transcript_for_summary(summary_artifact),
+            storage_backend=storage_backend,
+            config=config,
+            options=ReportOptions(profile=summary_profile or ""),
+        )
+
     cleanup_temp_dir: tempfile.TemporaryDirectory | None = None
     local_temp_dir: Path | None = None
     if storage_backend.persist_local_outputs:

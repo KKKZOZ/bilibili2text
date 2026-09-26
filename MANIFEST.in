@@ -2,3 +2,5 @@ include summary_presets.toml
 include context.toml
 include config.toml.example
 include README.md
+
+recursive-include b2t/report/skill *.md *.html

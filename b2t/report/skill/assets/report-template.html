@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=900">
+<title>{{TITLE}}</title>
+<style>
+html{scroll-behavior:smooth;scroll-padding-top:24px}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+/* 稳定视觉语言；组件按内容关系选择，不设配额。 */
+:root{color-scheme:light;--paper:#fff;--canvas:#f2f5f7;--ink:#414b55;--heading:#242d35;--muted:#65717d;--accent:#c8562e;--orange:#ff8658;--line:#e9edf0;--blue:#23658b;--blue-wash:#edf7ff;--wash:#fff8e8}
+*{box-sizing:border-box}body{margin:0;background:var(--canvas);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;font-size:17px;line-height:1.85;-webkit-font-smoothing:antialiased}
+::selection{background:#ffddc8;color:var(--heading)}.paper{max-width:860px;margin:24px auto;padding:48px 46px 30px;background:var(--paper);border-radius:8px;box-shadow:0 8px 30px #25384b0b;position:relative}.paper:before{content:"";position:absolute;inset:0 0 auto;height:4px;border-radius:8px 8px 0 0;background:linear-gradient(90deg,#ff9d64,#a9a6ba)}.paper:after{content:"";display:block;margin-top:20px;height:3px;background:linear-gradient(90deg,#ff9d64,#a9a6ba)}
+h1,h2,h3,p{margin:0}h1,h2,h3{color:var(--heading);text-wrap:pretty}h1{font-size:34px;line-height:1.45;font-weight:750;letter-spacing:0}.subtitle{text-wrap:balance;font-size:21px;font-weight:600;line-height:1.6;margin-top:12px;color:#4c5965}.lead{margin-top:20px;line-height:1.9}.meta{font-size:12px;color:var(--muted);margin-top:18px;line-height:1.8}.meta a{color:inherit;text-decoration:underline}
+.report-nav{counter-reset:report-nav;position:fixed;z-index:3;left:calc(50vw - 724px);top:32px;width:272px;max-height:calc(100vh - 64px);overflow:auto;padding:8px 8px 8px 0;background:transparent}.report-nav-title{display:block;padding:0 12px 20px;color:var(--heading);font-size:18px;font-weight:650}.report-nav>a{counter-increment:report-nav;display:grid;grid-template-columns:22px minmax(0,1fr);gap:12px;align-items:center;min-height:49px;margin-bottom:7px;padding:12px 16px;border:1px solid #e6ebee;border-left:4px solid transparent;border-radius:5px;background:#ffffffaa;color:#596873;font-size:15px;line-height:1.5;text-decoration:none}.report-nav>a::before{content:counter(report-nav,decimal-leading-zero);color:#93a0aa;font-size:12px;font-variant-numeric:tabular-nums}.report-nav>a:hover{background:var(--blue-wash);color:var(--blue)}.report-nav>a[aria-current="location"]{background:#fff;border-left-color:#dc8e65;transform:translateX(8px);box-shadow:0 6px 18px #263e5010;color:var(--ink);font-weight:650}
+
+section{margin-top:42px}section>h2{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 12px;font-size:24px;font-weight:750;line-height:1.55;padding-bottom:13px;border-bottom:1px solid var(--line);margin-bottom:21px}.num{display:inline-flex;align-items:center;justify-content:center;align-self:flex-start;flex-shrink:0;min-width:28px;height:28px;padding:0 5px;margin-top:5px;background:#424e58;border-radius:50%;color:white;font-size:16px;line-height:1;font-weight:650;font-variant-numeric:tabular-nums}h3{font-size:19px;font-weight:700;line-height:1.6;margin:27px 0 12px}h3:before{content:"";display:inline-block;width:8px;height:8px;margin-right:9px;margin-bottom:2px;border-radius:50%;background:var(--dot,var(--orange))}p+p{margin-top:14px}strong{font-weight:650;color:var(--heading)}ul,ol{padding-left:1.4em;margin:16px 0}li+li{margin-top:8px}li::marker{color:var(--accent)}a{color:var(--blue);text-underline-offset:4px}a:hover{color:var(--accent)}:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
+.section-title{flex:1 1 16em;min-width:0}.section-time{display:block;flex:0 1 auto;max-width:calc(100% - 40px);margin-left:auto;font-size:12px;font-weight:400;line-height:1.6;color:#666666;font-variant-numeric:tabular-nums;overflow-wrap:normal}
+.callout{margin:25px 0;padding:20px 24px;background:var(--blue-wash);border:0;border-radius:7px;color:var(--blue)}.callout h3{margin:0 0 9px;color:var(--blue);font-size:18px}.callout h3:before{display:none}.callout strong{color:inherit}.keyline{margin:25px 0;padding:20px 24px;background:var(--wash);border:0;border-radius:6px;line-height:1.85}.keyline p,.keyline blockquote{margin:0}.keyline cite{display:block;font-size:13px;font-style:normal;margin-top:10px;color:var(--muted)}
+.cards,.comparison,.categories{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px;margin:26px 0}.card,.comparison>div,.category{min-width:0;padding:22px 24px;background:#fff;border-radius:9px;box-shadow:0 4px 16px #25384b12}.card h3,.comparison h3,.category h3{margin:0 0 11px;font-size:18px}.card p,.category p,.comparison p{font-size:16px;line-height:1.85}.categories{grid-template-columns:repeat(auto-fit,minmax(195px,1fr))}.category{border-top:3px solid var(--line);padding:18px 20px}.category ul{padding-left:1.2em}
+/* 长解释分类：复用 category，标题与列表圆点分层，允许自然篇幅。 */
+.categories.categories-detailed{grid-template-columns:minmax(0,1fr);gap:28px}.categories-detailed>.category{--category-tone:#2c6e83;padding:26px 28px;background:#fff;border:0;border-left:3px solid var(--category-tone);box-shadow:0 3px 16px #273c4910}.categories-detailed>.category>h3{font-size:22px;line-height:1.55;margin:0 0 12px}.categories-detailed>.category>h3:before{display:none}.categories-detailed .category-meta{font-size:14px;color:var(--muted);margin:0 0 16px}.categories-detailed h4{font-size:18px;font-weight:650;line-height:1.6;color:var(--heading);margin:24px 0 10px}.categories-detailed p,.categories-detailed li{font-size:17px;line-height:1.85}.categories-detailed>.category>:last-child{margin-bottom:0}
+.categories-detailed>.category[data-tone="rust"]{--category-tone:#a64c35}.categories-detailed>.category[data-tone="ochre"]{--category-tone:#75602b}.categories-detailed>.category[data-tone="plum"]{--category-tone:#77558a}.categories-detailed>.category[data-tone="sage"]{--category-tone:#456e51}.categories-detailed>.category[data-tone="rose"]{--category-tone:#8e516d}.categories-detailed .category-number{font-size:15px;font-weight:600;color:var(--category-tone);margin-right:12px;font-variant-numeric:tabular-nums}.categories-detailed li::marker{color:#8b959e}
+
+.steps{list-style:none;counter-reset:step;padding:0;margin:24px 0}.steps>li{counter-increment:step;position:relative;padding-left:38px;margin:23px 0}.steps>li:before{content:counter(step);position:absolute;left:0;top:3px;width:25px;height:25px;border-radius:50%;background:var(--accent);color:white;text-align:center;line-height:25px;font-size:14px;font-weight:650}.steps h3{margin:0 0 7px}.steps h3:before{display:none}
+.stats,.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:20px;margin:26px 0}.stats{padding:24px 0;border-block:1px solid var(--line);text-align:center}.stat+.stat{border-left:1px solid var(--line)}.tile{text-align:center;padding:20px 14px;border-radius:8px;box-shadow:0 3px 12px #25384b0e}.value{display:block;font-size:28px;font-weight:700;color:var(--accent);line-height:1.4;font-variant-numeric:tabular-nums}.caption{display:block;font-size:14px;line-height:1.65;color:var(--muted);margin-top:8px}
+.bars{margin:26px 0;display:grid;gap:16px}.bar{display:grid;gap:7px}.bar-head{display:flex;align-items:baseline;justify-content:space-between;gap:14px;flex-wrap:wrap}.bar-name{font-size:15px;line-height:1.6;color:var(--muted)}.bar-value{font-size:15px;font-weight:650;color:var(--heading);font-variant-numeric:tabular-nums}.bar-track{display:block;height:12px;border-radius:3px;background:#eff6fa;overflow:hidden}.bar-fill{display:block;height:100%;border-radius:3px;background:var(--bar-color,#7ac5ef)}.bar-highlight{--bar-color:#ffb38a}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;padding:20px;background:#f5f7f9;border-radius:6px}code{font-family:ui-monospace,monospace;font-size:.9em}table{border-collapse:separate;border-spacing:0;width:100%;max-width:100%;margin:24px auto;font-size:15px;line-height:1.75;overflow-wrap:break-word;border:1px solid #dce9f1;border-radius:7px;overflow:hidden}th,td{text-align:left;vertical-align:top;min-width:5em;padding:16px;border-bottom:1px solid var(--line)}th{font-weight:650;color:var(--blue);background:var(--blue-wash)}thead th{font-size:14px}tbody{background:var(--paper)}tbody th{background:transparent;color:var(--heading);border-right:1px solid #e6eef3}tbody tr:last-child>th,tbody tr:last-child>td{border-bottom:0}td:first-child{color:var(--heading);font-weight:550}.table-details{table-layout:auto}.table-details tbody th{min-width:7.5em}.table-compact{width:auto}.table-number{text-align:right;font-variant-numeric:tabular-nums}td>ul,td>ol{margin:0;padding-left:1.2em}td li+li{margin-top:6px}td p+p{margin-top:8px}
+.cycle-map{margin:26px 0}.cycle-map svg{display:block;width:100%;height:auto}.cycle-node{fill:#edf7fc;stroke:#d6eaf3;stroke-width:1}.cycle-edge{fill:none;stroke:#6997ad;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}.cycle-title{font-size:17px;font-weight:650;fill:var(--heading)}.cycle-note{font-size:14px;fill:#426779}.cycle-label{font-size:14px;fill:#426779}.cycle-map figcaption{margin-top:8px;font-size:14px;color:var(--muted)}
+details{margin-top:42px;padding-top:20px;border-top:1px solid var(--line);font-size:13px;color:var(--muted)}.intro+details{padding:0 0 20px;border-top:0;border-bottom:1px solid var(--line)}summary{cursor:pointer;width:fit-content;color:var(--heading)}details[open] summary{margin-bottom:14px}.video-description-text{white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}footer{margin-top:28px;font-size:12px;color:var(--muted)}.paper{overflow-wrap:anywhere}
+footer{display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap}.footer-link,.footer-link:hover{color:inherit;text-decoration:underline}
+@media print{body{background:white}.paper{margin:0 auto;box-shadow:none}.callout,.card,.category,.tile{break-inside:avoid}h2,h3{break-after:avoid}}
+@media print{.categories-detailed>.category{break-inside:auto}.categories-detailed h4{break-after:avoid}}
+@media(min-width:1195px) and (max-width:1448px){.paper{margin-left:310px;margin-right:24px}.report-nav{left:24px}}
+@media(max-width:1194px){.report-nav{display:none}}
+@media print{.report-nav{display:none}}
+.b2t-report-links{display:flex;align-items:center;gap:10px 20px;flex-wrap:wrap;margin-top:14px;font-size:12px;line-height:1.6;color:#64748b}.b2t-report-links a{color:inherit;text-decoration:underline;text-underline-offset:3px;overflow-wrap:anywhere}.b2t-report-links>span{min-width:0}.b2t-report-links .b2t-project-link{display:inline-flex;align-items:center;gap:6px}.b2t-project-link svg{flex-shrink:0}
+</style>
+</head>
+<body><main class="paper">
+<header class="intro">
+<h1>{{TITLE}}</h1>
+<!-- 副标题无新增角度时可删除；导语固定保留，用一段话概括视频讨论对象、核心问题与报告展开方式，不重复副标题。题头不要放组件配额、虚构指标或装饰标签。ATTRIBUTION 固定按“平台；UP 主；《原视频完整标题》；可点击的原视频裸 URL”依次完整展示，已有哪项就展示哪项，不重列推广标签。 -->
+<p class="subtitle">{{SUBTITLE}}</p>
+<p class="lead">{{LEAD}}</p>
+<p class="meta">{{ATTRIBUTION}}</p>
+<div class="b2t-report-links">
+<span>转录网址：<a href="http://b2t.kkkzoz.top:27676/#/process" target="_blank" rel="noopener noreferrer">http://b2t.kkkzoz.top:27676/#/process</a></span>
+<a class="b2t-project-link" href="https://github.com/KKKZOZ/bilibili2text" target="_blank" rel="noopener noreferrer" aria-label="GitHub 项目 KKKZOZ/bilibili2text"><svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 .75a11.25 11.25 0 0 0-3.56 21.92c.56.1.77-.24.77-.54v-2.1c-3.13.68-3.79-1.33-3.79-1.33-.51-1.3-1.25-1.65-1.25-1.65-1.02-.7.08-.69.08-.69 1.13.08 1.72 1.16 1.72 1.16 1 1.72 2.64 1.22 3.28.93.1-.73.39-1.22.71-1.5-2.5-.28-5.13-1.25-5.13-5.56 0-1.23.44-2.23 1.16-3.02-.12-.28-.5-1.43.11-2.98 0 0 .95-.3 3.1 1.16a10.8 10.8 0 0 1 5.63 0c2.15-1.46 3.1-1.16 3.1-1.16.61 1.55.23 2.7.11 2.98.72.79 1.16 1.79 1.16 3.02 0 4.32-2.63 5.27-5.14 5.55.4.35.76 1.04.76 2.1v3.09c0 .3.2.65.77.54A11.25 11.25 0 0 0 12 .75Z"/></svg><span>KKKZOZ/bilibili2text</span></a>
+</div>
+</header>
+<!-- 独立使用：没有简介时删除此占位符，提供简介时按 Skill 填入原文折叠块。仅产品调用明确要求后处理时原样保留一次。 -->
+{{VIDEO_DESCRIPTION}}
+<!-- 默认直接进入内容，按有效信息量、关系复杂度和用户用途选择详略，时长仅为提示。短内容不设摘要与地图；主图、对照或步骤直接承担正文。长文确需导航时，BODY 开头可放下列结构；只写章节短标签，序号由模板生成，链接目标必须对应后文章节 id。桌面导航固定在纸面左侧页外，不占正文空间；窄屏、打印与 920px 长图自动隐藏，不另生成正文内回退目录。概览仅在有独立用途时出现，使用无编号自然中文标题，不放 span.num。多个正文大章节从 1 连续编号；单一单元或紧凑模块可省略编号。易读表达就地解释术语，精读保留必要依据，均不缩小字号或重复扩写。Profile 不进入可见页面。
+<nav class="report-nav" aria-label="章节导航"><span class="report-nav-title">目录</span><a href="#s1">第一个章节短标签</a><a href="#s2">第二个章节短标签</a></nav>
+-->
+<!-- 共用视觉语法，所有 Profile 均可使用；以下为可选结构指引，不是待填的固定章节：
+Timeline / Turning Points：ol > li 按事件排列，每项写事件或阶段、变化与后果；转折可用 strong 标识。事件日期属于内容，不重复视频定位时间戳。
+Before → Trigger → After：使用 comparison 对照同一对象前后状态，以邻近短段或过程链说明触发事件；不能用布局暗示来源未支持的因果。
+Issue Matrix：table 的行对应议题，列按实际人物及立场、依据组织，必要时增加共识或未解决问题；th 标明列义，未表态如实标注。
+Evidence Chain：ol 或 ol.steps 连接问题、方法、证据、结果和限制，适用条件靠近对应节点；材料缺失时不强填节点。
+Decision Tree：嵌套 ul/li 在分支开头写明条件，再写动作与结果；复杂关系可用内联 SVG，连接处标明条件。普通线性步骤继续使用 ol。
+State / Relationship Map：使用 HTML/CSS 或内联 SVG 呈现带名称的对象和状态，连接标注作用及方向，必要条件紧邻关系；推测或类比明确标识。关系链用明确的网格或 SVG 定位，横向放不下时采用纵向或明确连接的分行结构，不让箭头与节点随 flex-wrap 自由折行；关系标签长于节点间隙时放到节点上方留白，避免压住节点上沿；回路画出返回目标和方向，不只在图下用文字说明。
+颜色按对象角色或关系性质使用，不按卡片奇偶或节点顺序轮换；同图的已有状态用实线、预计变化用虚线并就地标注其性质。
+这些结构直接承担内容；复用现有样式，不依赖外部脚本或图库，不要求每份报告使用全部语法。 -->
+<!-- 正文从语义组织生成：section/h2（多个大章节时用 span.num 放连续序号，后接 span 标题文本）、h3/p；可选 callout、keyline、cards/card、comparison、categories/category、ol.steps/li、stats、tiles/tile、bars/bar。不存在必填章节或必用组件。表格默认占满所在容器并自动分配列宽；短标签与短数值的小表可用 table-compact 居中收窄，不为凑满宽度制造大块空白。长说明先按语义分成短段或条目，仍影响跨行比较时移到表外；只有实际渲染出现拥挤才按内容设置 colgroup，不默认固定列宽。柱图仅用于正文必须看见的量级差异，不为每节数字各画一组。同一可比序列保持同色，需要突出来源支持的重点才加 bar-highlight，不按顺序轮换颜色。柱图按 div.bars > div.bar 组织，每个 bar 为 div.bar-head（span.bar-name + span.bar-value）加 span.bar-track>span.bar-fill；bar-fill 的 width 即占比，bar-track 占满整行宽度，同组共用刻度（最大项给 width:100%）。短项目用原生列表、表格或紧凑分栏，名称与数值同行；ol.steps 仅供需要展开解释的步骤选用，圆圈编号与布局可自行调整。p、li 或卡片用 data-source-units 绑定实际支持内容的 ID。 -->
+<!-- 分类详解示例：仅用于需要展开的并列类型，数量和字段按来源增减；短分类沿用普通 categories。
+白底配左侧 3px 彩线和轻微阴影；data-tone 可选 rust、ochre、plum、sage、rose，省略时为蓝青色。颜色只区分类别；同类在全文保持一致，不表示排名或风险等级。可选 span.category-number 显示定位序号。
+类型标题可设唯一 id 供长文导航定位；不另加重复总览，不嵌套卡片。标题、概括和要点分别绑定实际支持它们的来源 ID。
+<div class="categories categories-detailed">
+  <article class="category" data-tone="rust">
+    <h3 id="category-a" data-source-units="u1">类型名称</h3>
+    <p class="category-meta" data-source-units="u1">代表对象或适用范围（有必要时保留）</p>
+    <p data-source-units="u1">来源支持的核心特点与必要限定。</p>
+    <ul>
+      <li data-source-units="u2"><strong>关键特点</strong> — 对应依据与解释。</li>
+      <li data-source-units="u3"><strong>成立条件</strong> — 来源实际说明的条件。</li>
+    </ul>
+    <h4>需要独立展开的对象或案例（按需保留）</h4>
+    <p data-source-units="u4">保留理解所需的机制、例子或转折。</p>
+  </article>
+</div>
+-->
+<!-- 循环图几何示例（四节点；按来源替换文字与关系，并按文字调整几何；不是必用组件）。
+线段能直接连接时用直线，仅转向的回程用平滑曲线；开放箭头与连线同色同粗。
+每张图的 marker id 唯一；marker 使用 userSpaceOnUse 避免随线宽被放大。增减节点时重排整个回路，不向此四节点图硬塞。
+<figure class="cycle-map">
+<svg viewBox="0 0 720 300" role="img" aria-label="节点 A 到 B 到 C 到 D，再返回 A 的循环">
+<defs><marker id="cycle-arrow-1" viewBox="0 0 8 8" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M1 1 L7 4 L1 7" class="cycle-edge"/></marker></defs>
+<g class="cycle-edge" marker-end="url(#cycle-arrow-1)">
+<path d="M264 74 H456"/>
+<path d="M652 74 C716 74 716 226 652 226"/>
+<path d="M456 226 H264"/>
+<path d="M68 226 C4 226 4 74 68 74"/>
+</g>
+<rect class="cycle-node" x="76" y="44" width="180" height="60" rx="8"/>
+<rect class="cycle-node" x="464" y="44" width="180" height="60" rx="8"/>
+<rect class="cycle-node" x="464" y="196" width="180" height="60" rx="8"/>
+<rect class="cycle-node" x="76" y="196" width="180" height="60" rx="8"/>
+<g text-anchor="middle">
+<text class="cycle-title" x="166" y="70">节点 A</text><text class="cycle-note" x="166" y="92">一句短说明</text>
+<text class="cycle-title" x="554" y="70">节点 B</text><text class="cycle-note" x="554" y="92">一句短说明</text>
+<text class="cycle-title" x="554" y="222">节点 C</text><text class="cycle-note" x="554" y="244">一句短说明</text>
+<text class="cycle-title" x="166" y="222">节点 D</text><text class="cycle-note" x="166" y="244">一句短说明</text>
+<text class="cycle-label" x="360" y="60">作用</text>
+<text class="cycle-label" x="620" y="155">作用</text>
+<text class="cycle-label" x="360" y="212">作用</text>
+<text class="cycle-label" x="100" y="155">反馈</text>
+</g>
+</svg>
+</figure>
+-->
+<!-- 章节标题复用下列结构与样式，不另写时间字号；长标题正常换行，空间不足时将时间移到下一行右侧。
+<section>
+<h2><span class="num">1</span><span class="section-title">章节标题</span><span class="section-time">02:15–08:40</span></h2>
+<p>章节正文</p>
+</section>
+无可靠时间时省略 section-time；一小时以上全文使用 HH:MM:SS，不连续区间以中文分号分隔并允许自然换行。 -->
+<!-- 图示按 modes/standard.md 的“图示的选择、绘制与检查”执行：精确关系先计算，概念关系有依据，无法核实则简化；生成的 SVG 内联于本页。 -->
+{{BODY}}
+<details><summary>来源与处理说明</summary>{{SOURCES}}</details>
+<footer><span>视频报告·精读</span><a class="footer-link" href="https://github.com/KKKZOZ/bilibili2text">b2t</a></footer>
+</main>
+<script>
+(() => {
+  const links = [...document.querySelectorAll('.report-nav>a')];
+  const entries = links.map(link => ({link, target:document.getElementById(link.hash.slice(1))})).filter(entry => entry.target);
+  if (!entries.length) return;
+  function updateCurrent() {
+    let current = entries[0];
+    for (const entry of entries) {
+      if (entry.target.getBoundingClientRect().top <= 160) current = entry;
+    }
+    if (window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2) current = entries[entries.length - 1];
+    for (const entry of entries) {
+      if (entry === current) entry.link.setAttribute('aria-current', 'location');
+      else entry.link.removeAttribute('aria-current');
+    }
+  }
+  window.addEventListener('scroll', updateCurrent, {passive:true});
+  window.addEventListener('resize', updateCurrent);
+  updateCurrent();
+})();
+</script>
+</body></html>

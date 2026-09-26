@@ -358,6 +358,15 @@ class AnalyticsConfig:
 
 
 @dataclass(frozen=True)
+class ReportRuntimeConfig:
+    docker_network: str = "bridge"
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.docker_network, str) or not self.docker_network.strip():
+            raise ValueError("report.docker_network 必须是非空 Docker 网络名称")
+
+
+@dataclass(frozen=True)
 class AppConfig:
     download: DownloadConfig
     storage: StorageConfig
@@ -372,6 +381,7 @@ class AppConfig:
     monitor: MonitorConfig = field(default_factory=MonitorConfig)
     bilibili: BilibiliConfig = field(default_factory=BilibiliConfig)
     analytics: AnalyticsConfig = field(default_factory=AnalyticsConfig)
+    report: ReportRuntimeConfig = field(default_factory=ReportRuntimeConfig)
 
 
 def _load_summarize_config(raw_summarize: dict) -> SummarizeConfig:
@@ -1574,6 +1584,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         monitor=monitor_config,
         bilibili=bilibili_config,
         analytics=analytics_config,
+        report=ReportRuntimeConfig(**raw.get("report", {})),
     )
 
 
