@@ -559,7 +559,10 @@ def convert_artifact(payload: ConvertRequest) -> ConvertResponse:
                 convert_options["enhance_stock_tables"] = (
                     payload.source_variant != "summary_no_table"
                 )
-            if target_format == ConversionFormat.PNG and source_kind in {
+            if target_format in {
+                ConversionFormat.PNG,
+                ConversionFormat.PDF,
+            } and source_kind in {
                 "summary",
                 "summary_table_md",
             }:

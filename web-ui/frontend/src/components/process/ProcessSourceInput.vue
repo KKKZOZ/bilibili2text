@@ -1,8 +1,6 @@
 <script setup>
   import { ref } from 'vue'
   import { FileAudio2, FileVideo2, Link2, Upload } from 'lucide-vue-next'
-  import HelpTooltip from '../common/HelpTooltip.vue'
-  import ToggleSwitch from '../common/ToggleSwitch.vue'
 
   defineProps({
     inputMode: { type: String, required: true },
@@ -10,16 +8,10 @@
     allowUpload: Boolean,
     isOpenPublic: Boolean,
     disabled: Boolean,
-    uploadAccept: { type: String, required: true },
-    preferBilibiliSubtitle: Boolean
+    uploadAccept: { type: String, required: true }
   })
 
-  const emit = defineEmits([
-    'update:inputMode',
-    'update:url',
-    'update:preferBilibiliSubtitle',
-    'fileChange'
-  ])
+  const emit = defineEmits(['update:inputMode', 'update:url', 'fileChange'])
   const selectedFilename = ref('')
 
   const onFileChange = (event) => {
@@ -110,22 +102,7 @@
         >
           https://www.xiaoyuzhoufm.com/episode/6a0a7365e1eb34a93997ffa2
         </a>
-        <span>支持 Bilibili / 小宇宙 / 喜马拉雅链接，自动下载音频并转录</span>
-      </div>
-      <div class="option-toggle-row">
-        <ToggleSwitch
-          id="prefer-bilibili-subtitle"
-          :model-value="preferBilibiliSubtitle"
-          label="优先使用 B 站字幕"
-          @update:model-value="emit('update:preferBilibiliSubtitle', $event)"
-        />
-        <HelpTooltip
-          id="bilibili-subtitle-help-tooltip"
-          label="查看优先使用 B 站字幕说明"
-        >
-          仅对 B
-          站视频生效。开启后会优先读取视频已有字幕，跳过音频转文字步骤；没有可用字幕或读取失败时会自动回退到音频转录。
-        </HelpTooltip>
+        <span>B 站视频默认优先读取原生字幕，无可用字幕时使用音频转录</span>
       </div>
     </template>
 
@@ -302,12 +279,6 @@
     color: var(--brand-strong);
     text-decoration: none;
     word-break: break-all;
-  }
-
-  .option-toggle-row {
-    display: flex;
-    align-items: center;
-    gap: 3px;
   }
 
   @media (max-width: 640px) {

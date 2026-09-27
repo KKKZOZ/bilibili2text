@@ -300,3 +300,30 @@ def test_pdf_renderer_uses_configured_chromium_executable(
 
     assert output_path.exists()
     assert launch_options == [{"executable_path": str(executable_path.resolve())}]
+
+
+def test_summary_pdf_uses_shared_header_and_preserves_body(tmp_path, monkeypatch):
+    from b2t.converter.md_to_png import MarkdownToPngConverter
+
+    source = tmp_path / "summary.md"
+    source.write_text("## 观点\n\n正文", encoding="utf-8")
+    monkeypatch.setattr(shutil, "which", lambda _: "/usr/bin/pandoc")
+    monkeypatch.setattr(MarkdownToPngConverter, "_build_css_tag", lambda *a, **kw: "")
+    monkeypatch.setattr(
+        MarkdownToPngConverter,
+        "_run_pandoc",
+        lambda *a: "<h1>旧标题</h1><h2>观点</h2><p>正文</p>",
+    )
+    captured = {}
+    converter = MarkdownToPdfConverter()
+    monkeypatch.setattr(
+        converter, "_render_html_to_pdf", lambda **kw: captured.update(kw)
+    )
+    converter.convert(source, summary_document=True, summary_title="新标题 <测试>")
+    html = captured["html_content"]
+    assert "新标题 &lt;测试&gt;" in html
+    assert "旧标题" not in html
+    assert "<h2>观点</h2><p>正文</p>" in html
+    assert 'href="https://b2t.kkkzoz.top"' in html
+    assert "KKKZOZ/bilibili2text" in html
+    assert "@media print" in html

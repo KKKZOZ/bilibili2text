@@ -1,3 +1,5 @@
+import { apiUrl } from './url'
+
 export class ApiError extends Error {
   constructor(message, { status = 0, data = null, cause } = {}) {
     super(message, cause ? { cause } : undefined)
@@ -24,7 +26,7 @@ const buildRequestOptions = (options) => {
 
 const fetchResponse = async (url, options, fallbackMessage) => {
   try {
-    return await fetch(url, buildRequestOptions(options))
+    return await fetch(apiUrl(url), buildRequestOptions(options))
   } catch (cause) {
     throw new ApiError(`${fallbackMessage}：无法连接到服务`, { cause })
   }
@@ -153,7 +155,7 @@ export const subscribeSse = ({
       return
     }
 
-    source = new window.EventSource(url)
+    source = new window.EventSource(apiUrl(url))
     source.addEventListener(eventName, (event) => {
       try {
         const keepOpen = onEvent(JSON.parse(event.data))

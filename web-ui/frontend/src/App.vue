@@ -51,6 +51,7 @@
   )
 
   onMounted(() => {
+    if (route.meta.standalone) return
     startJobStore()
     refreshCredentials()
     void initializeSummaryConfig()
@@ -72,7 +73,8 @@
 </script>
 
 <template>
-  <div class="app-shell">
+  <RouterView v-if="route.meta.standalone" />
+  <div v-else class="app-shell">
     <header class="topbar">
       <div class="topbar-inner">
         <RouterLink

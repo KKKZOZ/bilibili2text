@@ -1,3 +1,4 @@
+import { apiUrl } from './url'
 import {
   ApiError,
   requestJson,
@@ -115,9 +116,16 @@ export const artifactApi = {
     const params = sourceVariant
       ? `?source_variant=${encodeURIComponent(sourceVariant)}`
       : ''
-    return `/api/preview/html/${encode(downloadId)}${params}`
+    return `#/preview/html/${encode(downloadId)}${params}`
   },
-  timelinePreviewUrl: (downloadId) => `/api/preview/txt/${encode(downloadId)}`
+  renderedPreviewSourceUrl: (downloadId, sourceVariant = '') => {
+    const params = sourceVariant
+      ? `?source_variant=${encodeURIComponent(sourceVariant)}`
+      : ''
+    return apiUrl(`/api/preview/html/${encode(downloadId)}${params}`)
+  },
+  timelinePreviewUrl: (downloadId) =>
+    apiUrl(`/api/preview/txt/${encode(downloadId)}`)
 }
 
 export const ragApi = {
@@ -159,4 +167,4 @@ export const openPublicApi = {
     )
 }
 
-export { ApiError, subscribeSse }
+export { ApiError, apiUrl, subscribeSse }

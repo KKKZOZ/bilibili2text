@@ -7,6 +7,11 @@ import PublicApiKeyView from './components/PublicApiKeyView.vue'
 export default createRouter({
   history: createWebHashHistory(),
   routes: [
+    {
+      path: '/preview/html/:downloadId',
+      component: () => import('./components/HtmlPreviewView.vue'),
+      meta: { standalone: true }
+    },
     { path: '/', redirect: '/process' },
     { path: '/process', component: ProcessView },
     { path: '/process/:jobId', component: ProcessView },

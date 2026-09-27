@@ -134,6 +134,15 @@ def _resolve_pipeline_input(
         if subtitle is not None:
             audio_file = None
         else:
+            stt_profile = config.stt.selected_profile
+            if (
+                stt_profile.provider.strip().lower() == "qwen"
+                and not stt_profile.qwen_api_key.strip()
+            ):
+                raise ValueError(
+                    "未获取到可用的 B 站原生字幕，且未配置阿里云 DashScope API Key。"
+                    "任务已终止，请在「API Key」页面添加阿里云 Key 后重新提交，以进行语音识别（ASR）。"
+                )
             emit_progress("downloading", "下载视频音频", 10)
             logger.info("=== 下载音频 ===")
             audio_file, downloaded_metadata = download_audio(

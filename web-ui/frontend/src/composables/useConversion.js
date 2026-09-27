@@ -2,7 +2,7 @@
  * Composable function for file conversion
  */
 import { ref } from 'vue'
-import { artifactApi } from '../api'
+import { apiUrl, artifactApi } from '../api'
 
 export function useConversion() {
   const convertingItems = ref(new Set())
@@ -54,7 +54,7 @@ export function useConversion() {
     }
 
     const anchor = document.createElement('a')
-    anchor.href = url
+    anchor.href = apiUrl(url)
     anchor.download = filename || 'output.md'
     document.body.appendChild(anchor)
     anchor.click()

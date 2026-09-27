@@ -17,6 +17,7 @@ from urllib.request import urlopen
 from playwright.sync_api import sync_playwright
 
 from b2t.converter.chromium import chromium_launch_options
+from b2t.converter.summary_style import SUMMARY_CSS, SUMMARY_LINKS
 from b2t.stock_status import build_stock_table_cards_html, extract_stock_symbols
 
 logger = logging.getLogger(__name__)
@@ -307,6 +308,7 @@ HTML_TEMPLATE = r"""<!doctype html>
       }}
     }}
   </style>
+  <style>{summary_css}</style>
 </head>
 <body>
   <div class="{root_class}">
@@ -733,6 +735,7 @@ class MarkdownToPngConverter:
             '<header class="summary-header">'
             f'<h1 class="summary-title">{title_text}</h1>'
             f"{metadata}"
+            f"{SUMMARY_LINKS}"
             "</header>"
         )
 
@@ -773,6 +776,7 @@ class MarkdownToPngConverter:
     ) -> str:
         return HTML_TEMPLATE.format(
             css_tag=self._build_css_tag(css_url, inline_css=inline_css),
+            summary_css=(SUMMARY_CSS if "summary-document" in root_class else ""),
             body_html=body_html,
             root_class=root_class,
             metadata_html=metadata_html,

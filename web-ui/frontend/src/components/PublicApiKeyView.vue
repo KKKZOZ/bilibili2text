@@ -463,10 +463,9 @@
           <span>open-public</span>
         </div>
         <p>
-          语音识别（ASR）需要<strong>阿里云 DashScope</strong> API
-          Key，<strong>必须配置</strong>。如需使用 DeepSeek 模型进行 LLM
-          总结、知识库问答或 Fancy HTML 生成，可<strong>额外配置</strong>
-          DeepSeek API Key，然后在转录页面模型下拉框中切换到 DeepSeek 模型。
+          按需配置模型服务商的 API Key。DeepSeek
+          可用于生成总结、阅读报告和知识库问答； 阿里云 DashScope
+          可用于语音识别（ASR）和通义模型调用。
         </p>
       </header>
 
@@ -480,34 +479,17 @@
         >
       </div>
 
-      <div class="provider-grid">
-        <ApiKeyProviderCard
-          v-model="aliyunKeyInput"
-          title="阿里云 DashScope"
-          field-id="aliyun-api-key"
-          placeholder="请输入 sk-... 格式的 API Key"
-          :configured="aliyunConfigured"
-          :masked-key="aliyunMaskedKey"
-          :testing="isTestingAliyun"
-          :test-passed="aliyunTestPassed"
-          :error="aliyunError"
-          :success="aliyunSuccess"
-          required
-          @save="saveAliyunKey"
-          @test="testAliyunConnection"
-          @clear="clearAliyunKey"
+      <div class="privacy-notice">
+        <Info :size="16" />
+        <span
+          ><strong>转录提示：</strong>B 站视频默认优先使用原生字幕，无需配置 ASR
+          Key。 如果没有可用字幕或字幕读取失败，需要提供阿里云 DashScope API Key
+          进行语音识别；
+          未配置时任务会终止并提示补充。其他平台和上传音频同样需要此 Key。</span
         >
-          <p>
-            语音识别（ASR）依赖阿里云，无此 Key 无法提交转录任务。
-            <a
-              href="https://bailian.console.aliyun.com/cn-beijing/?tab=model#/api-key"
-              target="_blank"
-              rel="noopener noreferrer"
-              >前往阿里云百炼创建 API Key</a
-            >
-          </p>
-        </ApiKeyProviderCard>
+      </div>
 
+      <div class="provider-grid">
         <ApiKeyProviderCard
           v-model="deepseekKeyInput"
           title="DeepSeek"
@@ -524,7 +506,7 @@
           @clear="clearDeepseekKey"
         >
           <p>
-            配置后可用于 LLM 总结、知识库问答和 Fancy HTML。
+            配置后可用于生成总结、阅读报告和知识库问答。
             <a
               href="https://platform.deepseek.com/api_keys"
               target="_blank"
@@ -534,9 +516,36 @@
           </p>
           <template #status-note>
             <p v-if="!deepseekConfigured" class="provider-fallback-note">
-              未配置时将使用阿里云 Key 进行 LLM 调用。
+              使用 DeepSeek 模型时需配置此 Key；也可选择其他已配置的模型服务商。
             </p>
           </template>
+        </ApiKeyProviderCard>
+
+        <ApiKeyProviderCard
+          v-model="aliyunKeyInput"
+          title="阿里云 DashScope"
+          field-id="aliyun-api-key"
+          placeholder="请输入 sk-... 格式的 API Key"
+          :configured="aliyunConfigured"
+          :masked-key="aliyunMaskedKey"
+          :testing="isTestingAliyun"
+          :test-passed="aliyunTestPassed"
+          :error="aliyunError"
+          :success="aliyunSuccess"
+          @save="saveAliyunKey"
+          @test="testAliyunConnection"
+          @clear="clearAliyunKey"
+        >
+          <p>
+            可选配置。无可用 B 站字幕、其他平台或上传音频需要使用此 Key
+            进行语音识别。
+            <a
+              href="https://bailian.console.aliyun.com/cn-beijing/?tab=model#/api-key"
+              target="_blank"
+              rel="noopener noreferrer"
+              >前往阿里云百炼创建 API Key</a
+            >
+          </p>
         </ApiKeyProviderCard>
       </div>
 

@@ -44,5 +44,7 @@ web-ui/frontend/node_modules/
 web-ui/frontend/dist/
 
 # Local scratch / external experiments
+/docs/cloudflare-deployment.md
+.wrangler/
 /doubao-test/
 /AIFeedTracker/

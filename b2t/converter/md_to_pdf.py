@@ -224,6 +224,15 @@ class MarkdownToPdfConverter:
         if shutil.which("pandoc") is None:
             raise RuntimeError("pandoc not found, please install pandoc first")
 
+        if options.get("summary_document"):
+            from b2t.converter.md_to_png import MarkdownToPngConverter
+
+            full_html = MarkdownToPngConverter().build_render_html(
+                input_path, **{**options, "inline_css": True}
+            )
+            self._render_html_to_pdf(html_content=full_html, output_path=output_path)
+            return output_path
+
         css_url = options.get("css_url", GITHUB_CSS_URL)
         is_table = options.get("is_table", False)
         as_of_date = options.get("as_of_date")

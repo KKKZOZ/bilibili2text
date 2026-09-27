@@ -3,9 +3,9 @@
 import logging
 
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 
 from b2t.converter.md_to_png import shutdown_png_renderer, warmup_png_renderer
+from backend.cors import configure_cors
 from backend.ephemeral_uploads import (
     start_ephemeral_upload_cleanup,
     stop_ephemeral_upload_cleanup,
@@ -25,16 +25,7 @@ from backend.task_queue import shutdown_task_queues
 app = FastAPI(title="bilibili-to-text API", version="0.1.0")
 logger = logging.getLogger(__name__)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+configure_cors(app)
 
 
 @app.on_event("startup")

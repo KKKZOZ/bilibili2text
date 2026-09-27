@@ -8,7 +8,13 @@
   import HistoryList from './history/HistoryList.vue'
   import HistoryPagination from './history/HistoryPagination.vue'
   import ActiveJobsPanel from './jobs/ActiveJobsPanel.vue'
-  import { artifactApi, historyApi, subscribeSse, summaryApi } from '../api'
+  import {
+    apiUrl,
+    artifactApi,
+    historyApi,
+    subscribeSse,
+    summaryApi
+  } from '../api'
   import { useJobStore } from '../composables/useJobStore'
   import { usePublicCredentials } from '../composables/usePublicCredentials'
   import { useRuntimeFeatures } from '../composables/useRuntimeFeatures'
@@ -510,7 +516,7 @@
       }
       if (data.download_url && data.filename) {
         const a = document.createElement('a')
-        a.href = data.download_url
+        a.href = apiUrl(data.download_url)
         a.download = data.filename
         a.click()
       }

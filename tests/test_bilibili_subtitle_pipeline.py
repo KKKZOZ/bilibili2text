@@ -234,7 +234,7 @@ def test_pipeline_uses_bilibili_subtitle_before_asr(
 def test_pipeline_falls_back_to_asr_when_bilibili_subtitle_missing(
     monkeypatch, tmp_path: Path
 ) -> None:
-    config = create_app_config(output_dir=tmp_path)
+    config = create_app_config(output_dir=tmp_path, stt_api_key="test-key")
     storage = LocalStorageBackend(tmp_path)
     audio_path = tmp_path / "downloaded.m4a"
     audio_path.write_bytes(b"audio")
@@ -301,4 +301,27 @@ def test_pipeline_rejects_unknown_url_before_downloader(
             skip_summary=True,
             storage_backend=storage,
             stt_storage_backend=storage,
+        )
+
+
+def test_missing_subtitle_and_key_stops_before_audio_download(monkeypatch, tmp_path):
+    from b2t.pipeline import _resolve_pipeline_input
+
+    monkeypatch.setattr("b2t.pipeline.get_video_metadata", lambda _: None)
+    monkeypatch.setattr("b2t.pipeline.fetch_bilibili_subtitle", lambda _: None)
+
+    def unexpected_download(*args, **kwargs):
+        pytest.fail("Audio must not be downloaded without an ASR key")
+
+    monkeypatch.setattr("b2t.pipeline.download_audio", unexpected_download)
+    with pytest.raises(ValueError, match="请在「API Key」页面添加阿里云 Key"):
+        _resolve_pipeline_input(
+            url="BV1ABcsztEcY",
+            config=create_app_config(output_dir=tmp_path),
+            temp_download_dir=tmp_path,
+            audio_path=None,
+            input_bvid=None,
+            prefer_bilibili_subtitle=True,
+            token=CancellationToken(),
+            emit_progress=lambda *args: None,
         )

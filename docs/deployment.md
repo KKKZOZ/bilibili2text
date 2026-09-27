@@ -1,5 +1,7 @@
 # 部署与配置
 
+前后端分离部署到 Cloudflare：参见 [Pages + Tunnel 部署指南](cloudflare-deployment.md)。
+
 ## 环境要求
 
 | 依赖 | 用途 | 安装方式 |
@@ -225,6 +227,8 @@ cd web-ui/frontend && bun run dev
 | `B2T_WEB_UI_MODE` | `default`（默认）或 `open-public` |
 | `B2T_BACKEND_PORT` | 前端代理的后端端口（默认 `8000`） |
 | `B2T_FRONTEND_PORT` | Nginx 容器的前端端口（默认 `6010`） |
+| `B2T_CORS_ORIGINS` | 后端允许的前端 Origin，逗号分隔；设置后替换本地开发默认值 |
+| `VITE_API_BASE_URL` | 前端构建时的后端 Origin（如 `https://api.example.com`），不带 `/api`；默认同源 |
 
 ## LLM Provider 对照表
 

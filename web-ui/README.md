@@ -2,6 +2,8 @@
 
 The Web UI consists of a FastAPI backend and a Vue/Vite frontend. See the root [README.md](../README.md) for the complete clone-to-run workflow.
 
+For a frontend hosted on Cloudflare Pages with the server backend exposed through Cloudflare Tunnel, see the [Pages + Tunnel deployment guide](../docs/cloudflare-deployment.md).
+
 ### Directory Structure
 
 - `backend/`: FastAPI API routes and task queue

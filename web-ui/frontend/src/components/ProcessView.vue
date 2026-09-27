@@ -65,7 +65,6 @@
   const inputMode = ref('url')
   const uploadedAudioFile = ref(null)
   const enableSummary = ref(true)
-  const preferBilibiliSubtitle = ref(true)
   const autoGenerateFancyHtml = ref(false)
   const reportOptions = ref({
     mode: 'standard',
@@ -514,7 +513,7 @@
               : effectiveSummaryPromptTemplate.value,
           auto_generate_fancy_html: autoGenerateFancyHtml.value,
           report_options: effectiveReportOptions.value,
-          prefer_bilibili_subtitle: preferBilibiliSubtitle.value,
+          prefer_bilibili_subtitle: true,
           include_comments:
             !skipSummary && includeComments.value && !isUploadMode.value,
           comment_limit: normalizedCommentLimit.value,
@@ -607,7 +606,6 @@
           <ProcessSourceInput
             v-model:input-mode="inputMode"
             v-model:url="url"
-            v-model:prefer-bilibili-subtitle="preferBilibiliSubtitle"
             :allow-upload="allowUpload"
             :is-open-public="isOpenPublic"
             :disabled="isStarting || isRunning"
