@@ -95,6 +95,7 @@ class DownloadItemResponse(BaseModel):
     url: str
     filename: str
     kind: str
+    summary_profile: str = ""
 
 
 class ActiveJobItem(BaseModel):

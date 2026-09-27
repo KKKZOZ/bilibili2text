@@ -2,7 +2,7 @@
 
 import os
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -302,19 +302,6 @@ class RagConfig:
 
 
 @dataclass(frozen=True)
-class FeishuConfig:
-    mode: str = "disabled"
-    webhook_url: str = ""
-    app_id: str = ""
-    app_secret: str = ""
-    receive_id: str = ""
-    receive_id_type: str = "open_id"
-    title_prefix: str = "b2t"
-    timeout_seconds: int = 20
-    summary_max_chars: int = 8000
-
-
-@dataclass(frozen=True)
 class MonitorCreatorConfig:
     uid: int
     name: str = ""
@@ -326,18 +313,13 @@ class MonitorConfig:
     enabled: bool = False
     state_file: str = "./db_data/bilibili_monitor_state.json"
     user_agent: str = DEFAULT_BILIBILI_USER_AGENT
-    lookback_hours: int = 48
-    first_run_max_push: int = 3
     default_check_interval: int = 300
-    startup_notification: bool = True
-    summary_preset: str | None = None
-    summary_profile: str | None = None
-    output_dir: str = ""
     creators: tuple[MonitorCreatorConfig, ...] = ()
 
 
 @dataclass(frozen=True)
 class BilibiliConfig:
+    credentials_file: str = ""
     SESSDATA: str = ""
     bili_jct: str = ""
     buvid3: str = ""
@@ -367,6 +349,60 @@ class ReportRuntimeConfig:
 
 
 @dataclass(frozen=True)
+class BackendConfig:
+    host: str = "127.0.0.1"
+    port: int = 8000
+    cors_origins: tuple[str, ...] = (
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:6010",
+        "http://127.0.0.1:6010",
+    )
+
+
+def _load_backend_config(raw: dict) -> BackendConfig:
+    from urllib.parse import urlsplit
+
+    if not isinstance(raw, dict):
+        raise ValueError("backend 配置必须是 TOML 表")  # noqa: TRY004
+    if unknown := set(raw) - {"host", "port", "cors_origins"}:
+        raise ValueError(f"backend 包含未知字段: {', '.join(sorted(unknown))}")
+    host = raw.get("host", BackendConfig.host)
+    port = raw.get("port", BackendConfig.port)
+    origins = raw.get("cors_origins", BackendConfig.cors_origins)
+    if not isinstance(host, str) or not host.strip():
+        raise ValueError("backend.host 必须是非空字符串")
+    if type(port) is not int or not 1 <= port <= 65535:
+        raise ValueError("backend.port 必须是 1 到 65535 之间的整数")
+    if not isinstance(origins, (list, tuple)):
+        raise ValueError("backend.cors_origins 必须是字符串数组")  # noqa: TRY004
+    normalized = []
+    for origin in origins:
+        if not isinstance(origin, str):
+            raise ValueError("backend.cors_origins 必须是字符串数组")  # noqa: TRY004
+        origin = origin.strip().rstrip("/")
+        parsed = urlsplit(origin)
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.path
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError(
+                "backend.cors_origins 必须是完整的 http/https Origin，不含路径"
+            )
+        # Accessing port also validates malformed port numbers.
+        if parsed.port is not None and not 1 <= parsed.port <= 65535:
+            raise ValueError("backend.cors_origins 中的端口无效")
+        if origin not in normalized:
+            normalized.append(origin)
+    return BackendConfig(host=host.strip(), port=port, cors_origins=tuple(normalized))
+
+
+@dataclass(frozen=True)
 class AppConfig:
     download: DownloadConfig
     storage: StorageConfig
@@ -377,11 +413,11 @@ class AppConfig:
     converter: ConverterConfig
     summary_context: SummaryContextConfig | None = None
     rag: RagConfig = field(default_factory=RagConfig)
-    feishu: FeishuConfig = field(default_factory=FeishuConfig)
     monitor: MonitorConfig = field(default_factory=MonitorConfig)
     bilibili: BilibiliConfig = field(default_factory=BilibiliConfig)
     analytics: AnalyticsConfig = field(default_factory=AnalyticsConfig)
     report: ReportRuntimeConfig = field(default_factory=ReportRuntimeConfig)
+    backend: BackendConfig = field(default_factory=BackendConfig)
 
 
 def _load_summarize_config(raw_summarize: dict) -> SummarizeConfig:
@@ -1173,82 +1209,6 @@ def _load_rag_config(raw_rag: dict, *, base_dir: Path) -> RagConfig:
     )
 
 
-def _load_feishu_config(raw_feishu: dict) -> FeishuConfig:
-    if raw_feishu is None:
-        raw_feishu = {}
-    if not isinstance(raw_feishu, dict):
-        raise ValueError("feishu 配置必须是 TOML 表")
-
-    allowed_fields = {
-        "mode",
-        "webhook_url",
-        "app_id",
-        "app_secret",
-        "receive_id",
-        "receive_id_type",
-        "title_prefix",
-        "timeout_seconds",
-        "summary_max_chars",
-    }
-    unknown_fields = sorted(set(raw_feishu.keys()) - allowed_fields)
-    if unknown_fields:
-        raise ValueError(f"feishu 包含未知字段: {', '.join(unknown_fields)}")
-
-    config = FeishuConfig(**raw_feishu)
-
-    string_fields = {
-        "feishu.mode": config.mode,
-        "feishu.webhook_url": config.webhook_url,
-        "feishu.app_id": config.app_id,
-        "feishu.app_secret": config.app_secret,
-        "feishu.receive_id": config.receive_id,
-        "feishu.receive_id_type": config.receive_id_type,
-        "feishu.title_prefix": config.title_prefix,
-    }
-    for field_name, value in string_fields.items():
-        if not isinstance(value, str):
-            raise ValueError(f"{field_name} 必须是字符串")
-
-    if not isinstance(config.timeout_seconds, int) or config.timeout_seconds <= 0:
-        raise ValueError("feishu.timeout_seconds 必须是正整数")
-    if not isinstance(config.summary_max_chars, int) or config.summary_max_chars <= 0:
-        raise ValueError("feishu.summary_max_chars 必须是正整数")
-
-    mode = config.mode.strip().lower()
-    if mode not in {"disabled", "webhook", "app"}:
-        raise ValueError("feishu.mode 仅支持 disabled、webhook 或 app")
-
-    receive_id_type = config.receive_id_type.strip().lower()
-    if receive_id_type not in {"open_id", "user_id", "union_id", "chat_id", "email"}:
-        raise ValueError(
-            "feishu.receive_id_type 仅支持 open_id、user_id、union_id、chat_id 或 email"
-        )
-
-    if mode == "webhook" and not config.webhook_url.strip():
-        raise ValueError("feishu.mode=webhook 时，feishu.webhook_url 必须是非空字符串")
-    if mode == "app":
-        required_fields = {
-            "feishu.app_id": config.app_id,
-            "feishu.app_secret": config.app_secret,
-            "feishu.receive_id": config.receive_id,
-        }
-        for field_name, value in required_fields.items():
-            if not value.strip():
-                raise ValueError(f"feishu.mode=app 时，{field_name} 必须是非空字符串")
-
-    return FeishuConfig(
-        mode=mode,
-        webhook_url=config.webhook_url.strip(),
-        app_id=config.app_id.strip(),
-        app_secret=config.app_secret.strip(),
-        receive_id=config.receive_id.strip(),
-        receive_id_type=receive_id_type,
-        title_prefix=config.title_prefix.strip() or "b2t",
-        timeout_seconds=config.timeout_seconds,
-        summary_max_chars=config.summary_max_chars,
-    )
-
-
 def _load_monitor_config(raw_monitor: dict, *, base_dir: Path) -> MonitorConfig:
     if raw_monitor is None:
         raw_monitor = {}
@@ -1259,10 +1219,10 @@ def _load_monitor_config(raw_monitor: dict, *, base_dir: Path) -> MonitorConfig:
         "enabled",
         "state_file",
         "user_agent",
+        # Accepted but ignored for compatibility with older monitor configs.
         "lookback_hours",
         "first_run_max_push",
         "default_check_interval",
-        "startup_notification",
         "summary_preset",
         "summary_profile",
         "output_dir",
@@ -1285,57 +1245,12 @@ def _load_monitor_config(raw_monitor: dict, *, base_dir: Path) -> MonitorConfig:
     if not isinstance(raw_user_agent, str) or not raw_user_agent.strip():
         raise ValueError("monitor.user_agent 必须是非空字符串")
 
-    lookback_hours = raw_monitor.get("lookback_hours", MonitorConfig.lookback_hours)
-    if not isinstance(lookback_hours, int) or lookback_hours <= 0:
-        raise ValueError("monitor.lookback_hours 必须是正整数")
-
-    first_run_max_push = raw_monitor.get(
-        "first_run_max_push",
-        MonitorConfig.first_run_max_push,
-    )
-    if not isinstance(first_run_max_push, int) or first_run_max_push < 0:
-        raise ValueError("monitor.first_run_max_push 必须是非负整数")
-
     default_check_interval = raw_monitor.get(
         "default_check_interval",
         MonitorConfig.default_check_interval,
     )
     if not isinstance(default_check_interval, int) or default_check_interval <= 0:
         raise ValueError("monitor.default_check_interval 必须是正整数")
-
-    startup_notification = raw_monitor.get(
-        "startup_notification",
-        MonitorConfig.startup_notification,
-    )
-    if not isinstance(startup_notification, bool):
-        raise ValueError("monitor.startup_notification 必须是布尔值")
-
-    raw_summary_preset = raw_monitor.get("summary_preset")
-    if raw_summary_preset is not None and not isinstance(raw_summary_preset, str):
-        raise ValueError("monitor.summary_preset 必须是字符串")
-    summary_preset = (
-        raw_summary_preset.strip() if isinstance(raw_summary_preset, str) else None
-    )
-    if summary_preset == "":
-        summary_preset = None
-
-    raw_summary_profile = raw_monitor.get("summary_profile")
-    if raw_summary_profile is not None and not isinstance(raw_summary_profile, str):
-        raise ValueError("monitor.summary_profile 必须是字符串")
-    summary_profile = (
-        raw_summary_profile.strip() if isinstance(raw_summary_profile, str) else None
-    )
-    if summary_profile == "":
-        summary_profile = None
-
-    raw_output_dir = raw_monitor.get("output_dir", "")
-    if not isinstance(raw_output_dir, str):
-        raise ValueError("monitor.output_dir 必须是字符串")
-    output_dir = ""
-    if raw_output_dir.strip():
-        output_dir = str(
-            _resolve_relative_path(raw_output_dir.strip(), base_dir=base_dir)
-        )
 
     raw_creators = raw_monitor.get("creators", [])
     if not isinstance(raw_creators, list):
@@ -1370,13 +1285,7 @@ def _load_monitor_config(raw_monitor: dict, *, base_dir: Path) -> MonitorConfig:
         enabled=enabled,
         state_file=state_file,
         user_agent=raw_user_agent.strip(),
-        lookback_hours=lookback_hours,
-        first_run_max_push=first_run_max_push,
         default_check_interval=default_check_interval,
-        startup_notification=startup_notification,
-        summary_preset=summary_preset,
-        summary_profile=summary_profile,
-        output_dir=output_dir,
         creators=tuple(creators),
     )
 
@@ -1388,6 +1297,7 @@ def _load_bilibili_config(raw_bilibili: dict) -> BilibiliConfig:
         raise ValueError("bilibili 配置必须是 TOML 表")
 
     allowed_fields = {
+        "credentials_file",
         "SESSDATA",
         "bili_jct",
         "buvid3",
@@ -1450,16 +1360,16 @@ def _load_analytics_config(raw_analytics: dict) -> AnalyticsConfig:
 
 
 def build_bilibili_cookie(config: AppConfig) -> str:
+    from b2t.bilibili_credentials import COOKIE_FIELDS, read_credentials
+
     parts: list[str] = []
     bilibili = config.bilibili
-    for key in (
-        "SESSDATA",
-        "bili_jct",
-        "buvid3",
-        "DedeUserID",
-        "DedeUserID__ckMd5",
-    ):
-        value = getattr(bilibili, key).strip()
+    # Read on every request so independently running monitors see a new login.
+    saved = read_credentials(bilibili.credentials_file)
+    for key in COOKIE_FIELDS:
+        value = (saved[key] if saved is not None else getattr(bilibili, key)).strip()
+        if key == "buvid3" and not value:
+            value = bilibili.buvid3.strip()
         if value:
             parts.append(f"{key}={value}")
     return "; ".join(parts)
@@ -1562,12 +1472,21 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         raw.get("rag", {}),
         base_dir=config_path.parent.resolve(),
     )
-    feishu_config = _load_feishu_config(raw.get("feishu", {}))
     monitor_config = _load_monitor_config(
         raw.get("monitor", {}),
         base_dir=config_path.parent.resolve(),
     )
     bilibili_config = _load_bilibili_config(raw.get("bilibili", {}))
+    bilibili_config = replace(
+        bilibili_config,
+        credentials_file=str(
+            _resolve_relative_path(
+                bilibili_config.credentials_file
+                or "./db_data/bilibili_credentials.json",
+                base_dir=config_path.parent.resolve(),
+            )
+        ),
+    )
     analytics_config = _load_analytics_config(raw.get("analytics", {}))
 
     return AppConfig(
@@ -1580,11 +1499,11 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         summary_context=summary_context,
         converter=_load_converter_config(raw.get("converter", {})),
         rag=rag_config,
-        feishu=feishu_config,
         monitor=monitor_config,
         bilibili=bilibili_config,
         analytics=analytics_config,
         report=ReportRuntimeConfig(**raw.get("report", {})),
+        backend=_load_backend_config(raw.get("backend", {})),
     )
 
 
@@ -1729,7 +1648,6 @@ def create_app_config(
         summary_context=None,
         converter=ConverterConfig(),
         rag=RagConfig(),
-        feishu=FeishuConfig(),
         monitor=MonitorConfig(),
         bilibili=BilibiliConfig(),
     )

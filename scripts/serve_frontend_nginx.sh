@@ -7,7 +7,17 @@ NGINX_TEMPLATE="${ROOT_DIR}/docker/nginx.conf.template"
 DIST_DIR="${FRONTEND_DIR}/dist"
 
 : "${B2T_FRONTEND_PORT:=6010}"
-: "${B2T_BACKEND_HOST:=host.docker.internal}"
+# Linux host networking can reach a backend bound only to 127.0.0.1.
+if [[ "$(uname -s)" == "Linux" ]]; then
+  : "${B2T_NGINX_NETWORK:=host}"
+else
+  : "${B2T_NGINX_NETWORK:=bridge}"
+fi
+if [[ "${B2T_NGINX_NETWORK}" == "host" ]]; then
+  : "${B2T_BACKEND_HOST:=127.0.0.1}"
+else
+  : "${B2T_BACKEND_HOST:=host.docker.internal}"
+fi
 : "${B2T_BACKEND_PORT:=8000}"
 : "${B2T_NGINX_IMAGE:=nginx:1.27-alpine}"
 : "${B2T_NGINX_CONTAINER:=bilibili-to-text-web}"
@@ -18,8 +28,9 @@ Usage: $(basename "$0") {up|down|restart|status|logs}
 
 Environment:
   B2T_FRONTEND_PORT     Public frontend port. Default: 6010
-  B2T_BACKEND_HOST      Backend host seen from the Nginx container. Default: host.docker.internal
+  B2T_BACKEND_HOST      Backend host seen from Nginx. Default: 127.0.0.1 (host network), host.docker.internal (bridge)
   B2T_BACKEND_PORT      Backend port. Default: 8000
+  B2T_NGINX_NETWORK     Docker network mode. Default: host on Linux, bridge elsewhere
   B2T_NGINX_IMAGE       Nginx image. Default: nginx:1.27-alpine
   B2T_NGINX_CONTAINER   Container name. Default: bilibili-to-text-web
 
@@ -51,13 +62,17 @@ build_frontend() {
     if [[ ! -d node_modules ]]; then
       bun install
     fi
-    bun run build
+    # Local Nginx owns /api. Do not inherit the Pages API origin from .env files.
+    VITE_API_BASE_URL= bun run build
   )
 }
 
-docker_host_args=()
-if [[ "$(uname -s)" == "Linux" && "${B2T_BACKEND_HOST}" == "host.docker.internal" ]]; then
-  docker_host_args=(--add-host=host.docker.internal:host-gateway)
+docker_network_args=(--network "${B2T_NGINX_NETWORK}")
+if [[ "${B2T_NGINX_NETWORK}" != "host" ]]; then
+  docker_network_args+=(-p "${B2T_FRONTEND_PORT}:${B2T_FRONTEND_PORT}")
+  if [[ "$(uname -s)" == "Linux" && "${B2T_BACKEND_HOST}" == "host.docker.internal" ]]; then
+    docker_network_args+=(--add-host=host.docker.internal:host-gateway)
+  fi
 fi
 
 start_nginx() {
@@ -77,11 +92,10 @@ start_nginx() {
   echo "Starting Nginx container..."
   docker run -d \
     --name "${B2T_NGINX_CONTAINER}" \
-    -p "${B2T_FRONTEND_PORT}:${B2T_FRONTEND_PORT}" \
+    "${docker_network_args[@]}" \
     -e FRONTEND_PORT="${B2T_FRONTEND_PORT}" \
     -e BACKEND_HOST="${B2T_BACKEND_HOST}" \
     -e BACKEND_PORT="${B2T_BACKEND_PORT}" \
-    "${docker_host_args[@]}" \
     -v "${DIST_DIR}:/usr/share/nginx/html:ro" \
     -v "${NGINX_TEMPLATE}:/etc/nginx/templates/default.conf.template:ro" \
     "${B2T_NGINX_IMAGE}" >/dev/null

@@ -1,0 +1,582 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <!-- GitHub markdown css (requires .markdown-body wrapper) -->
+  <style>
+@media (prefers-color-scheme:dark){.markdown-body,[data-theme=dark]{color-scheme:dark;--color-prettylights-syntax-comment:#8b949e;--color-prettylights-syntax-constant:#79c0ff;--color-prettylights-syntax-entity:#d2a8ff;--color-prettylights-syntax-storage-modifier-import:#c9d1d9;--color-prettylights-syntax-entity-tag:#7ee787;--color-prettylights-syntax-keyword:#ff7b72;--color-prettylights-syntax-string:#a5d6ff;--color-prettylights-syntax-variable:#ffa657;--color-prettylights-syntax-brackethighlighter-unmatched:#f85149;--color-prettylights-syntax-invalid-illegal-text:#f0f6fc;--color-prettylights-syntax-invalid-illegal-bg:#8e1519;--color-prettylights-syntax-carriage-return-text:#f0f6fc;--color-prettylights-syntax-carriage-return-bg:#b62324;--color-prettylights-syntax-string-regexp:#7ee787;--color-prettylights-syntax-markup-list:#f2cc60;--color-prettylights-syntax-markup-heading:#1f6feb;--color-prettylights-syntax-markup-italic:#c9d1d9;--color-prettylights-syntax-markup-bold:#c9d1d9;--color-prettylights-syntax-markup-deleted-text:#ffdcd7;--color-prettylights-syntax-markup-deleted-bg:#67060c;--color-prettylights-syntax-markup-inserted-text:#aff5b4;--color-prettylights-syntax-markup-inserted-bg:#033a16;--color-prettylights-syntax-markup-changed-text:#ffdfb6;--color-prettylights-syntax-markup-changed-bg:#5a1e02;--color-prettylights-syntax-markup-ignored-text:#c9d1d9;--color-prettylights-syntax-markup-ignored-bg:#1158c7;--color-prettylights-syntax-meta-diff-range:#d2a8ff;--color-prettylights-syntax-brackethighlighter-angle:#8b949e;--color-prettylights-syntax-sublimelinter-gutter-mark:#484f58;--color-prettylights-syntax-constant-other-reference-link:#a5d6ff;--color-fg-default:#e6edf3;--color-fg-muted:#848d97;--color-fg-subtle:#6e7681;--color-canvas-default:#0d1117;--color-canvas-subtle:#161b22;--color-border-default:#30363d;--color-border-muted:#21262d;--color-neutral-muted:rgba(110,118,129,0.4);--color-accent-fg:#2f81f7;--color-accent-emphasis:#1f6feb;--color-success-fg:#3fb950;--color-success-emphasis:#238636;--color-attention-fg:#d29922;--color-attention-emphasis:#9e6a03;--color-attention-subtle:rgba(187,128,9,0.15);--color-danger-fg:#f85149;--color-danger-emphasis:#da3633;--color-done-fg:#a371f7;--color-done-emphasis:#8957e5}}@media (prefers-color-scheme:light){.markdown-body,[data-theme=light]{color-scheme:light;--color-prettylights-syntax-comment:#57606a;--color-prettylights-syntax-constant:#0550ae;--color-prettylights-syntax-entity:#6639ba;--color-prettylights-syntax-storage-modifier-import:#24292f;--color-prettylights-syntax-entity-tag:#116329;--color-prettylights-syntax-keyword:#cf222e;--color-prettylights-syntax-string:#0a3069;--color-prettylights-syntax-variable:#953800;--color-prettylights-syntax-brackethighlighter-unmatched:#82071e;--color-prettylights-syntax-invalid-illegal-text:#f6f8fa;--color-prettylights-syntax-invalid-illegal-bg:#82071e;--color-prettylights-syntax-carriage-return-text:#f6f8fa;--color-prettylights-syntax-carriage-return-bg:#cf222e;--color-prettylights-syntax-string-regexp:#116329;--color-prettylights-syntax-markup-list:#3b2300;--color-prettylights-syntax-markup-heading:#0550ae;--color-prettylights-syntax-markup-italic:#24292f;--color-prettylights-syntax-markup-bold:#24292f;--color-prettylights-syntax-markup-deleted-text:#82071e;--color-prettylights-syntax-markup-deleted-bg:#ffebe9;--color-prettylights-syntax-markup-inserted-text:#116329;--color-prettylights-syntax-markup-inserted-bg:#dafbe1;--color-prettylights-syntax-markup-changed-text:#953800;--color-prettylights-syntax-markup-changed-bg:#ffd8b5;--color-prettylights-syntax-markup-ignored-text:#eaeef2;--color-prettylights-syntax-markup-ignored-bg:#0550ae;--color-prettylights-syntax-meta-diff-range:#8250df;--color-prettylights-syntax-brackethighlighter-angle:#57606a;--color-prettylights-syntax-sublimelinter-gutter-mark:#8c959f;--color-prettylights-syntax-constant-other-reference-link:#0a3069;--color-fg-default:#1F2328;--color-fg-muted:#656d76;--color-fg-subtle:#6e7781;--color-canvas-default:#ffffff;--color-canvas-subtle:#f6f8fa;--color-border-default:#d0d7de;--color-border-muted:hsla(210,18%,87%,1);--color-neutral-muted:rgba(175,184,193,0.2);--color-accent-fg:#0969da;--color-accent-emphasis:#0969da;--color-success-fg:#1a7f37;--color-success-emphasis:#1f883d;--color-attention-fg:#9a6700;--color-attention-emphasis:#9a6700;--color-attention-subtle:#fff8c5;--color-danger-fg:#d1242f;--color-danger-emphasis:#cf222e;--color-done-fg:#8250df;--color-done-emphasis:#8250df}}.markdown-body{-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%;margin:0;color:var(--color-fg-default);background-color:var(--color-canvas-default);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans",Helvetica,Arial,sans-serif,"Apple Color Emoji","Segoe UI Emoji";font-size:16px;line-height:1.5;word-wrap:break-word}.markdown-body .octicon{display:inline-block;fill:currentColor;vertical-align:text-bottom}.markdown-body h1:hover .anchor .octicon-link:before,.markdown-body h2:hover .anchor .octicon-link:before,.markdown-body h3:hover .anchor .octicon-link:before,.markdown-body h4:hover .anchor .octicon-link:before,.markdown-body h5:hover .anchor .octicon-link:before,.markdown-body h6:hover .anchor .octicon-link:before{width:16px;height:16px;content:' ';display:inline-block;background-color:currentColor;-webkit-mask-image:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' version='1.1' aria-hidden='true'><path fill-rule='evenodd' d='M7.775 3.275a.75.75 0 001.06 1.06l1.25-1.25a2 2 0 112.83 2.83l-2.5 2.5a2 2 0 01-2.83 0 .75.75 0 00-1.06 1.06 3.5 3.5 0 004.95 0l2.5-2.5a3.5 3.5 0 00-4.95-4.95l-1.25 1.25zm-4.69 9.64a2 2 0 010-2.83l2.5-2.5a2 2 0 012.83 0 .75.75 0 001.06-1.06 3.5 3.5 0 00-4.95 0l-2.5 2.5a3.5 3.5 0 004.95 4.95l1.25-1.25a.75.75 0 00-1.06-1.06l-1.25 1.25a2 2 0 01-2.83 0z'></path></svg>");mask-image:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' version='1.1' aria-hidden='true'><path fill-rule='evenodd' d='M7.775 3.275a.75.75 0 001.06 1.06l1.25-1.25a2 2 0 112.83 2.83l-2.5 2.5a2 2 0 01-2.83 0 .75.75 0 00-1.06 1.06 3.5 3.5 0 004.95 0l2.5-2.5a3.5 3.5 0 00-4.95-4.95l-1.25 1.25zm-4.69 9.64a2 2 0 010-2.83l2.5-2.5a2 2 0 012.83 0 .75.75 0 001.06-1.06 3.5 3.5 0 00-4.95 0l-2.5 2.5a3.5 3.5 0 004.95 4.95l1.25-1.25a.75.75 0 00-1.06-1.06l-1.25 1.25a2 2 0 01-2.83 0z'></path></svg>")}.markdown-body details,.markdown-body figcaption,.markdown-body figure{display:block}.markdown-body summary{display:list-item}.markdown-body [hidden]{display:none!important}.markdown-body a{background-color:transparent;color:var(--color-accent-fg);text-decoration:none}.markdown-body abbr[title]{border-bottom:none;-webkit-text-decoration:underline dotted;text-decoration:underline dotted}.markdown-body b,.markdown-body strong{font-weight:var(--base-text-weight-semibold,600)}.markdown-body dfn{font-style:italic}.markdown-body h1{margin:.67em 0;font-weight:var(--base-text-weight-semibold,600);padding-bottom:.3em;font-size:2em;border-bottom:1px solid var(--color-border-muted)}.markdown-body mark{background-color:var(--color-attention-subtle);color:var(--color-fg-default)}.markdown-body small{font-size:90%}.markdown-body sub,.markdown-body sup{font-size:75%;line-height:0;position:relative;vertical-align:baseline}.markdown-body sub{bottom:-.25em}.markdown-body sup{top:-.5em}.markdown-body img{border-style:none;max-width:100%;box-sizing:content-box;background-color:var(--color-canvas-default)}.markdown-body code,.markdown-body kbd,.markdown-body pre,.markdown-body samp{font-family:monospace;font-size:1em}.markdown-body figure{margin:1em 40px}.markdown-body hr{box-sizing:content-box;overflow:hidden;background:0 0;border-bottom:1px solid var(--color-border-muted);height:.25em;padding:0;margin:24px 0;background-color:var(--color-border-default);border:0}.markdown-body input{font:inherit;margin:0;overflow:visible;font-family:inherit;font-size:inherit;line-height:inherit}.markdown-body [type=button],.markdown-body [type=reset],.markdown-body [type=submit]{-webkit-appearance:button;appearance:button}.markdown-body [type=checkbox],.markdown-body [type=radio]{box-sizing:border-box;padding:0}.markdown-body [type=number]::-webkit-inner-spin-button,.markdown-body [type=number]::-webkit-outer-spin-button{height:auto}.markdown-body [type=search]::-webkit-search-cancel-button,.markdown-body [type=search]::-webkit-search-decoration{-webkit-appearance:none;appearance:none}.markdown-body ::-webkit-input-placeholder{color:inherit;opacity:.54}.markdown-body ::-webkit-file-upload-button{-webkit-appearance:button;appearance:button;font:inherit}.markdown-body a:hover{text-decoration:underline}.markdown-body ::placeholder{color:var(--color-fg-subtle);opacity:1}.markdown-body hr::before{display:table;content:""}.markdown-body hr::after{display:table;clear:both;content:""}.markdown-body table{border-spacing:0;border-collapse:collapse;display:block;width:max-content;max-width:100%;overflow:auto}.markdown-body td,.markdown-body th{padding:0}.markdown-body details summary{cursor:pointer}.markdown-body details:not([open])>:not(summary){display:none!important}.markdown-body [role=button]:focus,.markdown-body a:focus,.markdown-body input[type=checkbox]:focus,.markdown-body input[type=radio]:focus{outline:2px solid var(--color-accent-fg);outline-offset:-2px;box-shadow:none}.markdown-body [role=button]:focus:not(:focus-visible),.markdown-body a:focus:not(:focus-visible),.markdown-body input[type=checkbox]:focus:not(:focus-visible),.markdown-body input[type=radio]:focus:not(:focus-visible){outline:solid 1px transparent}.markdown-body [role=button]:focus-visible,.markdown-body a:focus-visible,.markdown-body input[type=checkbox]:focus-visible,.markdown-body input[type=radio]:focus-visible{outline:2px solid var(--color-accent-fg);outline-offset:-2px;box-shadow:none}.markdown-body a:not([class]):focus,.markdown-body a:not([class]):focus-visible,.markdown-body input[type=checkbox]:focus,.markdown-body input[type=checkbox]:focus-visible,.markdown-body input[type=radio]:focus,.markdown-body input[type=radio]:focus-visible{outline-offset:0}.markdown-body kbd{display:inline-block;padding:3px 5px;font:11px ui-monospace,SFMono-Regular,SF Mono,Menlo,Consolas,Liberation Mono,monospace;line-height:10px;color:var(--color-fg-default);vertical-align:middle;background-color:var(--color-canvas-subtle);border:solid 1px var(--color-neutral-muted);border-bottom-color:var(--color-neutral-muted);border-radius:6px;box-shadow:inset 0 -1px 0 var(--color-neutral-muted)}.markdown-body h1,.markdown-body h2,.markdown-body h3,.markdown-body h4,.markdown-body h5,.markdown-body h6{margin-top:24px;margin-bottom:16px;font-weight:var(--base-text-weight-semibold,600);line-height:1.25}.markdown-body h2{font-weight:var(--base-text-weight-semibold,600);padding-bottom:.3em;font-size:1.5em;border-bottom:1px solid var(--color-border-muted)}.markdown-body h3{font-weight:var(--base-text-weight-semibold,600);font-size:1.25em}.markdown-body h4{font-weight:var(--base-text-weight-semibold,600);font-size:1em}.markdown-body h5{font-weight:var(--base-text-weight-semibold,600);font-size:.875em}.markdown-body h6{font-weight:var(--base-text-weight-semibold,600);font-size:.85em;color:var(--color-fg-muted)}.markdown-body p{margin-top:0;margin-bottom:10px}.markdown-body blockquote{margin:0;padding:0 1em;color:var(--color-fg-muted);border-left:.25em solid var(--color-border-default)}.markdown-body ol,.markdown-body ul{margin-top:0;margin-bottom:0;padding-left:2em}.markdown-body ol ol,.markdown-body ul ol{list-style-type:lower-roman}.markdown-body ol ol ol,.markdown-body ol ul ol,.markdown-body ul ol ol,.markdown-body ul ul ol{list-style-type:lower-alpha}.markdown-body dd{margin-left:0}.markdown-body code,.markdown-body samp,.markdown-body tt{font-family:ui-monospace,SFMono-Regular,SF Mono,Menlo,Consolas,Liberation Mono,monospace;font-size:12px}.markdown-body pre{margin-top:0;margin-bottom:0;font-family:ui-monospace,SFMono-Regular,SF Mono,Menlo,Consolas,Liberation Mono,monospace;font-size:12px;word-wrap:normal}.markdown-body .octicon{display:inline-block;overflow:visible!important;vertical-align:text-bottom;fill:currentColor}.markdown-body input::-webkit-inner-spin-button,.markdown-body input::-webkit-outer-spin-button{margin:0;-webkit-appearance:none;appearance:none}.markdown-body .mr-2{margin-right:var(--base-size-8,8px)!important}.markdown-body::before{display:table;content:""}.markdown-body::after{display:table;clear:both;content:""}.markdown-body>:first-child{margin-top:0!important}.markdown-body>:last-child{margin-bottom:0!important}.markdown-body a:not([href]){color:inherit;text-decoration:none}.markdown-body .absent{color:var(--color-danger-fg)}.markdown-body .anchor{float:left;padding-right:4px;margin-left:-20px;line-height:1}.markdown-body .anchor:focus{outline:0}.markdown-body blockquote,.markdown-body details,.markdown-body dl,.markdown-body ol,.markdown-body p,.markdown-body pre,.markdown-body table,.markdown-body ul{margin-top:0;margin-bottom:16px}.markdown-body blockquote>:first-child{margin-top:0}.markdown-body blockquote>:last-child{margin-bottom:0}.markdown-body h1 .octicon-link,.markdown-body h2 .octicon-link,.markdown-body h3 .octicon-link,.markdown-body h4 .octicon-link,.markdown-body h5 .octicon-link,.markdown-body h6 .octicon-link{color:var(--color-fg-default);vertical-align:middle;visibility:hidden}.markdown-body h1:hover .anchor,.markdown-body h2:hover .anchor,.markdown-body h3:hover .anchor,.markdown-body h4:hover .anchor,.markdown-body h5:hover .anchor,.markdown-body h6:hover .anchor{text-decoration:none}.markdown-body h1:hover .anchor .octicon-link,.markdown-body h2:hover .anchor .octicon-link,.markdown-body h3:hover .anchor .octicon-link,.markdown-body h4:hover .anchor .octicon-link,.markdown-body h5:hover .anchor .octicon-link,.markdown-body h6:hover .anchor .octicon-link{visibility:visible}.markdown-body h1 code,.markdown-body h1 tt,.markdown-body h2 code,.markdown-body h2 tt,.markdown-body h3 code,.markdown-body h3 tt,.markdown-body h4 code,.markdown-body h4 tt,.markdown-body h5 code,.markdown-body h5 tt,.markdown-body h6 code,.markdown-body h6 tt{padding:0 .2em;font-size:inherit}.markdown-body summary h1,.markdown-body summary h2,.markdown-body summary h3,.markdown-body summary h4,.markdown-body summary h5,.markdown-body summary h6{display:inline-block}.markdown-body summary h1 .anchor,.markdown-body summary h2 .anchor,.markdown-body summary h3 .anchor,.markdown-body summary h4 .anchor,.markdown-body summary h5 .anchor,.markdown-body summary h6 .anchor{margin-left:-40px}.markdown-body summary h1,.markdown-body summary h2{padding-bottom:0;border-bottom:0}.markdown-body ol.no-list,.markdown-body ul.no-list{padding:0;list-style-type:none}.markdown-body ol[type="a s"]{list-style-type:lower-alpha}.markdown-body ol[type="A s"]{list-style-type:upper-alpha}.markdown-body ol[type="i s"]{list-style-type:lower-roman}.markdown-body ol[type="I s"]{list-style-type:upper-roman}.markdown-body ol[type="1"]{list-style-type:decimal}.markdown-body div>ol:not([type]){list-style-type:decimal}.markdown-body ol ol,.markdown-body ol ul,.markdown-body ul ol,.markdown-body ul ul{margin-top:0;margin-bottom:0}.markdown-body li>p{margin-top:16px}.markdown-body li+li{margin-top:.25em}.markdown-body dl{padding:0}.markdown-body dl dt{padding:0;margin-top:16px;font-size:1em;font-style:italic;font-weight:var(--base-text-weight-semibold,600)}.markdown-body dl dd{padding:0 16px;margin-bottom:16px}.markdown-body table th{font-weight:var(--base-text-weight-semibold,600)}.markdown-body table td,.markdown-body table th{padding:6px 13px;border:1px solid var(--color-border-default)}.markdown-body table td>:last-child{margin-bottom:0}.markdown-body table tr{background-color:var(--color-canvas-default);border-top:1px solid var(--color-border-muted)}.markdown-body table tr:nth-child(2n){background-color:var(--color-canvas-subtle)}.markdown-body table img{background-color:transparent}.markdown-body img[align=right]{padding-left:20px}.markdown-body img[align=left]{padding-right:20px}.markdown-body .emoji{max-width:none;vertical-align:text-top;background-color:transparent}.markdown-body span.frame{display:block;overflow:hidden}.markdown-body span.frame>span{display:block;float:left;width:auto;padding:7px;margin:13px 0 0;overflow:hidden;border:1px solid var(--color-border-default)}.markdown-body span.frame span img{display:block;float:left}.markdown-body span.frame span span{display:block;padding:5px 0 0;clear:both;color:var(--color-fg-default)}.markdown-body span.align-center{display:block;overflow:hidden;clear:both}.markdown-body span.align-center>span{display:block;margin:13px auto 0;overflow:hidden;text-align:center}.markdown-body span.align-center span img{margin:0 auto;text-align:center}.markdown-body span.align-right{display:block;overflow:hidden;clear:both}.markdown-body span.align-right>span{display:block;margin:13px 0 0;overflow:hidden;text-align:right}.markdown-body span.align-right span img{margin:0;text-align:right}.markdown-body span.float-left{display:block;float:left;margin-right:13px;overflow:hidden}.markdown-body span.float-left span{margin:13px 0 0}.markdown-body span.float-right{display:block;float:right;margin-left:13px;overflow:hidden}.markdown-body span.float-right>span{display:block;margin:13px auto 0;overflow:hidden;text-align:right}.markdown-body code,.markdown-body tt{padding:.2em .4em;margin:0;font-size:85%;white-space:break-spaces;background-color:var(--color-neutral-muted);border-radius:6px}.markdown-body code br,.markdown-body tt br{display:none}.markdown-body del code{text-decoration:inherit}.markdown-body samp{font-size:85%}.markdown-body pre code{font-size:100%}.markdown-body pre>code{padding:0;margin:0;word-break:normal;white-space:pre;background:0 0;border:0}.markdown-body .highlight{margin-bottom:16px}.markdown-body .highlight pre{margin-bottom:0;word-break:normal}.markdown-body .highlight pre,.markdown-body pre{padding:16px;overflow:auto;font-size:85%;line-height:1.45;color:var(--color-fg-default);background-color:var(--color-canvas-subtle);border-radius:6px}.markdown-body pre code,.markdown-body pre tt{display:inline;max-width:auto;padding:0;margin:0;overflow:visible;line-height:inherit;word-wrap:normal;background-color:transparent;border:0}.markdown-body .csv-data td,.markdown-body .csv-data th{padding:5px;overflow:hidden;font-size:12px;line-height:1;text-align:left;white-space:nowrap}.markdown-body .csv-data .blob-num{padding:10px 8px 9px;text-align:right;background:var(--color-canvas-default);border:0}.markdown-body .csv-data tr{border-top:0}.markdown-body .csv-data th{font-weight:var(--base-text-weight-semibold,600);background:var(--color-canvas-subtle);border-top:0}.markdown-body [data-footnote-ref]::before{content:"["}.markdown-body [data-footnote-ref]::after{content:"]"}.markdown-body .footnotes{font-size:12px;color:var(--color-fg-muted);border-top:1px solid var(--color-border-default)}.markdown-body .footnotes ol{padding-left:16px}.markdown-body .footnotes ol ul{display:inline-block;padding-left:16px;margin-top:16px}.markdown-body .footnotes li{position:relative}.markdown-body .footnotes li:target::before{position:absolute;top:-8px;right:-8px;bottom:-8px;left:-24px;pointer-events:none;content:"";border:2px solid var(--color-accent-emphasis);border-radius:6px}.markdown-body .footnotes li:target{color:var(--color-fg-default)}.markdown-body .footnotes .data-footnote-backref g-emoji{font-family:monospace}.markdown-body .pl-c{color:var(--color-prettylights-syntax-comment)}.markdown-body .pl-c1,.markdown-body .pl-s .pl-v{color:var(--color-prettylights-syntax-constant)}.markdown-body .pl-e,.markdown-body .pl-en{color:var(--color-prettylights-syntax-entity)}.markdown-body .pl-s .pl-s1,.markdown-body .pl-smi{color:var(--color-prettylights-syntax-storage-modifier-import)}.markdown-body .pl-ent{color:var(--color-prettylights-syntax-entity-tag)}.markdown-body .pl-k{color:var(--color-prettylights-syntax-keyword)}.markdown-body .pl-pds,.markdown-body .pl-s,.markdown-body .pl-s .pl-pse .pl-s1,.markdown-body .pl-sr,.markdown-body .pl-sr .pl-cce,.markdown-body .pl-sr .pl-sra,.markdown-body .pl-sr .pl-sre{color:var(--color-prettylights-syntax-string)}.markdown-body .pl-smw,.markdown-body .pl-v{color:var(--color-prettylights-syntax-variable)}.markdown-body .pl-bu{color:var(--color-prettylights-syntax-brackethighlighter-unmatched)}.markdown-body .pl-ii{color:var(--color-prettylights-syntax-invalid-illegal-text);background-color:var(--color-prettylights-syntax-invalid-illegal-bg)}.markdown-body .pl-c2{color:var(--color-prettylights-syntax-carriage-return-text);background-color:var(--color-prettylights-syntax-carriage-return-bg)}.markdown-body .pl-sr .pl-cce{font-weight:700;color:var(--color-prettylights-syntax-string-regexp)}.markdown-body .pl-ml{color:var(--color-prettylights-syntax-markup-list)}.markdown-body .pl-mh,.markdown-body .pl-mh .pl-en,.markdown-body .pl-ms{font-weight:700;color:var(--color-prettylights-syntax-markup-heading)}.markdown-body .pl-mi{font-style:italic;color:var(--color-prettylights-syntax-markup-italic)}.markdown-body .pl-mb{font-weight:700;color:var(--color-prettylights-syntax-markup-bold)}.markdown-body .pl-md{color:var(--color-prettylights-syntax-markup-deleted-text);background-color:var(--color-prettylights-syntax-markup-deleted-bg)}.markdown-body .pl-mi1{color:var(--color-prettylights-syntax-markup-inserted-text);background-color:var(--color-prettylights-syntax-markup-inserted-bg)}.markdown-body .pl-mc{color:var(--color-prettylights-syntax-markup-changed-text);background-color:var(--color-prettylights-syntax-markup-changed-bg)}.markdown-body .pl-mi2{color:var(--color-prettylights-syntax-markup-ignored-text);background-color:var(--color-prettylights-syntax-markup-ignored-bg)}.markdown-body .pl-mdr{font-weight:700;color:var(--color-prettylights-syntax-meta-diff-range)}.markdown-body .pl-ba{color:var(--color-prettylights-syntax-brackethighlighter-angle)}.markdown-body .pl-sg{color:var(--color-prettylights-syntax-sublimelinter-gutter-mark)}.markdown-body .pl-corl{text-decoration:underline;color:var(--color-prettylights-syntax-constant-other-reference-link)}.markdown-body g-emoji{display:inline-block;min-width:1ch;font-family:"Apple Color Emoji","Segoe UI Emoji","Segoe UI Symbol";font-size:1em;font-style:normal!important;font-weight:var(--base-text-weight-normal,400);line-height:1;vertical-align:-.075em}.markdown-body g-emoji img{width:1em;height:1em}.markdown-body .task-list-item{list-style-type:none}.markdown-body .task-list-item label{font-weight:var(--base-text-weight-normal,400)}.markdown-body .task-list-item.enabled label{cursor:pointer}.markdown-body .task-list-item+.task-list-item{margin-top:4px}.markdown-body .task-list-item .handle{display:none}.markdown-body .task-list-item-checkbox{margin:0 .2em .25em -1.4em;vertical-align:middle}.markdown-body .contains-task-list:dir(rtl) .task-list-item-checkbox{margin:0 -1.6em .25em .2em}.markdown-body .contains-task-list{position:relative}.markdown-body .contains-task-list:focus-within .task-list-item-convert-container,.markdown-body .contains-task-list:hover .task-list-item-convert-container{display:block;width:auto;height:24px;overflow:visible;clip:auto}.markdown-body ::-webkit-calendar-picker-indicator{filter:invert(50%)}.markdown-body .markdown-alert{padding:var(--base-size-8) var(--base-size-16);margin-bottom:16px;color:inherit;border-left:.25em solid var(--color-border-default)}.markdown-body .markdown-alert>:first-child{margin-top:0}.markdown-body .markdown-alert>:last-child{margin-bottom:0}.markdown-body .markdown-alert .markdown-alert-title{display:flex;font-weight:var(--base-text-weight-medium,500);align-items:center;line-height:1}.markdown-body .markdown-alert.markdown-alert-note{border-left-color:var(--color-accent-emphasis)}.markdown-body .markdown-alert.markdown-alert-note .markdown-alert-title{color:var(--color-accent-fg)}.markdown-body .markdown-alert.markdown-alert-important{border-left-color:var(--color-done-emphasis)}.markdown-body .markdown-alert.markdown-alert-important .markdown-alert-title{color:var(--color-done-fg)}.markdown-body .markdown-alert.markdown-alert-warning{border-left-color:var(--color-attention-emphasis)}.markdown-body .markdown-alert.markdown-alert-warning .markdown-alert-title{color:var(--color-attention-fg)}.markdown-body .markdown-alert.markdown-alert-tip{border-left-color:var(--color-success-emphasis)}.markdown-body .markdown-alert.markdown-alert-tip .markdown-alert-title{color:var(--color-success-fg)}.markdown-body .markdown-alert.markdown-alert-caution{border-left-color:var(--color-danger-emphasis)}.markdown-body .markdown-alert.markdown-alert-caution .markdown-alert-title{color:var(--color-danger-fg)}
+</style>
+
+  <style>
+    /* Make it look good on phone screenshots */
+    body {
+      margin: 0;
+      padding: 16px;
+      background: #fff;
+    }
+    .markdown-body {
+      box-sizing: border-box;
+      width: 100%;
+      max-width: 100%;
+      margin: 0 auto;
+            font-family: "Noto Sans CJK SC", "Noto Sans SC", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      font-size: 16px;
+      line-height: 1.6;
+    }
+
+    /* Extra table polish (in case theme doesn't cover everything) */
+    .markdown-body table {
+      width: 100%;
+      border-collapse: collapse;
+      border-spacing: 0;
+      display: table;
+      table-layout: fixed;
+    }
+    .markdown-body th,
+    .markdown-body td {
+      border: 1px solid #d0d7de;
+      padding: 6px 10px;
+      vertical-align: top;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+    }
+    .markdown-body thead th {
+      background: #f6f8fa;
+    }
+    .markdown-body .stock-table-cards {
+      display: grid;
+      grid-template-columns: 1fr;
+      justify-items: center;
+      gap: 8px;
+    }
+    .markdown-body .stock-table-card {
+      box-sizing: border-box;
+      width: min(100%, 680px);
+      border: 1px solid #d0d7de;
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: #ffffff;
+    }
+    .markdown-body .stock-table-head {
+      display: flex;
+      justify-content: flex-start;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    .markdown-body .stock-table-head h3 {
+      margin: 0;
+      font-size: 18px;
+      line-height: 1.25;
+    }
+    .markdown-body .stock-table-head h3 span,
+    .markdown-body .stock-table-head h3 strong {
+      vertical-align: baseline;
+    }
+    .markdown-body .stock-table-head h3 strong {
+      margin-left: 8px;
+      font-size: 17px;
+      font-weight: 800;
+      color: #64748b;
+    }
+    .markdown-body .stock-status-up .stock-table-head h3 {
+      color: #cf222e;
+    }
+    .markdown-body .stock-status-down .stock-table-head h3 {
+      color: #1a7f37;
+    }
+    .markdown-body .stock-status-up .stock-table-head h3 strong {
+      color: #cf222e;
+    }
+    .markdown-body .stock-status-down .stock-table-head h3 strong {
+      color: #1a7f37;
+    }
+    .markdown-body .stock-status-up .stock-metric-close strong,
+    .markdown-body .stock-status-up .stock-metric-change strong {
+      color: #cf222e;
+    }
+    .markdown-body .stock-status-down .stock-metric-close strong,
+    .markdown-body .stock-status-down .stock-metric-change strong {
+      color: #1a7f37;
+    }
+    .markdown-body .stock-table-head p {
+      margin: 0;
+      color: #57606a;
+      font-size: 14px;
+      line-height: 1.3;
+    }
+    .markdown-body .stock-table-fields {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 4px 8px;
+      margin-bottom: 6px;
+    }
+    .markdown-body .stock-table-fields-single {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .markdown-body .stock-table-field {
+      min-width: 0;
+    }
+    .markdown-body .stock-table-field span {
+      display: inline;
+      color: #57606a;
+      font-size: 14px;
+      line-height: 1.2;
+      margin: 0 4px 0 0;
+    }
+    .markdown-body .stock-table-field p {
+      display: inline;
+      margin: 0;
+      color: #24292f;
+      font-size: 15px;
+      line-height: 1.45;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+    }
+    .markdown-body .stock-table-time-links {
+      display: inline-flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      vertical-align: middle;
+    }
+    .markdown-body .stock-table-time-link {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 2px 7px;
+      border: 1px solid #0969da;
+      border-radius: 5px;
+      color: #0969da;
+      background: #ffffff;
+      font: 700 12px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+      text-decoration: none;
+    }
+    .markdown-body a.stock-table-time-link:hover {
+      color: #ffffff;
+      background: #0969da;
+      text-decoration: none;
+    }
+    .markdown-body .stock-status-change {
+      flex-shrink: 0;
+      color: #0969da;
+      font-size: 17px;
+      line-height: 1.25;
+    }
+    .markdown-body .stock-status-metrics {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 4px 8px;
+      padding-top: 6px;
+      border-top: 1px solid #eef2f6;
+    }
+    .markdown-body .stock-status-metric {
+      min-width: 0;
+    }
+    .markdown-body .stock-status-metric span {
+      display: block;
+      color: #57606a;
+      font-size: 13px;
+      line-height: 1.2;
+      margin-bottom: 2px;
+    }
+    .markdown-body .stock-status-metric strong {
+      display: block;
+      color: #24292f;
+      font-size: 15px;
+      line-height: 1.25;
+      white-space: normal;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+    }
+
+    @media (max-width: 520px) {
+      .markdown-body .mobile-table {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        margin: 16px 0;
+      }
+      .markdown-body .mobile-table-row {
+        display: flex;
+        flex-direction: column;
+        border: 1px solid #d0d7de;
+        border-radius: 12px;
+        overflow: hidden;
+        background: #ffffff;
+      }
+      .markdown-body .mobile-table-cell {
+        display: grid;
+        grid-template-columns: 72px minmax(0, 1fr);
+        gap: 8px;
+        border-top: 1px solid #eef2f6;
+        padding: 8px 10px;
+        font-size: 13px;
+        line-height: 1.45;
+      }
+      .markdown-body .mobile-table-row .mobile-table-cell:first-child {
+        border-top: 0;
+      }
+      .markdown-body .mobile-table-label {
+        font-weight: 700;
+        color: #57606a;
+      }
+      .markdown-body .mobile-table-value {
+        min-width: 0;
+        word-break: break-word;
+        overflow-wrap: anywhere;
+      }
+      .markdown-body .stock-status-metrics {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 5px 8px;
+      }
+      .markdown-body .stock-table-fields {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+  <style>
+.b2t-report-links{display:flex;align-items:center;gap:10px 20px;flex-wrap:wrap;margin-top:14px;font-size:12px;line-height:1.6;color:#64748b}.b2t-report-links a{color:inherit;text-decoration:underline;text-underline-offset:3px;overflow-wrap:anywhere}.b2t-report-links>span{min-width:0}.b2t-report-links .b2t-project-link{display:inline-flex;align-items:center;gap:6px}.b2t-project-link svg{flex-shrink:0}
+
+body:has(.summary-document) { background:#f2f5f7; padding:24px 16px; }
+.markdown-body.summary-document {
+  max-width:860px; padding:44px 46px; background:#fff; color:#414b55;
+  border-radius:8px; border-top:4px solid #e6a17e;
+  box-shadow:0 8px 30px #25384b0b; font-size:17px; line-height:1.85;
+  overflow-wrap:anywhere; color-scheme:light;
+}
+.summary-document .summary-header { margin-bottom:36px; padding-bottom:24px; border-bottom:1px solid #e9edf0; }
+.summary-document .summary-title { margin:0; padding:0; border:0; color:#242d35; font-size:34px; line-height:1.45; font-weight:750; }
+.summary-document .summary-meta { display:flex; flex-wrap:wrap; gap:8px 24px; margin-top:18px; color:#65717d; font-size:12px; }
+.summary-document .summary-meta-item { display:inline-flex; flex-wrap:wrap; gap:6px; }
+.summary-document h2 { margin:38px 0 20px; padding-bottom:12px; border-bottom:1px solid #e9edf0; color:#242d35; font-size:24px; line-height:1.55; }
+.summary-document h3 { margin:26px 0 12px; color:#242d35; font-size:19px; line-height:1.6; }
+.summary-document p, .summary-document ul, .summary-document ol { margin-bottom:18px; }
+.summary-document li + li { margin-top:8px; }
+.summary-document li::marker { color:#c8562e; }
+.summary-document a { color:#23658b; text-underline-offset:3px; }
+.summary-document a:focus-visible { outline:2px solid #c8562e; outline-offset:3px; }
+.summary-document blockquote { margin:24px 0; padding:18px 22px; background:#edf7ff; border-left:3px solid #6997ad; border-radius:6px; color:#426779; }
+.summary-document blockquote > :last-child { margin-bottom:0; }
+.summary-document table { margin:24px 0; font-size:14px; line-height:1.7; }
+.summary-document th, .summary-document td { border:1px solid #e9edf0; padding:12px; }
+.summary-document thead th { background:#f2f5f7; color:#242d35; }
+.summary-document .stock-table-cards { gap:18px; margin:24px 0; }
+.summary-document .stock-table-card { width:100%; padding:22px; border-color:#e9edf0; border-radius:9px; background:#fff; }
+.summary-document .stock-table-head { flex-wrap:wrap; margin-bottom:16px; }
+.summary-document .stock-table-head h3 { margin:0; }
+.summary-document .stock-table-fields { gap:14px 20px; margin-bottom:16px; }
+.summary-document .stock-table-field p { line-height:1.8; }
+.summary-document .stock-status-metrics { padding-top:14px; gap:10px; }
+.summary-document .stock-table-time-link { color:#23658b; border-color:#d6eaf3; background:#edf7ff; }
+@media (max-width:600px) {
+  body:has(.summary-document) { padding:0; }
+  .markdown-body.summary-document { padding:28px 20px; border-radius:0; box-shadow:none; font-size:16px; }
+  .summary-document .summary-title { font-size:26px; }
+  .summary-document h2 { font-size:22px; }
+  .summary-document .stock-table-card { padding:16px; }
+  .summary-document .stock-table-fields { grid-template-columns:1fr; }
+  .summary-document .stock-status-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media print {
+  body:has(.summary-document) { background:white; padding:0; }
+  .markdown-body.summary-document { max-width:none; padding:0; border:0; border-radius:0; box-shadow:none; font-size:11pt; }
+  .summary-document .summary-title { font-size:24pt; }
+  .summary-document h2 { font-size:17pt; }
+  .summary-document h3 { font-size:14pt; }
+  .summary-document h1, .summary-document h2, .summary-document h3 { break-after:avoid; }
+  .summary-document .stock-table-card, .summary-document tr { break-inside:avoid; }
+  .summary-document thead { display:table-header-group; }
+  .summary-document p { orphans:3; widows:3; }
+}
+</style>
+</head>
+<body>
+  <div class="markdown-body summary-document">
+  <header class="summary-header"><h1 class="summary-title">第1277日投资记录：中秋快乐，喜提小面一碗！</h1><div class="summary-meta"><span class="summary-meta-item"><span class="summary-meta-label">发布时间</span><span>2026-09-25 21:13:46</span></span><span class="summary-meta-item"><span class="summary-meta-label">总结时间</span><span>2026-09-27T09:55:16.872564+00:00</span></span></div><div class="b2t-report-links">
+<span>转录网址：<a href="https://b2t.kkkzoz.top" target="_blank" rel="noopener noreferrer">https://b2t.kkkzoz.top</a></span>
+<a class="b2t-project-link" href="https://github.com/KKKZOZ/bilibili2text" target="_blank" rel="noopener noreferrer" aria-label="GitHub 项目 KKKZOZ/bilibili2text"><svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 .75a11.25 11.25 0 0 0-3.56 21.92c.56.1.77-.24.77-.54v-2.1c-3.13.68-3.79-1.33-3.79-1.33-.51-1.3-1.25-1.65-1.25-1.65-1.02-.7.08-.69.08-.69 1.13.08 1.72 1.16 1.72 1.16 1 1.72 2.64 1.22 3.28.93.1-.73.39-1.22.71-1.5-2.5-.28-5.13-1.25-5.13-5.56 0-1.23.44-2.23 1.16-3.02-.12-.28-.5-1.43.11-2.98 0 0 .95-.3 3.1 1.16a10.8 10.8 0 0 1 5.63 0c2.15-1.46 3.1-1.16 3.1-1.16.61 1.55.23 2.7.11 2.98.72.79 1.16 1.79 1.16 3.02 0 4.32-2.63 5.27-5.14 5.55.4.35.76 1.04.76 2.1v3.09c0 .3.2.65.77.54A11.25 11.25 0 0 0 12 .75Z"/></svg><span>KKKZOZ/bilibili2text</span></a>
+</div></header>
+  <h2 id="第1277日投资记录2026-09-27">第1277日投资记录（2026-09-27）</h2>
+<h2
+id="市场与持仓美债收益率与港股通缺席">市场与持仓：美债收益率与港股通缺席</h2>
+<p>2026-09-27（第1277天）亏钱效应剧烈，持仓股基本回落，整体亏约1%，与指数大致齐平。下跌家数约1200比600，约2:1；盘中底部曾出现4:1至5:1。博主将核心原因归于10年期美债收益率持续上升，持有到期收益率可达5%，但这是美国政府担保的名义利率，未调整通胀。</p>
+<p>当日港股通不能使用，仅纯香港账户可交易，成交额极小：400万成交砸掉约1亿市值，900万、中海约500万砸掉约1至2亿市值，保利约300万成交砸掉接近3亿市值；与前几天成交量柱相比极小，参考意义有限。港股回撤发生在纯外资交易、缺少成交量背景下，博主认为不必过度焦虑。</p>
+<h2
+id="福寿园停牌内控调查与0.1元要约">福寿园停牌、内控调查与0.1元要约</h2>
+<p>福寿园更新公告，补充说明罢免执行董事王继生的原因。公司此前进行法证调查，要求王继生提供证据并陈述，但其拒不出面。王继生不认同董事会选聘安永进行调查，也不认同安永的调查范围、方法及结果，并认为过去公司公告不准确、管理层处理不当；董事会相关人士评估后认为其诉求无依据。现行董事会中谭家与白家等其余董事同王继生一派发生斗争，王原为CEO。公司继续停牌，等待内控审核。</p>
+<p>复牌条件包括：</p>
+<ul>
+<li>就贪污如何定性、是否追责等达成一致；</li>
+<li>安永出具内控已完全合规的报告并提交港交所。</li>
+</ul>
+<p>对于0.1元收购福寿园股份的要约，博主称提出者是秃鹫型投资者，相关手续完成后即可发起要约；不必理会，0.1元要约价被认为太亏，原文提到与10.1元的对比，除非急用钱，否则没必要不计代价割肉。</p>
+<h2 id="海吉亚医疗回购与中海物业估值">海吉亚医疗回购与中海物业估值</h2>
+<p>海吉亚医疗当日公告回购300万。上午11点左右成交约250万，下午400万成交中约300万可能为公司自己回购，回购资金约占市场成交量50%，但股价仍下跌，博主认为上方压单很多，回购只能吃掉部分压单，无法把股价拉起来。</p>
+<p>中海物业价格极端，跌到只有7倍市盈率，博主觉得过于夸张；其股息只增不降，股息率具有诱惑力。保利物业等成交同样极度缩量，前述成交额参考意义有限。</p>
+<h2 id="账户迁移安排">账户迁移安排</h2>
+<p>大账户资金可能在一两周后慢慢与小账户合并，从家庭账户搬到银河证券小账户，股票数量不变。计划通过日内对倒完成迁移：小账户先买入20万中海物业，大账户同步卖出20万中海物业，逐步把A账户股票搬到B账户；中间可能临时向家人或朋友借几十万过桥资金。迁移期间会临时用投资账本记录总市值，以实现合并市值，避免被误认为减仓。博主明确不会减仓，因为当前价格太低。</p>
+<h2 id="中概互联估值与基本面">中概互联估值与基本面</h2>
+<p>中概互联目前投资价值不如上一轮“924”。924时价格在0.98至1.01之间，现在为1.025；因A股未开盘，纳入定价约1.01，相当于回到2024年924水平，处于十多年低点；从本轮牛市高点已回落接近40个点。博主认为中概互联网整体低估，但不如上一轮低估，因为企业基本面恶化。</p>
+<table>
+<thead>
+<tr>
+<th>权重股</th>
+<th>原文中的基本面变化</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>美团</td>
+<td>赚不到钱</td>
+</tr>
+<tr>
+<td>腾讯</td>
+<td>资本开支把利润搞没，股东回报能否维持存问号</td>
+</tr>
+<tr>
+<td>阿里巴巴</td>
+<td>在配资，自由现金流为负、净流出</td>
+</tr>
+</tbody>
+</table>
+<p>核心权重股盈利能力与自由现金流远不如2024年；投AI若侧重发展，早期会拖累股东权益。传统投资者视角下，这个价格不如924，但以该价格定投完全合理，因为名义价格已到十多年低点。中概互联ETF也反映港股困境之深；不买AI股，今年略微浮亏属正常。流动性更弱的股票更容易受流动性极端影响，但绝对收益更高，需取舍。</p>
+<h2 id="股票汇总">股票汇总</h2>
+
+<section class="stock-table-cards">
+  <article class="stock-table-card stock-status-down">
+    <div class="stock-table-head">
+      <div>
+        <h3>
+          <span>中海物业</span>
+          <strong>-1.55%</strong>
+        </h3>
+        <p>02669.HK</p>
+      </div>
+    </div>
+    <div class="stock-table-fields">
+      <div class="stock-table-field"><span>视频时间</span><p><span class="stock-table-time-links"><a class="stock-table-time-link" href="https://www.bilibili.com/video/BV1Q6h16hEv7?t=78" target="_blank" rel="noopener">01:18</a><a class="stock-table-time-link" href="https://www.bilibili.com/video/BV1Q6h16hEv7?t=294" target="_blank" rel="noopener">04:54</a><a class="stock-table-time-link" href="https://www.bilibili.com/video/BV1Q6h16hEv7?t=328" target="_blank" rel="noopener">05:28</a></span></p></div>
+      <div class="stock-table-field"><span>板块</span><p>港股/物业管理</p></div>
+      <div class="stock-table-field"><span>投资逻辑/估值情况</span><p>500万成交砸掉约1至2亿市值；跌到7倍市盈率，股息只增不降，股息率有诱惑力</p></div>
+      <div class="stock-table-field"><span>涨跌/持仓变动</span><p>账户迁移计划中小账户日内买20万、大账户同步卖20万，总持仓不变；博主称不会减仓</p></div>
+      <div class="stock-table-field"><span>预期/风险点</span><p>成交极端缩量，参考意义有限；账户迁移可能临时借几十万过桥资金</p></div>
+    </div>
+    <div class="stock-status-metrics">
+      <div class="stock-status-metric stock-metric-close"><span>收盘</span><strong>3.18</strong></div>
+      <div class="stock-status-metric stock-metric-change"><span>涨跌</span><strong>-0.05</strong></div>
+      <div class="stock-status-metric stock-metric-market-cap"><span>市值</span><strong>104.59亿</strong></div>
+      <div class="stock-status-metric stock-metric-pe"><span>PE</span><strong>6.92</strong></div>
+      <div class="stock-status-metric stock-metric-amount"><span>成交额</span><strong>525.84万</strong></div>
+    </div>
+  </article>
+  <article class="stock-table-card stock-status-down">
+    <div class="stock-table-head">
+      <div>
+        <h3>
+          <span>保利物业</span>
+          <strong>-2.11%</strong>
+        </h3>
+        <p>06049.HK</p>
+      </div>
+    </div>
+    <div class="stock-table-fields">
+      <div class="stock-table-field"><span>视频时间</span><p><span class="stock-table-time-links"><a class="stock-table-time-link" href="https://www.bilibili.com/video/BV1Q6h16hEv7?t=86" target="_blank" rel="noopener">01:26</a></span></p></div>
+      <div class="stock-table-field"><span>板块</span><p>港股/物业管理</p></div>
+      <div class="stock-table-field"><span>投资逻辑/估值情况</span><p>300万成交砸掉接近3亿市值，成交极度缩量</p></div>
+      <div class="stock-table-field"><span>涨跌/持仓变动</span><p>下跌/市值损失，无操作</p></div>
+      <div class="stock-table-field"><span>预期/风险点</span><p>成交量小，参考意义有限</p></div>
+    </div>
+    <div class="stock-status-metrics">
+      <div class="stock-status-metric stock-metric-close"><span>收盘</span><strong>26.92</strong></div>
+      <div class="stock-status-metric stock-metric-change"><span>涨跌</span><strong>-0.58</strong></div>
+      <div class="stock-status-metric stock-metric-market-cap"><span>市值</span><strong>148.96亿</strong></div>
+      <div class="stock-status-metric stock-metric-pe"><span>PE</span><strong>7.99</strong></div>
+      <div class="stock-status-metric stock-metric-amount"><span>成交额</span><strong>337.58万</strong></div>
+    </div>
+  </article>
+  <article class="stock-table-card stock-status-flat">
+    <div class="stock-table-head">
+      <div>
+        <h3>
+          <span>福寿园</span>
+          <strong>+0.00%</strong>
+        </h3>
+        <p>01448.HK</p>
+      </div>
+    </div>
+    <div class="stock-table-fields">
+      <div class="stock-table-field"><span>视频时间</span><p><span class="stock-table-time-links"><a class="stock-table-time-link" href="https://www.bilibili.com/video/BV1Q6h16hEv7?t=104" target="_blank" rel="noopener">01:44</a></span></p></div>
+      <div class="stock-table-field"><span>板块</span><p>港股/殡葬服务</p></div>
+      <div class="stock-table-field"><span>投资逻辑/估值情况</span><p>继续停牌，等待内控审核；补充公告说明罢免执行董事王继生；0.1元要约被认为太亏</p></div>
+      <div class="stock-table-field"><span>涨跌/持仓变动</span><p>继续停牌</p></div>
+      <div class="stock-table-field"><span>预期/风险点</span><p>需就贪污定性/追责达成一致，安永出具内控完全合规报告并提交港交所后才复牌；0.1元要约不必理会</p></div>
+    </div>
+    <div class="stock-status-metrics">
+      <div class="stock-status-metric stock-metric-close"><span>收盘</span><strong>2.64</strong></div>
+      <div class="stock-status-metric stock-metric-change"><span>涨跌</span><strong>+0.00</strong></div>
+      <div class="stock-status-metric stock-metric-market-cap"><span>市值</span><strong>59.96亿</strong></div>
+      <div class="stock-status-metric stock-metric-pe"><span>PE</span><strong>15.02</strong></div>
+      <div class="stock-status-metric stock-metric-amount"><span>成交额</span><strong>0</strong></div>
+    </div>
+  </article>
+  <article class="stock-table-card stock-status-down">
+    <div class="stock-table-head">
+      <div>
+        <h3>
+          <span>海吉亚医疗</span>
+          <strong>-1.38%</strong>
+        </h3>
+        <p>06078.HK</p>
+      </div>
+    </div>
+    <div class="stock-table-fields">
+      <div class="stock-table-field"><span>视频时间</span><p><span class="stock-table-time-links"><a class="stock-table-time-link" href="https://www.bilibili.com/video/BV1Q6h16hEv7?t=254" target="_blank" rel="noopener">04:14</a></span></p></div>
+      <div class="stock-table-field"><span>板块</span><p>港股/医疗服务</p></div>
+      <div class="stock-table-field"><span>投资逻辑/估值情况</span><p>公告回购300万；回购资金约占市场成交量50%，但股价仍下跌，上方压单多</p></div>
+      <div class="stock-table-field"><span>涨跌/持仓变动</span><p>上午11点成交约250万；下午400万成交中约300万可能为公司回购；仍下跌</p></div>
+      <div class="stock-table-field"><span>预期/风险点</span><p>回购只能吃掉部分压单，无法拉起股价</p></div>
+    </div>
+    <div class="stock-status-metrics">
+      <div class="stock-status-metric stock-metric-close"><span>收盘</span><strong>9.66</strong></div>
+      <div class="stock-status-metric stock-metric-change"><span>涨跌</span><strong>-0.14</strong></div>
+      <div class="stock-status-metric stock-metric-market-cap"><span>市值</span><strong>58.24亿</strong></div>
+      <div class="stock-status-metric stock-metric-pe"><span>PE</span><strong>28.43</strong></div>
+      <div class="stock-status-metric stock-metric-amount"><span>成交额</span><strong>644.46万</strong></div>
+    </div>
+  </article>
+  <article class="stock-table-card stock-status-flat">
+    <div class="stock-table-head">
+      <div>
+        <h3>
+          <span>中概互联网ETF</span>
+        </h3>
+        <p>513050.SH</p>
+      </div>
+    </div>
+    <div class="stock-table-fields">
+      <div class="stock-table-field"><span>视频时间</span><p><span class="stock-table-time-links"><a class="stock-table-time-link" href="https://www.bilibili.com/video/BV1Q6h16hEv7?t=386" target="_blank" rel="noopener">06:26</a></span></p></div>
+      <div class="stock-table-field"><span>板块</span><p>互联网/跨境ETF</p></div>
+      <div class="stock-table-field"><span>投资逻辑/估值情况</span><p>924时0.98至1.01，现1.025，A股未开盘定价约1.01；整体低估但不如2024年924；从牛市高点回落接近40点</p></div>
+      <div class="stock-table-field"><span>涨跌/持仓变动</span><p>无持仓变动；名义价格处于十多年低点</p></div>
+      <div class="stock-table-field"><span>预期/风险点</span><p>美团、腾讯、阿里等权重股基本面恶化；AI发展早期拖累股东权益；定投合理但股东回报存疑</p></div>
+    </div>
+
+  </article>
+  <article class="stock-table-card stock-status-down">
+    <div class="stock-table-head">
+      <div>
+        <h3>
+          <span>美团-W</span>
+          <strong>-0.83%</strong>
+        </h3>
+        <p>03690.HK</p>
+      </div>
+    </div>
+    <div class="stock-table-fields">
+      <div class="stock-table-field"><span>视频时间</span><p><span class="stock-table-time-links"><a class="stock-table-time-link" href="https://www.bilibili.com/video/BV1Q6h16hEv7?t=429" target="_blank" rel="noopener">07:09</a></span></p></div>
+      <div class="stock-table-field"><span>板块</span><p>港股/本地生活</p></div>
+      <div class="stock-table-field"><span>投资逻辑/估值情况</span><p>在中概互联权重股基本面恶化背景下，美团赚不到钱</p></div>
+      <div class="stock-table-field"><span>涨跌/持仓变动</span><p>-</p></div>
+      <div class="stock-table-field"><span>预期/风险点</span><p>盈利能力恶化</p></div>
+    </div>
+    <div class="stock-status-metrics">
+      <div class="stock-status-metric stock-metric-close"><span>收盘</span><strong>71.65</strong></div>
+      <div class="stock-status-metric stock-metric-change"><span>涨跌</span><strong>-0.60</strong></div>
+      <div class="stock-status-metric stock-metric-market-cap"><span>市值</span><strong>4007.16亿</strong></div>
+      <div class="stock-status-metric stock-metric-pe"><span>PE</span><strong>14.79</strong></div>
+      <div class="stock-status-metric stock-metric-amount"><span>成交额</span><strong>12.53亿</strong></div>
+    </div>
+  </article>
+  <article class="stock-table-card stock-status-down">
+    <div class="stock-table-head">
+      <div>
+        <h3>
+          <span>腾讯控股</span>
+          <strong>-0.41%</strong>
+        </h3>
+        <p>00700.HK</p>
+      </div>
+    </div>
+    <div class="stock-table-fields">
+      <div class="stock-table-field"><span>视频时间</span><p><span class="stock-table-time-links"><a class="stock-table-time-link" href="https://www.bilibili.com/video/BV1Q6h16hEv7?t=431" target="_blank" rel="noopener">07:11</a></span></p></div>
+      <div class="stock-table-field"><span>板块</span><p>港股/互联网</p></div>
+      <div class="stock-table-field"><span>投资逻辑/估值情况</span><p>资本开支把利润搞没，股东回报后面能否维持存问号</p></div>
+      <div class="stock-table-field"><span>涨跌/持仓变动</span><p>-</p></div>
+      <div class="stock-table-field"><span>预期/风险点</span><p>利润受资本开支拖累，股东回报不确定</p></div>
+    </div>
+    <div class="stock-status-metrics">
+      <div class="stock-status-metric stock-metric-close"><span>收盘</span><strong>436.60</strong></div>
+      <div class="stock-status-metric stock-metric-change"><span>涨跌</span><strong>-1.80</strong></div>
+      <div class="stock-status-metric stock-metric-market-cap"><span>市值</span><strong>39327.24亿</strong></div>
+      <div class="stock-status-metric stock-metric-pe"><span>PE</span><strong>14.69</strong></div>
+      <div class="stock-status-metric stock-metric-amount"><span>成交额</span><strong>39.79亿</strong></div>
+    </div>
+  </article>
+  <article class="stock-table-card stock-status-down">
+    <div class="stock-table-head">
+      <div>
+        <h3>
+          <span>阿里巴巴-W</span>
+          <strong>-1.45%</strong>
+        </h3>
+        <p>09988.HK</p>
+      </div>
+    </div>
+    <div class="stock-table-fields">
+      <div class="stock-table-field"><span>视频时间</span><p><span class="stock-table-time-links"><a class="stock-table-time-link" href="https://www.bilibili.com/video/BV1Q6h16hEv7?t=436" target="_blank" rel="noopener">07:16</a></span></p></div>
+      <div class="stock-table-field"><span>板块</span><p>港股/互联网电商</p></div>
+      <div class="stock-table-field"><span>投资逻辑/估值情况</span><p>在配资，自由现金流为负数、净流出</p></div>
+      <div class="stock-table-field"><span>涨跌/持仓变动</span><p>-</p></div>
+      <div class="stock-table-field"><span>预期/风险点</span><p>股东权益受拖累，现金流恶化</p></div>
+    </div>
+    <div class="stock-status-metrics">
+      <div class="stock-status-metric stock-metric-close"><span>收盘</span><strong>108.40</strong></div>
+      <div class="stock-status-metric stock-metric-change"><span>涨跌</span><strong>-1.60</strong></div>
+      <div class="stock-status-metric stock-metric-market-cap"><span>市值</span><strong>21561.79亿</strong></div>
+      <div class="stock-status-metric stock-metric-pe"><span>PE</span><strong>24.98</strong></div>
+      <div class="stock-status-metric stock-metric-amount"><span>成交额</span><strong>30.39亿</strong></div>
+    </div>
+  </article>
+</section>
+  </div>
+  <script>
+    if (window.matchMedia('(max-width: 520px)').matches) {
+      document.querySelectorAll('.markdown-body table').forEach((table) => {
+        const headers = Array.from(table.querySelectorAll('thead th')).map((th) => th.textContent.trim());
+        const rows = Array.from(table.querySelectorAll('tbody tr'));
+        if (headers.length === 0 || rows.length === 0) return;
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'mobile-table';
+
+        rows.forEach((row) => {
+          const rowEl = document.createElement('div');
+          rowEl.className = 'mobile-table-row';
+
+          Array.from(row.children).forEach((cell, index) => {
+            const cellEl = document.createElement('div');
+            cellEl.className = 'mobile-table-cell';
+
+            const labelEl = document.createElement('div');
+            labelEl.className = 'mobile-table-label';
+            labelEl.textContent = headers[index] || `列${index + 1}`;
+
+            const valueEl = document.createElement('div');
+            valueEl.className = 'mobile-table-value';
+            valueEl.innerHTML = cell.innerHTML;
+
+            cellEl.appendChild(labelEl);
+            cellEl.appendChild(valueEl);
+            rowEl.appendChild(cellEl);
+          });
+
+          wrapper.appendChild(rowEl);
+        });
+
+        table.replaceWith(wrapper);
+      });
+    }
+  </script>
+</body>
+</html>

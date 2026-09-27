@@ -34,7 +34,6 @@ graph TB
         ASR_OSS[(阿里云 OSS<br/>音频中转)]
         ASR_API[(DashScope ASR<br/>qwen3-asr-flash)]
         LLM_API[(DeepSeek API<br/>deepseek-v4-pro)]
-        FS[(飞书 Bot<br/>通知推送)]
     end
 
     CLI --> PIPE
@@ -47,7 +46,6 @@ graph TB
     PIPE --> STORE --> ASR_OSS
     PIPE --> HIST
     API --> RAG
-    MON --> PIPE --> FS
 ```
 
 ## 模块依赖关系
@@ -93,7 +91,7 @@ Web 层通过独立报告队列调度，复用存储、历史及预览/PNG 导�
 | **格式转换** | `b2t/converter/` | Markdown → TXT / PDF / PNG / HTML / 表格 PDF |
 | **LLM 总结** | `b2t/summarize/` | LiteLLM 流式调用，preset 模板注入，markdownlint 格式化 |
 | **RAG 检索** | `b2t/rag/` | ChromaDB 向量存储，Markdown 分块，LLM 问答 + 来源引用 |
-| **UP 主监控** | `b2t/monitor/` | 定时检查动态 → 自动转录 → 飞书通知 |
+| **UP 主监控** | `b2t/monitor/` | 定时检查动态 → Textual 展示最近 5 期与历史总结状态；手动生成操作通过 HTTP API 交给独立 backend 执行 |
 | **历史记录** | `b2t/history.py` | SQLite 持久化转录元数据，支持分页搜索 |
 | **CLI** | `b2t/cli.py` | 命令行入口 + Textual 交互模式 |
 | **Web 后端** | `web-ui/backend/` | FastAPI REST + 8 个路由模块 + 任务队列 |

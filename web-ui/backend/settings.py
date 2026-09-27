@@ -3,6 +3,7 @@
 import os
 from dataclasses import replace
 from datetime import UTC, datetime
+from pathlib import Path
 from threading import Lock
 
 from b2t.config import (
@@ -15,7 +16,11 @@ from b2t.config import (
 )
 from backend import PROJECT_ROOT
 
-ROOT_CONFIG_PATH = PROJECT_ROOT / "config.toml"
+ROOT_CONFIG_PATH = (
+    Path(os.environ.get("B2T_CONFIG") or PROJECT_ROOT / "config.toml")
+    .expanduser()
+    .resolve()
+)
 
 WEB_UI_MODE_DEFAULT = "default"
 WEB_UI_MODE_OPEN_PUBLIC = "open-public"
@@ -67,9 +72,9 @@ try:
 except FileNotFoundError:
     _app_config = None
 
-_web_ui_mode = os.environ.get(WEB_UI_MODE_ENV, WEB_UI_MODE_DEFAULT).strip().lower()
+_web_ui_mode = os.environ.get(WEB_UI_MODE_ENV, WEB_UI_MODE_OPEN_PUBLIC).strip().lower()
 if _web_ui_mode not in {WEB_UI_MODE_DEFAULT, WEB_UI_MODE_OPEN_PUBLIC}:
-    _web_ui_mode = WEB_UI_MODE_DEFAULT
+    _web_ui_mode = WEB_UI_MODE_OPEN_PUBLIC
 
 _public_api_key_lock = Lock()
 _public_api_key = (
@@ -258,21 +263,16 @@ def build_open_public_config(
         and custom_llm_model.strip()
     )
     public_summarize_profiles: dict[str, SummarizeModelProfile] = {}
-    selected_profile = ""
-    bailian_fallback_profile = ""
-    deepseek_profile_name = ""
+    selected_profile = config.summarize.profile
 
     for name, profile in config.summarize.profiles.items():
         provider = profile.provider.strip().lower()
         if provider == "deepseek":
-            deepseek_profile_name = name
             public_summarize_profiles[name] = replace(
                 profile, api_key=deepseek_api_key if use_deepseek else ""
             )
         elif provider == "bailian":
             public_summarize_profiles[name] = replace(profile, api_key=api_key)
-            if not bailian_fallback_profile:
-                bailian_fallback_profile = name
         else:
             public_summarize_profiles[name] = replace(profile, api_key="")
 
@@ -287,12 +287,6 @@ def build_open_public_config(
             )
         )
         selected_profile = OPEN_PUBLIC_CUSTOM_LLM_PROFILE
-    elif use_deepseek and deepseek_profile_name:
-        selected_profile = deepseek_profile_name
-    elif bailian_fallback_profile:
-        selected_profile = bailian_fallback_profile
-    elif config.summarize.profiles:
-        selected_profile = next(iter(config.summarize.profiles))
     fancy_html_profile = config.fancy_html.profile
 
     public_summarize_config = SummarizeConfig(
@@ -304,25 +298,20 @@ def build_open_public_config(
         context_file=config.summarize.context_file,
     )
 
-    # RAG embedding still uses Aliyun (bailian).  RAG LLM queries follow
-    # the custom OpenAI-compatible profile first, then DeepSeek when available.
+    # Credentials must not override the administrator's configured model defaults.
     rag_llm_profile = (
         OPEN_PUBLIC_CUSTOM_LLM_PROFILE
         if use_custom_llm
-        else deepseek_profile_name
-        if use_deepseek
-        else ""
+        else config.rag.llm_profile or selected_profile
     )
-    public_rag = config.rag
-    if api_key:
-        public_rag_embedding = config.rag.embedding
-        if config.rag.embedding.provider.strip().lower() == "bailian":
-            public_rag_embedding = replace(config.rag.embedding, api_key=api_key)
-        public_rag = replace(
-            config.rag,
-            embedding=public_rag_embedding,
-            llm_profile=rag_llm_profile,
-        )
+    public_rag_embedding = config.rag.embedding
+    if config.rag.embedding.provider.strip().lower() == "bailian":
+        public_rag_embedding = replace(config.rag.embedding, api_key=api_key)
+    public_rag = replace(
+        config.rag,
+        embedding=public_rag_embedding,
+        llm_profile=rag_llm_profile,
+    )
 
     return replace(
         config,

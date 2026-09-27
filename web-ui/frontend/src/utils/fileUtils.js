@@ -102,7 +102,7 @@ export function buildArtifactDisplayName(artifact, options = {}) {
       }
       return '知识库查询 FancyHTML'
     }
-    return `${bvid}_总结_FancyHTML`
+    return `${bvid}_阅读报告`
   }
   if (
     artifact.kind === 'summary_table_md' ||
@@ -255,4 +255,12 @@ export function resourceDisplayLabel(resourceId, page = null) {
 
 export function resourceAuthorLabel(resourceId) {
   return resourcePlatformInfo(resourceId).authorLabel
+}
+
+// Mode is encoded in each generated report's immutable artifact filename.
+export function reportModeLabel(filename = '') {
+  const mode = filename
+    .match(/_(standard|brief)_[a-f0-9]{8}_summary_fancy\.html$/i)?.[1]
+    ?.toLowerCase()
+  return { standard: '标准精读', brief: '精简速览' }[mode] || '未记录'
 }

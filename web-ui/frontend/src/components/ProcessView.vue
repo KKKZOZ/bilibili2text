@@ -229,7 +229,12 @@
         job.value.summary_preset ||
         inferSummaryPresetFromFilename(item.filename) ||
         selectedSummaryPreset.value,
-      summaryProfile: job.value.summary_profile || selectedSummaryProfile.value
+      summaryProfile:
+        item.kind === 'summary_fancy_html'
+          ? item.summary_profile || ''
+          : item.summary_profile ||
+            job.value.summary_profile ||
+            selectedSummaryProfile.value
     }))
   })
 

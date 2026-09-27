@@ -4,30 +4,21 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-import tempfile
 import time
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
-from datetime import datetime
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from pathlib import Path
+from threading import Event
 from typing import Any
 
 import httpx
 
+from b2t.cancellation import CancellationToken, PipelineCancelled
 from b2t.config import AppConfig, MonitorCreatorConfig, build_bilibili_cookie
-from b2t.converter.md_remove_table import MarkdownRemoveTableConverter
-from b2t.converter.md_to_png import MarkdownToPngConverter
 from b2t.download.yutto_cli import extract_bvid
-from b2t.history import HistoryDB, record_pipeline_run
-from b2t.monitor.feishu import FeishuNotifier
-from b2t.pipeline import run_pipeline
-from b2t.storage import (
-    StorageBackend,
-    StoredArtifact,
-    create_storage_backend,
-    create_stt_storage_backend,
-)
+from b2t.history import HistoryDB
+from b2t.monitor.display import CreatorStatus, MonitorSnapshot, VideoStatus
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +42,7 @@ class DynamicVideoEvent:
 
 
 class JsonStateStore:
-    """Persist the latest processed dynamic id for each creator."""
+    """Persist the latest observed video dynamic id for each creator."""
 
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path).expanduser().resolve()
@@ -90,7 +81,7 @@ class JsonStateStore:
 
 
 class BilibiliMonitorService:
-    """Monitor creators and trigger the existing b2t pipeline for new videos."""
+    """Monitor creators and display videos without running transcription or summaries."""
 
     BILI_SPACE_API = "https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/space"
 
@@ -98,22 +89,24 @@ class BilibiliMonitorService:
         self,
         config: AppConfig,
         *,
-        notifier: FeishuNotifier | None = None,
+        on_update: Callable[[MonitorSnapshot], None] | None = None,
         history_db: HistoryDB | None = None,
-        storage_backend: StorageBackend | None = None,
-        stt_storage_backend: StorageBackend | None = None,
-        pipeline_runner: Callable[..., dict[str, StoredArtifact]] = run_pipeline,
         client: httpx.Client | None = None,
     ) -> None:
         self.config = config
-        self.notifier = notifier or FeishuNotifier(config.feishu)
-        self._owns_notifier = notifier is None
+        self.on_update = on_update
+        self._stop = Event()
+        self._cancellation = CancellationToken()
+        self._statuses = {
+            creator.uid: CreatorStatus(
+                creator.uid, creator.name or str(creator.uid), creator.check_interval
+            )
+            for creator in config.monitor.creators
+        }
+        self.checks = 0
+        self.failed = 0
+        self.activity = "正在启动监控"
         self.history_db = history_db or HistoryDB(config.download.db_dir)
-        self.storage_backend = storage_backend or create_storage_backend(config)
-        self.stt_storage_backend = stt_storage_backend or create_stt_storage_backend(
-            config
-        )
-        self.pipeline_runner = pipeline_runner
         self.state = JsonStateStore(config.monitor.state_file)
         self._client = client or httpx.Client(timeout=30.0, follow_redirects=True)
         self._owns_client = client is None
@@ -121,88 +114,85 @@ class BilibiliMonitorService:
     def close(self) -> None:
         if self._owns_client:
             self._client.close()
-        if self._owns_notifier:
-            self.notifier.close()
 
     def reset_state(self) -> None:
         self.state.clear()
 
-    def run(
-        self,
-        *,
-        once: bool = False,
-        bootstrap_unsummarized_count: int = 0,
-    ) -> None:
+    def snapshot(self) -> MonitorSnapshot:
+        return MonitorSnapshot(
+            tuple(self._statuses.values()), self.checks, self.failed, self.activity
+        )
+
+    def _publish(self) -> None:
+        if self.on_update:
+            self.on_update(self.snapshot())
+
+    def _update_creator(self, uid: int, **changes) -> None:
+        self._statuses[uid] = replace(self._statuses[uid], **changes)
+        self._publish()
+
+    def request_stop(self) -> None:
+        self._stop.set()
+        self._cancellation.cancel()
+
+    def run(self, *, once: bool = False) -> None:
         creators = self.config.monitor.creators
         if not creators:
-            raise ValueError(
-                "monitor.creators 为空，请先在配置文件中配置要监控的 UP 主"
-            )
-
-        if self.config.monitor.startup_notification:
-            creator_names = ", ".join(
-                creator.name or str(creator.uid) for creator in creators[:5]
-            )
-            if len(creators) > 5:
-                creator_names += f" 等 {len(creators)} 个"
-            self.notifier.send_system_notification(
-                "INFO",
-                "B站监控已启动",
-                (
-                    f"**模式**: {'单次检查' if once else '持续监控'}\n\n"
-                    f"**UP 主**: {creator_names}\n\n"
-                    f"**回填未总结视频数**: {bootstrap_unsummarized_count}"
-                ),
-            )
-
-        if once:
+            raise ValueError("monitor.creators 为空，请先配置要监控的 UP 主")
+        self.activity = "单次检查" if once else "持续监控中"
+        self._publish()
+        logger.info("监控已启动，共 %d 个 UP 主", len(creators))
+        while not self._stop.is_set():
             for creator in creators:
-                self.process_creator(
-                    creator,
-                    bootstrap_unsummarized_count=bootstrap_unsummarized_count,
-                )
-            return
-
-        next_run_at = {creator.uid: 0.0 for creator in creators}
-        while True:
-            now = time.time()
-            used_bootstrap = False
-            for creator in creators:
-                if now < next_run_at[creator.uid]:
+                if self._stop.is_set():
+                    break
+                due = self._statuses[creator.uid].next_check
+                if due is not None and time.time() < due:
                     continue
                 try:
-                    self.process_creator(
-                        creator,
-                        bootstrap_unsummarized_count=bootstrap_unsummarized_count,
-                    )
-                except Exception as exc:
+                    self.process_creator(creator)
+                except PipelineCancelled:
+                    return
+                except Exception:
                     logger.exception("监控 %s 失败", creator.name or creator.uid)
-                    self.notifier.send_system_notification(
-                        "ERROR",
-                        "B站监控异常",
-                        (
-                            f"**UP 主**: {creator.name or creator.uid}\n\n"
-                            f"**错误**: {exc}"
-                        ),
-                    )
-                next_run_at[creator.uid] = now + creator.check_interval
-                used_bootstrap = True
-            if used_bootstrap:
-                bootstrap_unsummarized_count = 0
-            time.sleep(5)
+                    if once:
+                        raise
+            if once:
+                for creator in creators:
+                    self._update_creator(creator.uid, next_check=None)
+                return
+            self._stop.wait(1)
 
-    def process_creator(
-        self,
-        creator: MonitorCreatorConfig,
-        *,
-        bootstrap_unsummarized_count: int = 0,
-    ) -> None:
-        data = self.fetch_user_space_dynamics(creator.uid, limit_recent=20)
+    def process_creator(self, creator: MonitorCreatorConfig) -> None:
+        self._cancellation.raise_if_cancelled()
+        self._update_creator(creator.uid, status="正在检查", error="", next_check=None)
+        try:
+            self._process_creator(creator)
+        except PipelineCancelled:
+            self._update_creator(creator.uid, status="已停止")
+            raise
+        except Exception as exc:
+            self.failed += 1
+            self.activity = f"{creator.name or creator.uid} 检查失败"
+            self._update_creator(creator.uid, status="失败，等待重试", error=str(exc))
+            raise
+        else:
+            self.checks += 1
+            self.activity = "检查完成，等待下一轮"
+            self._update_creator(creator.uid, status="等待下次检查")
+        finally:
+            now = time.time()
+            self._update_creator(
+                creator.uid, checked_at=now, next_check=now + creator.check_interval
+            )
+
+    def _process_creator(self, creator: MonitorCreatorConfig) -> None:
+        data = self.fetch_user_space_dynamics(creator.uid)
         raw_data = data.get("data")
         if raw_data is None:
             raw_data = {}
         if not isinstance(raw_data, dict):
-            raise RuntimeError(
+            raise RuntimeError(  # noqa: TRY004 -- Malformed upstream response, not caller input.
                 f"获取 {creator.name or creator.uid} 动态失败: 接口返回非法 data 结构"
             )
         items = raw_data.get("items", [])
@@ -216,43 +206,41 @@ class BilibiliMonitorService:
             raise RuntimeError(
                 f"获取 {creator.name or creator.uid} 动态失败: {message}"
             )
-        if not items:
-            logger.info("%s 暂无可处理动态", creator.name or creator.uid)
-            return
-
-        last_seen = self.state.get_last_seen(creator.uid)
-        if bootstrap_unsummarized_count > 0:
-            candidates = self._collect_unsummarized_video_items(
-                items,
-                bootstrap_unsummarized_count,
-            )
-        elif last_seen is None:
-            candidates = self._collect_initial_video_items(items)
-        else:
-            candidates = self._collect_new_video_items(items, last_seen)
-            if candidates is None:
-                logger.warning(
-                    "%s 的 last_seen 已失效，回退到首次扫描策略",
-                    creator.name or creator.uid,
-                )
-                candidates = self._collect_recoverable_video_items(items)
-
-        if not candidates:
-            return
-
-        for item in candidates:
+        videos = {}
+        for item in items:
             event = self.extract_video_event(item, creator)
-            if event is None:
-                continue
-            self._handle_video_event(event)
-            self.state.set_last_seen(creator.uid, event.dynamic_id)
+            if event is not None:
+                videos[event.bvid] = event
+        latest = sorted(
+            videos.values(), key=lambda event: event.publish_timestamp, reverse=True
+        )[:5]
+        self._update_creator(
+            creator.uid,
+            videos=tuple(
+                VideoStatus(
+                    event.bvid,
+                    event.title,
+                    event.publish_time,
+                    "已总结" if self._has_summary_for_bvid(event.bvid) else "未总结",
+                )
+                for event in latest
+            ),
+        )
+        for event in latest:
+            logger.info(
+                "最近视频 | %s | %s | %s | %s",
+                creator.name or creator.uid,
+                event.publish_time,
+                event.bvid,
+                event.title,
+            )
+        if latest:
+            self.state.set_last_seen(creator.uid, latest[0].dynamic_id)
             self.state.save()
 
     def fetch_user_space_dynamics(
         self,
         uid: int,
-        *,
-        limit_recent: int = 20,
     ) -> dict[str, Any]:
         params = {
             "offset": "",
@@ -281,250 +269,59 @@ class BilibiliMonitorService:
         if cookie:
             headers["Cookie"] = cookie
 
-        response = self._client.get(self.BILI_SPACE_API, params=params, headers=headers)
-        response.raise_for_status()
-        payload = response.json()
-        raw_data = payload.get("data")
-        if raw_data is None:
-            payload["data"] = {}
-            return payload
-        if not isinstance(raw_data, dict):
-            raise RuntimeError(
-                f"B站动态接口返回非法 data 结构: {type(raw_data).__name__}"
+        collected = []
+        seen_ids = set()
+        video_ids = set()
+        seen_offsets = {""}
+        first_payload = None
+        # A dynamic page includes text, forwards and pinned posts. Fetch enough
+        # pages for five distinct non-pinned videos instead of five dynamics.
+        for page_number in range(10):
+            self._cancellation.raise_if_cancelled()
+            response = self._client.get(
+                self.BILI_SPACE_API, params=params, headers=headers
             )
-        items = raw_data.get("items", [])
-        if len(items) > limit_recent:
-            raw_data["items"] = items[:limit_recent]
-        return payload
-
-    def _collect_initial_video_items(
-        self,
-        items: list[dict[str, Any]],
-    ) -> list[dict[str, Any]]:
-        collected = self._collect_recent_video_items(items)
-        limited = collected[: self.config.monitor.first_run_max_push]
-        limited.sort(key=self.get_publish_timestamp)
-        return limited
-
-    def _collect_recent_video_items(
-        self,
-        items: list[dict[str, Any]],
-    ) -> list[dict[str, Any]]:
-        threshold = int(time.time()) - self.config.monitor.lookback_hours * 3600
-        collected: list[dict[str, Any]] = []
-        for item in items:
-            if self.get_publish_timestamp(item) < threshold:
-                continue
-            if self.extract_video_event(item, None) is None:
-                continue
-            collected.append(item)
-        return collected
-
-    def _collect_recoverable_video_items(
-        self,
-        items: list[dict[str, Any]],
-    ) -> list[dict[str, Any]]:
-        collected: list[dict[str, Any]] = []
-        for item in self._collect_recent_video_items(items):
-            event = self.extract_video_event(item, None)
-            if event is None:
-                continue
-            if self._has_summary_for_bvid(event.bvid):
-                continue
-            collected.append(item)
-        collected.sort(key=self.get_publish_timestamp)
-        return collected
-
-    def _collect_new_video_items(
-        self,
-        items: list[dict[str, Any]],
-        last_seen: str,
-    ) -> list[dict[str, Any]] | None:
-        last_seen_index: int | None = None
-        for index, item in enumerate(items):
-            if self.get_dynamic_id(item) == last_seen:
-                last_seen_index = index
+            response.raise_for_status()
+            payload = response.json()
+            if payload.get("code") not in (0, None):
+                raise RuntimeError(f"B站动态接口返回错误代码: {payload.get('code')}")
+            raw_data = payload.get("data") or {}
+            if not isinstance(raw_data, dict):
+                raise RuntimeError("B站动态接口返回非法 data 结构")  # noqa: TRY004
+            if first_payload is None:
+                first_payload = payload
+            page_items = raw_data.get("items") or []
+            if not isinstance(page_items, list):
+                raise RuntimeError("B站动态接口返回非法 items 结构")  # noqa: TRY004
+            for item in page_items:
+                dynamic_id = self.get_dynamic_id(item)
+                if dynamic_id is not None and dynamic_id in seen_ids:
+                    continue
+                if dynamic_id is not None:
+                    seen_ids.add(dynamic_id)
+                collected.append(item)
+                event = self.extract_video_event(item, None)
+                tag = (item.get("modules") or {}).get("module_tag") or {}
+                if event is not None and tag.get("text") != "置顶":
+                    video_ids.add(event.bvid)
+            if len(video_ids) >= 5 or not raw_data.get("has_more") or not page_items:
                 break
-        if last_seen_index is None:
-            return None
-
-        threshold = int(time.time()) - self.config.monitor.lookback_hours * 3600
-        collected: list[dict[str, Any]] = []
-        for item in items[:last_seen_index]:
-            publish_timestamp = self.get_publish_timestamp(item)
-            if publish_timestamp < threshold:
-                continue
-            if self.extract_video_event(item, None) is None:
-                continue
-            collected.append(item)
-        collected.sort(key=self.get_publish_timestamp)
-        return collected
-
-    def _collect_unsummarized_video_items(
-        self,
-        items: list[dict[str, Any]],
-        count: int,
-    ) -> list[dict[str, Any]]:
-        collected: list[dict[str, Any]] = []
-        for item in items:
-            event = self.extract_video_event(item, None)
-            if event is None:
-                continue
-            if self._has_summary_for_bvid(event.bvid):
-                continue
-            collected.append(item)
-            if len(collected) >= count:
+            offset = raw_data.get("offset")
+            if not isinstance(offset, str) or not offset or offset in seen_offsets:
+                logger.warning("动态分页游标未推进，停止本轮补取")
                 break
-        collected.sort(key=self.get_publish_timestamp)
-        return collected
-
-    def _handle_video_event(self, event: DynamicVideoEvent) -> None:
-        logger.info("发现新视频: %s (%s)", event.title, event.bvid)
-        try:
-            results = self.pipeline_runner(
-                event.video_url,
-                self.config,
-                summary_preset=self.config.monitor.summary_preset,
-                summary_profile=self.config.monitor.summary_profile,
-                output_dir=self.config.monitor.output_dir or None,
-                storage_backend=self.storage_backend,
-                stt_storage_backend=self.stt_storage_backend,
-            )
-            self._record_history(event.bvid, results)
-            image_paths = self._build_notification_pngs(event, results)
-            try:
-                ok = self.notifier.send_image_card(
-                    f"{event.creator.name or event.creator.uid} 发布新视频",
-                    image_paths,
-                )
-            finally:
-                for image_path in image_paths:
-                    image_path.unlink(missing_ok=True)
-            if not ok:
-                raise RuntimeError("飞书图片卡片发送失败")
-        except Exception as exc:
-            logger.exception("处理视频 %s 失败", event.bvid)
-            self.notifier.send_system_notification(
-                "ERROR",
-                "视频监控处理失败",
-                (
-                    f"**UP 主**: {event.creator.name or event.creator.uid}\n\n"
-                    f"**视频**: {event.title}\n\n"
-                    f"**链接**: {event.video_url}\n\n"
-                    f"**错误**: {exc}"
-                ),
-            )
-            raise
-
-    def _build_notification_markdown(
-        self,
-        event: DynamicVideoEvent,
-        results: Mapping[str, StoredArtifact | Any],
-    ) -> str:
-        metadata = results.get("_metadata")
-        author = getattr(metadata, "author", "") or event.creator.name
-        pubdate = getattr(metadata, "pubdate", "") or event.publish_time
-
-        summary_artifact = results.get("summary")
-        summary_text = ""
-        if isinstance(summary_artifact, StoredArtifact):
-            summary_text = self._read_artifact_text(summary_artifact)
-
-        max_chars = self.config.feishu.summary_max_chars
-        if len(summary_text) > max_chars:
-            summary_text = summary_text[:max_chars].rstrip() + "\n\n...[已截断]"
-
-        parts = [
-            f"**UP 主**: {author or event.creator.uid}",
-            f"**标题**: {event.title}",
-            f"**BV号**: {event.bvid}",
-            f"**发布时间**: {pubdate or '未知'}",
-            f"[打开视频]({event.video_url}) | [打开动态]({event.dynamic_url})",
-        ]
-        if summary_text:
-            parts.append(f"**AI 总结**\n\n{summary_text}")
-        return "\n\n".join(parts)
-
-    def _build_notification_pngs(
-        self,
-        event: DynamicVideoEvent,
-        results: Mapping[str, StoredArtifact | Any],
-    ) -> list[Path]:
-        summary_artifact = results.get("summary")
-        if not isinstance(summary_artifact, StoredArtifact):
-            raise RuntimeError("缺少 summary 产物，无法生成飞书图片")
-
-        summary_table_artifact = results.get("summary_table_md")
-
-        with tempfile.TemporaryDirectory(prefix="b2t-monitor-images-") as temp_dir:
-            temp_root = Path(temp_dir)
-            summary_md_path = temp_root / f"{event.bvid}_summary.md"
-            summary_md_path.write_text(
-                self._read_artifact_text(summary_artifact),
-                encoding="utf-8",
-            )
-
-            png_converter = MarkdownToPngConverter()
-            no_table_md_path = temp_root / f"{event.bvid}_summary_no_table.md"
-            MarkdownRemoveTableConverter().convert(summary_md_path, no_table_md_path)
-
-            no_table_png_path = temp_root / f"{event.bvid}_summary_no_table.png"
-            png_converter.convert(no_table_md_path, no_table_png_path, is_table=False)
-
-            generated_pngs = [no_table_png_path]
-
-            if isinstance(summary_table_artifact, StoredArtifact):
-                summary_table_md_path = temp_root / f"{event.bvid}_summary_table.md"
-                summary_table_md_path.write_text(
-                    self._read_artifact_text(summary_table_artifact),
-                    encoding="utf-8",
-                )
-                summary_table_png_path = temp_root / f"{event.bvid}_summary_table.png"
-                png_converter.convert(
-                    summary_table_md_path,
-                    summary_table_png_path,
-                    is_table=True,
-                    as_of_date=event.publish_time,
-                )
-                generated_pngs.append(summary_table_png_path)
-
-            copied_pngs: list[Path] = []
-            for png_path in generated_pngs:
-                fd, persistent_name = tempfile.mkstemp(
-                    prefix=f"{png_path.stem}-",
-                    suffix=".png",
-                )
-                os.close(fd)
-                persistent_path = Path(persistent_name)
-                persistent_path.write_bytes(png_path.read_bytes())
-                copied_pngs.append(persistent_path)
-            return copied_pngs
-
-    def _read_artifact_text(self, artifact: StoredArtifact) -> str:
-        with self.storage_backend.open_stream(artifact.storage_key) as stream:
-            return stream.read().decode("utf-8")
-
-    def _record_history(
-        self,
-        bvid: str,
-        results: Mapping[str, StoredArtifact | Any],
-    ) -> None:
-        metadata = results.get("_metadata")
-        title = getattr(metadata, "title", "")
-        author = getattr(metadata, "author", "")
-        pubdate = getattr(metadata, "pubdate", "")
-        tid = getattr(metadata, "tid", 0)
-        record_pipeline_run(
-            db=self.history_db,
-            bvid=bvid,
-            results=results,
-            title=title,
-            author=author,
-            pubdate=pubdate,
-            tid=tid,
-            summary_preset=self.config.monitor.summary_preset,
-            summary_profile=self.config.monitor.summary_profile,
-        )
+            seen_offsets.add(offset)
+            params["offset"] = offset
+            if self._stop.wait(0.2):
+                self._cancellation.raise_if_cancelled()
+        if len(video_ids) < 5:
+            logger.info("已检查 %d 页动态，当前可用视频不足 5 期", page_number + 1)
+        logger.info("本轮获取 %d 页、%d 条动态", page_number + 1, len(collected))
+        first_payload["data"] = {
+            **(first_payload.get("data") or {}),
+            "items": collected,
+        }
+        return first_payload
 
     def _has_summary_for_bvid(self, bvid: str) -> bool:
         return self.history_db.has_summary_for_bvid(bvid)
@@ -538,31 +335,31 @@ class BilibiliMonitorService:
 
     @staticmethod
     def get_publish_timestamp(item: Mapping[str, Any]) -> int:
-        modules = item.get("modules", {})
-        author = modules.get("module_author", {})
-        pub_ts = author.get("pub_ts")
-        if isinstance(pub_ts, int):
-            return pub_ts
-        if isinstance(pub_ts, float):
-            return int(pub_ts)
-        timestamp = item.get("timestamp")
-        if isinstance(timestamp, int):
-            return timestamp
-        if isinstance(timestamp, float):
-            return int(timestamp)
+        modules = item.get("modules") or {}
+        author = modules.get("module_author") or {}
+        for value in (author.get("pub_ts"), item.get("timestamp")):
+            if isinstance(value, bool):
+                continue
+            try:
+                timestamp = int(value)
+            except (TypeError, ValueError, OverflowError):
+                continue
+            if 0 < timestamp < 253402300800:
+                return timestamp
         return 0
 
     @staticmethod
     def get_publish_time(item: Mapping[str, Any]) -> str:
-        modules = item.get("modules", {})
-        author = modules.get("module_author", {})
-        pub_ts = author.get("pub_ts")
-        if isinstance(pub_ts, (int, float)):
-            return datetime.fromtimestamp(pub_ts).strftime("%Y-%m-%d %H:%M:%S")
+        timestamp = BilibiliMonitorService.get_publish_timestamp(item)
+        if timestamp:
+            return (
+                datetime.fromtimestamp(timestamp, tz=UTC)
+                .astimezone()
+                .strftime("%Y-%m-%d %H:%M:%S")
+            )
+        author = (item.get("modules") or {}).get("module_author") or {}
         pub_time = author.get("pub_time")
-        if isinstance(pub_time, str):
-            return pub_time.strip()
-        return ""
+        return pub_time.strip() if isinstance(pub_time, str) else ""
 
     def extract_video_event(
         self,

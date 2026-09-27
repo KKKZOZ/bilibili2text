@@ -30,7 +30,7 @@
 
 ---
 
-`bilibili-to-text` 是一个面向长内容的自动化处理工具。它将视频或播客转换为带上下文的 Markdown 文稿，并进一步生成结构化总结、表格、时间线、Fancy HTML 与知识库索引。既可以通过 Web UI 管理完整工作流，也可以使用 CLI 或监控服务批量运行。
+`bilibili-to-text` 是一个面向长内容的自动化处理工具。它将视频或播客转换为带上下文的 Markdown 文稿，并进一步生成结构化总结、表格、时间线、Fancy HTML 与知识库索引。可以通过 Web UI 或 CLI 处理内容，也可以使用独立监控服务查看 UP 主视频更新。
 
 > [!TIP]
 > **在线体验：** [b2t.kkkzoz.top:27676](http://b2t.kkkzoz.top:27676)
@@ -47,7 +47,7 @@
 | 内容导出 | 生成 Markdown、TXT、PDF、PNG、HTML、表格和时间线等派生产物；可用 Pi 从完整转写生成精读/速览报告 |
 | 历史与检索 | 在 Web UI 中管理转录记录，并使用可选 RAG 知识库跨视频检索和问答 |
 | 存储后端 | 支持本地目录、MinIO 与阿里云 OSS |
-| 自动化 | 监控指定 Bilibili UP 主的新视频，自动转录总结，并通过飞书机器人发送通知 |
+| 自动化 | 监控指定 Bilibili UP 主的新视频，通过 Textual 终端面板展示最近 5 期，并手动提交总结或阅读报告任务 |
 | 开放服务 | Open Public 模式允许访问者使用自己的 API Key；临时上传不会进入共享历史记录 |
 
 ### 处理流程
@@ -65,7 +65,7 @@ LLM 总结 · 表格 · 时间线 · Fancy HTML
 ```
 
 > [!NOTE]
-> 当前主要在 Linux 和 macOS 上验证 Web UI、RAG、Open Public、UP 主监控和飞书通知。CLI 与 Docker/Nginx 部署脚本仍属于实验性使用路径。
+> 当前主要在 Linux 和 macOS 上验证 Web UI、RAG、Open Public、UP 主监控。CLI 与 Docker/Nginx 部署脚本仍属于实验性使用路径。
 
 ## 界面预览
 
@@ -206,11 +206,7 @@ Groq API Key 可从 [Groq Console](https://console.groq.com/keys) 获取；DashS
 
 ```bash
 # 终端 1：FastAPI，默认端口 8000
-uv run uvicorn backend.main:app \
-  --app-dir web-ui \
-  --host 0.0.0.0 \
-  --port 8000 \
-  --reload
+uv run b2t backend
 ```
 
 ```bash
@@ -267,29 +263,69 @@ uv run b2t --help
 
 ### UP 主监控
 
-在 `config.toml` 的 `[monitor]` 和 `[[monitor.creators]]` 中配置监控对象，并在 `[feishu]` 中选择 Webhook 或自建应用通知方式：
+需要配置登录态时，可直接在终端扫码，支持 SSH 连接服务器后使用：
 
 ```bash
-uv run b2t monitor --config config.toml
+uv run b2t monitor-login
 ```
+
+登录和监控命令默认读取项目根目录的 `config.toml`，无需额外依赖参数。
+如需使用其他配置，可传入 `--config 路径`；未传入时也支持 `B2T_CONFIG` 环境变量覆盖。
+命令会在终端显示二维码。用哔哩哔哩 App 扫码并确认，凭据保存成功后自动退出。
+无需浏览器，不监听端口，也不依赖 `web-ui/backend` 。
+二维码被终端折行时请放宽终端窗口；过期后重新运行命令，按 Ctrl+C 可取消。
+查询失败会显示不含凭据的错误类型及接口状态码，并最多连续重试两次。
+
+登录凭据以仅当前用户可读写的文件保存到 `[bilibili].credentials_file`，默认是
+配置文件所在目录下的 `db_data/bilibili_credentials.json`。扫码凭据优先于 TOML
+中的手动 Cookie；不要将凭据文件提交到版本库。登录命令和 monitor 需要使用同一份
+配置文件，并能读取同一个凭据文件。运行中的 monitor 每次请求自动读取更新，无需重启。
+登录不会自动启动监控；监控通过下面的独立命令运行。当前不自动续期，失效后重新扫码。
+扫码使用 B 站网页登录接口，兼容响应 Cookie 和旧版回调 URL 两种凭据返回方式。
+
+在 `config.toml` 的 `[monitor]` 和 `[[monitor.creators]]` 中配置监控对象。
+启动监控：
+
+```bash
+uv run b2t monitor
+```
+
+交互终端默认显示 Textual 面板：每个 UP 主最近 5 个视频的标题、发布时间、
+历史总结状态，以及检查倒计时、检查次数和近期日志。
+视频列表自动翻页补取最近 5 期；每轮最多检查 10 页，不足 5 期时展示实际获取到的视频。
+
+- ↑↓ 选择视频，←→ 切换 UP 主（不会自动轮播打断选择）。
+- Enter 打开生成菜单，选择“生成总结”“生成阅读报告”或“总结和阅读报告都生成”，再按 Enter 提交；Esc 取消。
+- Ctrl+C 退出监控；已提交给 backend 的任务继续运行。
+
+生成前在另一个终端运行 `uv run b2t backend`。monitor 根据 `[backend].host/port`
+连接 backend（监听 `0.0.0.0` / `::` 时使用本机回环地址），通过 `POST /api/process`
+提交任务、`GET /api/process/{job_id}` 查询进度。monitor 不直接执行转录或调用 LLM。
+模型、profile 和模板全部使用 backend 默认配置；无需在 TUI 选择。
+单独生成阅读报告会跳过普通总结，“都生成”只提交一个同时包含两种产物的任务。
+结果由 backend 保存，可在网页历史记录中查看。
+
+未手动提交的视频只检测和展示，不会自动处理；“已总结 / 未总结”仅反映历史记录。
+backend 未启动时仍可监控，但生成操作会提示连接失败。
+提交超时且结果不明时不会自动重试，以免重复生成，请在网页确认任务。
+任务进度仅在本次 TUI 会话中跟踪，重启 monitor 不会恢复此前任务的进度追踪。
+旧配置中的回看窗口、首次处理数量及总结选项已停用，`--bootstrap-unsummarized` 已移除。
+重定向日志或单次检查时使用普通日志输出，不提供生成菜单。
 
 单次检查可以使用 `--once`。首次配置建议先运行：
 
 ```bash
-uv run b2t monitor --config config.toml --once --verbose
+uv run b2t monitor --once --verbose
 ```
 
 ## 部署
 
 ### 宿主机后端 + Nginx 容器
 
-先在宿主机启动后端：
+先在 `config.toml` 中将 `[backend].host` 设置为 `"0.0.0.0"`，以便 Nginx 容器访问宿主机后端，再启动：
 
 ```bash
-uv run uvicorn backend.main:app \
-  --app-dir web-ui \
-  --host 0.0.0.0 \
-  --port 8000
+uv run b2t backend
 ```
 
 再构建前端并启动 Nginx 容器：
@@ -319,7 +355,7 @@ B2T_BACKEND_PORT=8001 \
 
 ### Open Public 模式
 
-Open Public 适合部署公开演示站点。该模式具有以下边界：
+后端默认使用 Open Public 模式，无需设置 `B2T_WEB_UI_MODE`。Open Public 适合部署公开演示站点。该模式具有以下边界：
 
 - 用户在页面中配置自己的 DashScope、DeepSeek 或 OpenAI-compatible API Key。
 - Key 保存在用户浏览器本地，仅在任务请求和连接测试时发送给当前后端。
@@ -330,13 +366,21 @@ Open Public 适合部署公开演示站点。该模式具有以下边界：
 启动方式：
 
 ```bash
-B2T_WEB_UI_MODE=open-public \
-uv run uvicorn backend.main:app \
-  --app-dir web-ui \
-  --host 0.0.0.0 \
-  --port 8000
+uv run b2t backend
 ```
 
+监听地址、端口和跨域来源在 `config.toml` 开头配置，修改后重启后端：
+
+```toml
+[backend]
+host = "127.0.0.1"
+port = 8000
+cors_origins = ["https://b2t.kkkzoz.top", "https://b2t-kkkzoz.pages.dev"]
+```
+
+命令默认读取项目根目录 `config.toml`，也支持 `--config 路径` 或 `B2T_CONFIG`。
+`B2T_CORS_ORIGINS` 若已设置，仍优先于配置文件；无需覆盖时可取消该环境变量。
+需要本地私有模式时可显式使用 `B2T_WEB_UI_MODE=default uv run b2t backend`。
 前端可以继续使用 Vite 开发服务器，也可以使用上述 Nginx 部署脚本。
 
 ## 配置参考
@@ -345,6 +389,7 @@ uv run uvicorn backend.main:app \
 
 | 配置段 | 用途 |
 | --- | --- |
+| `[backend]` | 后端监听地址、端口及允许跨域的前端来源 |
 | `[download]` | 输出目录、数据库目录和音频质量 |
 | `[storage]` | 选择本地、MinIO 或阿里云 OSS 存储 |
 | `[stt]` | 选择 Groq 或 Qwen / DashScope 语音识别 profile |
@@ -354,7 +399,6 @@ uv run uvicorn backend.main:app \
 | `[rag]` | 配置 Chroma、Embedding 模型与知识库问答模型 |
 | `[bilibili]` | 可选 Bilibili 登录 Cookie，用于需要登录态的内容 |
 | `[monitor]` | 配置 UP 主列表、检查周期和首次运行行为 |
-| `[feishu]` | 配置 Webhook 或飞书自建应用通知 |
 | `[analytics.counterscale]` | 可选 Web UI 访问统计 |
 
 相关文件：

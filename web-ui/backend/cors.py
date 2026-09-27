@@ -5,14 +5,13 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-DEFAULT_ORIGINS = (
-    "http://localhost:5173,http://127.0.0.1:5173,"
-    "http://localhost:6010,http://127.0.0.1:6010"
-)
+from backend.settings import get_app_config
 
 
 def configure_cors(app: FastAPI) -> None:
-    origins = os.environ.get("B2T_CORS_ORIGINS", DEFAULT_ORIGINS)
+    configured = get_app_config().backend.cors_origins
+    # Preserve explicit environment overrides for existing deployments.
+    origins = os.environ.get("B2T_CORS_ORIGINS", ",".join(configured))
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[

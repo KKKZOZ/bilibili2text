@@ -102,3 +102,34 @@ def test_legacy_duplicate_summary_groups_use_closest_preceding_root() -> None:
         "run/second-summary.md": "summary-2",
         "run/second-table.md": "summary-2",
     }
+
+
+def test_reading_reports_are_not_grouped_or_deleted_with_summary():
+    from types import SimpleNamespace
+
+    from backend.artifacts import summary_family_storage_keys
+
+    summary = artifact("summary", "run/summary.md")
+    reports = [
+        artifact(
+            "summary_fancy_html",
+            "run/report.html",
+            filename="video_summary_fancy.html",
+            derived_from="run/transcription.md",
+        ),
+        artifact(
+            "summary_fancy_html",
+            "run/legacy.html",
+            filename="video_summary_fancy.html",
+        ),
+        artifact(
+            "summary_fancy_html",
+            "run/old-linked-report.html",
+            derived_from=summary.storage_key,
+        ),
+    ]
+    artifacts = [summary, *reports]
+    assert summary_artifact_group_ids(artifacts) == {"run/summary.md": "summary-1"}
+    assert summary_family_storage_keys(
+        SimpleNamespace(artifacts=artifacts), summary
+    ) == {"run/summary.md"}

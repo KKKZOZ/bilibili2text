@@ -504,3 +504,20 @@ def test_convert_artifact_uses_only_cached_stock_statuses(monkeypatch) -> None:
         convert_artifact(ConvertRequest(download_id="summary", target_format="png"))
 
         assert captured["stock_statuses"] == {}
+
+
+def test_report_download_items_preserve_report_model():
+    from backend.schemas import DownloadItemResponse
+    from backend.services import _artifact_download_item, _build_all_download_items
+
+    from b2t.storage import StoredArtifact
+
+    report = StoredArtifact(
+        filename="BVtest_brief_12345678_summary_fancy.html",
+        storage_key="run/report.html",
+        backend="local",
+        kind="summary_fancy_html",
+        summary_profile="deepseek-flash",
+    )
+    for item in [_artifact_download_item(report), *_build_all_download_items([report])]:
+        assert DownloadItemResponse(**item).summary_profile == "deepseek-flash"

@@ -38,7 +38,6 @@ class MonitorCLIArgs:
     config: str | None = None
     once: bool = False
     reset_state: bool = False
-    bootstrap_unsummarized_count: int = 0
     verbose: bool = False
 
 
@@ -135,7 +134,7 @@ def _build_script_parser() -> argparse.ArgumentParser:
 def _build_monitor_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="b2t monitor",
-        description="监控 Bilibili UP 主动态，发现新视频后自动总结并推送到飞书",
+        description="监控 Bilibili UP 主新视频，在终端展示，可手动提交 backend 生成总结或阅读报告",
     )
     parser.add_argument(
         "-c", "--config", default=None, help="配置文件路径（默认 ./config.toml）"
@@ -145,12 +144,6 @@ def _build_monitor_parser() -> argparse.ArgumentParser:
         "--reset-state",
         action="store_true",
         help="清空监控状态文件，再开始监控",
-    )
-    parser.add_argument(
-        "--bootstrap-unsummarized",
-        type=int,
-        default=0,
-        help="测试用：回填最近前 N 个尚未总结过的视频",
     )
     parser.add_argument("-v", "--verbose", action="store_true", help="显示详细日志")
     return parser
@@ -195,16 +188,11 @@ def _validate_monitor_args(parsed: argparse.Namespace) -> MonitorCLIArgs:
     config = _normalize_optional_text(parsed.config)
     if parsed.config is not None and config is None:
         raise ValueError("--config 不能为空字符串")
-    if not isinstance(parsed.bootstrap_unsummarized, int):
-        raise ValueError("--bootstrap-unsummarized 必须是整数")
-    if parsed.bootstrap_unsummarized < 0:
-        raise ValueError("--bootstrap-unsummarized 不能小于 0")
 
     return MonitorCLIArgs(
         config=config,
         once=bool(parsed.once),
         reset_state=bool(parsed.reset_state),
-        bootstrap_unsummarized_count=int(parsed.bootstrap_unsummarized),
         verbose=bool(parsed.verbose),
     )
 
@@ -517,14 +505,16 @@ def _run_monitor_with_args(args: MonitorCLIArgs, console: Console) -> int:
         return 1
 
     service = BilibiliMonitorService(config)
+    use_tui = console.is_terminal and not args.once
     try:
         if args.reset_state:
             service.reset_state()
             console.print("[bold #0f766e]监控状态已重置[/bold #0f766e]")
-        service.run(
-            once=args.once,
-            bootstrap_unsummarized_count=args.bootstrap_unsummarized_count,
-        )
+        if use_tui:
+            from b2t.monitor.tui import run_monitor_tui
+
+            return run_monitor_tui(service)
+        service.run(once=args.once)
     except KeyboardInterrupt:
         console.print("[bold #334155]已停止监控[/bold #334155]")
         return 130
@@ -533,7 +523,8 @@ def _run_monitor_with_args(args: MonitorCLIArgs, console: Console) -> int:
         console.print(f"[bold red]监控执行失败:[/] {exc}")
         return 1
     finally:
-        service.close()
+        if not use_tui:
+            service.close()
 
     console.print("[bold #16a34a]监控检查完成[/bold #16a34a]")
     return 0
@@ -542,6 +533,55 @@ def _run_monitor_with_args(args: MonitorCLIArgs, console: Console) -> int:
 def main() -> None:
     console = Console()
     argv = sys.argv[1:]
+
+    if argv and argv[0] == "backend":
+        parser = argparse.ArgumentParser(
+            prog="b2t backend", description="启动 Web 后端（默认 open-public）"
+        )
+        parser.add_argument(
+            "-c",
+            "--config",
+            default=None,
+            help="配置文件路径（默认项目根目录 config.toml）",
+        )
+        args = parser.parse_args(argv[1:])
+        from b2t.backend import run_backend
+
+        try:
+            run_backend(args.config)
+        except (FileNotFoundError, ValueError) as exc:
+            console.print(f"配置错误：{exc}", markup=False)
+            sys.exit(1)
+        return
+
+    if argv and argv[0] == "monitor-login":
+        parser = argparse.ArgumentParser(
+            prog="b2t monitor-login", description="B 站终端扫码登录，无需启动 Web 服务"
+        )
+        parser.add_argument(
+            "-c",
+            "--config",
+            default=None,
+            help="配置文件路径（默认项目根目录 config.toml）",
+        )
+        args = parser.parse_args(argv[1:])
+        try:
+            config = load_config(args.config)
+        except (FileNotFoundError, ValueError) as exc:
+            console.print(f"配置错误：{exc}", markup=False)
+            sys.exit(1)
+        import asyncio
+
+        from b2t.bilibili_login import terminal_login
+
+        try:
+            exit_code = asyncio.run(terminal_login(config, console))
+        except KeyboardInterrupt:
+            console.print("已取消登录。")
+            exit_code = 130
+        if exit_code:
+            sys.exit(exit_code)
+        return
 
     if argv and argv[0] == "monitor":
         parser = _build_monitor_parser()

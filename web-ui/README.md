@@ -84,7 +84,7 @@ uv run uvicorn backend.main:app --app-dir web-ui --host 0.0.0.0 --port 8000
 ./scripts/serve_frontend_nginx.sh up
 ```
 
-The script builds `web-ui/frontend/dist` and serves it with the official Nginx image. The backend remains on the host, and `/api/*` is proxied to `host.docker.internal:8000`.
+The script builds `web-ui/frontend/dist` with a same-origin `/api` base, overriding the Pages API origin in `.env.production.local`, and serves it with the official Nginx image. On Linux it defaults to host networking and proxies `/api/*` to `127.0.0.1:8000`, including backends bound only to loopback. Other platforms default to bridge networking and `host.docker.internal:8000`. Set `B2T_NGINX_NETWORK=bridge` to opt into bridge mode on Linux; the backend must then listen on an address reachable from Docker.
 
 For open-public mode:
 

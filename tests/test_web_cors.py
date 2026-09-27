@@ -1,12 +1,45 @@
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "web-ui"))
 
 from backend.cors import configure_cors
+
+from b2t.config import BackendConfig
+
+
+@pytest.fixture(autouse=True)
+def default_backend_config(monkeypatch):
+    monkeypatch.setattr(
+        "backend.cors.get_app_config", lambda: SimpleNamespace(backend=BackendConfig())
+    )
+
+
+def test_config_file_origins(monkeypatch):
+    monkeypatch.delenv("B2T_CORS_ORIGINS", raising=False)
+    monkeypatch.setattr(
+        "backend.cors.get_app_config",
+        lambda: SimpleNamespace(
+            backend=BackendConfig(
+                cors_origins=("https://b2t.kkkzoz.top", "https://b2t-kkkzoz.pages.dev")
+            )
+        ),
+    )
+    client = make_client()
+    for origin in ("https://b2t.kkkzoz.top", "https://b2t-kkkzoz.pages.dev"):
+        response = client.options(
+            "/api/health",
+            headers={"Origin": origin, "Access-Control-Request-Method": "GET"},
+        )
+        assert response.status_code == 200
+        assert response.headers["access-control-allow-origin"] == origin
+    response = client.get("/api/health", headers={"Origin": "http://localhost:6010"})
+    assert "access-control-allow-origin" not in response.headers
 
 
 def make_client() -> TestClient:

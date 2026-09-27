@@ -6,6 +6,9 @@ from typing import Protocol
 
 from b2t.storage import SUMMARY_ARTIFACT_KINDS, StorageBackend, StoredArtifact
 
+# Reading reports are independent of summary versions, including legacy files.
+SUMMARY_FAMILY_KINDS = SUMMARY_ARTIFACT_KINDS - {"summary_fancy_html"}
+
 
 class ArtifactRecord(Protocol):
     kind: object
@@ -73,7 +76,7 @@ def summary_artifact_group_ids(
 
     unresolved: list[tuple[int, ArtifactRecord]] = []
     for index, artifact in enumerate(artifacts):
-        if artifact.kind not in SUMMARY_ARTIFACT_KINDS or artifact.kind == "summary":
+        if artifact.kind not in SUMMARY_FAMILY_KINDS or artifact.kind == "summary":
             continue
         resolved_group_id = explicit_group_id(artifact)
         if resolved_group_id:
@@ -142,7 +145,7 @@ def summary_family_storage_keys(
         expanded = {
             artifact.storage_key
             for artifact in detail.artifacts
-            if artifact.kind in SUMMARY_ARTIFACT_KINDS
+            if artifact.kind in SUMMARY_FAMILY_KINDS
             and artifact.derived_from.strip() in related
         }
         if expanded.issubset(related):
@@ -154,7 +157,6 @@ def summary_family_storage_keys(
         summary_artifact.filename,
         f"{summary_stem}.txt",
         f"{summary_stem}.png",
-        f"{summary_stem}_fancy.html",
         f"{summary_stem}_table.md",
         f"{summary_stem}_table.png",
         f"{summary_stem}_table.pdf",
@@ -163,7 +165,7 @@ def summary_family_storage_keys(
     }
     parent_key = storage_parent_key(summary_artifact.storage_key)
     for artifact in detail.artifacts:
-        if artifact.kind not in SUMMARY_ARTIFACT_KINDS:
+        if artifact.kind not in SUMMARY_FAMILY_KINDS:
             continue
         if artifact.storage_key == summary_artifact.storage_key:
             related.add(artifact.storage_key)

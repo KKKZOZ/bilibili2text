@@ -3,7 +3,7 @@ from pathlib import Path
 from b2t.config import load_config
 
 
-def test_load_config_with_monitor_and_feishu_sections(tmp_path: Path) -> None:
+def test_load_config_with_monitor_section(tmp_path: Path) -> None:
     presets_path = tmp_path / "summary_presets.toml"
     presets_path.write_text(
         """
@@ -46,11 +46,6 @@ api_key = ""
 [fancy_html]
 profile = "bailian-main"
 
-[feishu]
-mode = "webhook"
-webhook_url = "https://open.feishu.cn/open-apis/bot/v2/hook/example"
-title_prefix = "B2T"
-
 [bilibili]
 SESSDATA = "sess"
 bili_jct = "csrf"
@@ -75,13 +70,15 @@ check_interval = 240
 
     config = load_config(config_path)
 
-    assert config.feishu.mode == "webhook"
-    assert config.feishu.title_prefix == "B2T"
     assert config.monitor.enabled is True
-    assert config.monitor.lookback_hours == 24
-    assert config.monitor.first_run_max_push == 2
+    # Legacy processing settings are accepted but no longer used.
+    assert not hasattr(config.monitor, "lookback_hours")
+    assert not hasattr(config.monitor, "first_run_max_push")
     assert config.monitor.creators[0].uid == 123456
     assert config.monitor.creators[0].check_interval == 240
     assert config.bilibili.SESSDATA == "sess"
     assert config.bilibili.DedeUserID == "10001"
+    assert config.bilibili.credentials_file == str(
+        tmp_path / "db_data" / "bilibili_credentials.json"
+    )
     assert Path(config.monitor.state_file).is_absolute()

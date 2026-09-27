@@ -1,6 +1,5 @@
-"""Bilibili monitor and Feishu integration."""
+"""Independent Bilibili creator monitoring."""
 
-from b2t.monitor.feishu import FeishuNotifier
 from b2t.monitor.service import BilibiliMonitorService
 
-__all__ = ["BilibiliMonitorService", "FeishuNotifier"]
+__all__ = ["BilibiliMonitorService"]

@@ -1,4 +1,5 @@
 <script setup>
+  import GenerationExamplePreview from './GenerationExamplePreview.vue'
   import ReportModeSelect from './ReportModeSelect.vue'
   import ToggleSwitch from '../common/ToggleSwitch.vue'
   import SummaryProfileSelect from '../common/SummaryProfileSelect.vue'
@@ -18,16 +19,16 @@
 
 <template>
   <section class="report-config">
-    <ToggleSwitch
-      id="enable-reading-report"
-      :model-value="enabled"
-      label="生成阅读报告"
-      @update:model-value="emit('update:enabled', $event)"
-    />
-    <p>
-      从完整转写生成可阅读、分享的 HTML 报告，支持导出长图。可独立于 Markdown
-      总结开启。
-    </p>
+    <div class="generation-toggle-row">
+      <ToggleSwitch
+        id="enable-reading-report"
+        :model-value="enabled"
+        label="生成阅读报告"
+        @update:model-value="emit('update:enabled', $event)"
+      />
+      <GenerationExamplePreview kind="report" />
+    </div>
+
     <div v-if="enabled" class="report-fields">
       <ReportModeSelect
         :model-value="options.mode"
@@ -43,15 +44,24 @@
         @update:model-value="update('profile', $event)"
         @retry="emit('retry')"
       />
-      <p>
-        使用所选模型对应的 API Key；自定义服务沿用 API Key
-        页面保存的地址和模型。模型需支持工具调用，报告会产生独立的模型费用。
-      </p>
     </div>
   </section>
 </template>
 
 <style scoped>
+  .generation-toggle-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+  }
+  .generation-description {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    line-height: 1.6;
+  }
+
   .report-config {
     display: grid;
     gap: 12px;

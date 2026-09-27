@@ -12,7 +12,11 @@
   } from '../composables/usePublicCredentials'
   import { useRuntimeFeatures } from '../composables/useRuntimeFeatures'
   import { useSummaryConfig } from '../composables/useSummaryConfig'
-  import { resolveFileType, buildArtifactDisplayName } from '../utils/fileUtils'
+  import {
+    resolveFileType,
+    buildArtifactDisplayName,
+    reportModeLabel
+  } from '../utils/fileUtils'
 
   const props = defineProps({
     items: {
@@ -128,7 +132,6 @@
     kind === 'summary_no_table' ||
     kind === 'summary_png' ||
     kind === 'summary_no_table_png' ||
-    kind === 'summary_fancy_html' ||
     kind === 'summary_table_md' ||
     kind === 'summary_table_png' ||
     kind === 'summary_table_pdf' ||
@@ -217,7 +220,7 @@
       summary_no_table: 310,
       summary_png: 311,
       summary_no_table_png: 312,
-      summary_fancy_html: 320,
+      summary_fancy_html: 250,
       summary_table_md: 330,
       summary_table_png: 331,
       summary_table_pdf: 331,
@@ -255,7 +258,6 @@
           kind === 'summary_no_table' ||
           kind === 'summary_png' ||
           kind === 'summary_no_table_png' ||
-          kind === 'summary_fancy_html' ||
           kind === 'summary_table_md' ||
           kind === 'summary_table_png' ||
           kind === 'summary_timeline'
@@ -359,7 +361,6 @@
       }
 
       if (
-        item.kind === 'summary_fancy_html' ||
         item.kind === 'summary_table_md' ||
         item.kind === 'summary_table_png' ||
         item.kind === 'summary_table_pdf' ||
@@ -389,17 +390,15 @@
               : null
         }
         const derivedOffset =
-          item.kind === 'summary_fancy_html'
-            ? 0.15
-            : item.kind === 'summary_table_md'
-              ? 0.2
-              : item.kind === 'summary_table_png'
-                ? 0.21
-                : item.kind === 'summary_table_pdf'
-                  ? 0.25
-                  : item.kind === 'summary_timeline'
-                    ? 0.3
-                    : 0.18
+          item.kind === 'summary_table_md'
+            ? 0.2
+            : item.kind === 'summary_table_png'
+              ? 0.21
+              : item.kind === 'summary_table_pdf'
+                ? 0.25
+                : item.kind === 'summary_timeline'
+                  ? 0.3
+                  : 0.18
         rows.push(
           toDisplayItem(item, index, {
             parentSummaryRowId: parentSummary?.summaryRowId || '',
@@ -731,12 +730,6 @@
         candidate.parentSummaryRowId === item.summaryRowId &&
         candidate.kind === 'summary_table_md'
     )
-    const fancy = displayItems.value.find(
-      (candidate) =>
-        candidate.parentSummaryRowId &&
-        candidate.parentSummaryRowId === item.summaryRowId &&
-        candidate.kind === 'summary_fancy_html'
-    )
     const timeline = displayItems.value.find(
       (candidate) =>
         candidate.parentSummaryRowId &&
@@ -746,18 +739,6 @@
     return [
       item.displayName,
       noTable ? noTable.displayName : `${item.displayName}_无表格`,
-      fancy
-        ? fancy.displayName
-        : buildArtifactDisplayName(
-            {
-              filename: item.filename.replace(
-                /_summary(\.[^.]+)?$/i,
-                '_summary_fancy.html'
-              ),
-              kind: 'summary_fancy_html'
-            },
-            { bvid: props.bvid }
-          ),
       table
         ? table.displayName
         : buildArtifactDisplayName(
@@ -867,6 +848,20 @@
                     <Trash2 v-else :size="14" />
                   </button>
                 </div>
+              </div>
+              <div
+                v-if="
+                  item.kind === 'summary_fancy_html' &&
+                  !item.filename.startsWith('rag_')
+                "
+                class="report-tags"
+              >
+                <span class="report-tag report-tag-mode">
+                  <strong>{{ reportModeLabel(item.filename) }}</strong>
+                </span>
+                <span class="report-tag report-tag-model">
+                  <strong>{{ item.modelProfileLabel || '未记录' }}</strong>
+                </span>
               </div>
               <div
                 v-if="
@@ -1163,6 +1158,44 @@
     font-size: 0.7rem;
     font-weight: 700;
     text-transform: uppercase;
+  }
+
+  .report-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+  }
+
+  .report-tag {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 7px;
+    max-width: 100%;
+    padding: 4px 9px;
+    border: 1px solid;
+    border-radius: 6px;
+    font-size: 0.74rem;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+  }
+
+  .report-tag > span {
+    flex-shrink: 0;
+  }
+  .report-tag strong {
+    min-width: 0;
+    font-weight: 700;
+  }
+  .report-tag-mode {
+    background: #edf7ff;
+    border-color: #c8e2f5;
+    color: #23658b;
+  }
+  .report-tag-model {
+    background: #effaf4;
+    border-color: #a9dfbf;
+    color: #247044;
   }
 
   .all-download-tags strong {

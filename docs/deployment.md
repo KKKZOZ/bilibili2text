@@ -73,10 +73,10 @@ api_key = "sk-xxxxxxxxxxxxxxxx"
 
 ### 3. 启动
 
-终端 1 — 后端：
+终端 1 — 后端（默认 open-public，监听地址、端口、CORS 在 `config.toml` 的 `[backend]` 中配置）：
 
 ```bash
-uv run uvicorn backend.main:app --app-dir web-ui --host 0.0.0.0 --port 8000 --reload
+uv run b2t backend
 ```
 
 终端 2 — 前端：
@@ -207,9 +207,17 @@ cd web-ui/frontend && bun run dev
 | 字段 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
 | `enabled` | bool | `false` | 是否启用 |
-| `state_file` | str | `"./monitor_state.json"` | 监控状态持久化 |
-| `lookback_hours` | int | `24` | 首次回看小时数 |
-| `first_run_max_push` | int | `5` | 首次最多推送数 |
+| `state_file` | str | `"./db_data/bilibili_monitor_state.json"` | 监控状态持久化 |
+| `default_check_interval` | int | `300` | 默认检查间隔（秒） |
+
+运行 `uv run b2t monitor` 打开 Textual 面板，自动展示最近 5 个视频、历史总结状态、
+检查次数和下一次检查倒计时。↑↓ 选择视频，←→ 切换 UP 主，Enter 选择生成总结、
+阅读报告或两者都生成，Esc 取消。Ctrl+C 退出监控，已提交的后台任务继续运行。
+
+生成操作需要另行运行 `uv run b2t backend`。monitor 使用 `[backend].host/port` 连接 API，
+模型、profile、模板均由 backend 默认配置决定。结果由 backend 保存，TUI 查询并展示任务进度。
+监控不会自动处理未总结视频，旧版监控处理配置会被忽略。
+`--once` 或将输出重定向到文件时使用普通日志输出，不支持手动提交任务。
 
 **监控的 UP 主 `[[monitor.creators]]`**：
 
@@ -224,10 +232,10 @@ cd web-ui/frontend && bun run dev
 | 变量 | 说明 |
 |------|------|
 | `B2T_CONFIG` | 覆盖配置文件路径 |
-| `B2T_WEB_UI_MODE` | `default`（默认）或 `open-public` |
+| `B2T_WEB_UI_MODE` | `open-public`（默认）或 `default` |
 | `B2T_BACKEND_PORT` | 前端代理的后端端口（默认 `8000`） |
 | `B2T_FRONTEND_PORT` | Nginx 容器的前端端口（默认 `6010`） |
-| `B2T_CORS_ORIGINS` | 后端允许的前端 Origin，逗号分隔；设置后替换本地开发默认值 |
+| `B2T_CORS_ORIGINS` | 后端允许的前端 Origin，逗号分隔；设置后覆盖 `[backend].cors_origins` |
 | `VITE_API_BASE_URL` | 前端构建时的后端 Origin（如 `https://api.example.com`），不带 `/api`；默认同源 |
 
 ## LLM Provider 对照表

@@ -1,4 +1,5 @@
 <script setup>
+  import GenerationExamplePreview from './GenerationExamplePreview.vue'
   import { Infinity as InfinityIcon, Minus, Plus } from 'lucide-vue-next'
   import ToggleSwitch from '../common/ToggleSwitch.vue'
   import HelpTooltip from '../common/HelpTooltip.vue'
@@ -50,21 +51,18 @@
 </script>
 
 <template>
-  <ToggleSwitch
-    id="enable-summary"
-    :model-value="enabled"
-    label="生成总结"
-    @update:model-value="emit('update:enabled', $event)"
-  />
+  <div class="generation-toggle-row">
+    <ToggleSwitch
+      id="enable-summary"
+      :model-value="enabled"
+      label="生成总结"
+      @update:model-value="emit('update:enabled', $event)"
+    />
+    <GenerationExamplePreview kind="summary" />
+  </div>
   <div v-if="enabled" class="process-summary-config">
     <div class="process-summary-head">
       <h3>总结参数</h3>
-      <p>
-        选择模型配置与总结模板，生成更符合用途的总结内容。
-        <template v-if="isOpenPublic">
-          选择“用户自定义”时，会使用在 API Key 页面保存的模板。
-        </template>
-      </p>
     </div>
     <SummaryProfileSelect
       id="summary-profile-select"
@@ -192,6 +190,19 @@
 </template>
 
 <style scoped>
+  .generation-toggle-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+  }
+  .generation-description {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    line-height: 1.6;
+  }
+
   .process-summary-config {
     display: grid;
     gap: 14px;

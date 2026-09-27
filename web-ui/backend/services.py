@@ -305,6 +305,7 @@ def _build_all_download_items(
                 "url": f"/api/download/{download_id}",
                 "filename": artifact.filename,
                 "kind": kind,
+                "summary_profile": artifact.summary_profile,
             }
         )
     return items
@@ -961,6 +962,7 @@ def _artifact_download_item(artifact: StoredArtifact) -> dict[str, str]:
         "url": f"/api/download/{download_registry.store_artifact(artifact)}",
         "filename": artifact.filename,
         "kind": resolve_artifact_kind(artifact.kind, artifact.filename),
+        "summary_profile": artifact.summary_profile,
     }
 
 

@@ -1,16 +1,16 @@
-import json
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import httpx
 
+from b2t.bilibili_credentials import save_credentials
 from b2t.config import (
     AppConfig,
     BilibiliConfig,
     ConverterConfig,
     DownloadConfig,
     FancyHtmlConfig,
-    FeishuConfig,
     MonitorConfig,
     MonitorCreatorConfig,
     RagConfig,
@@ -21,32 +21,7 @@ from b2t.config import (
     SummaryPreset,
     SummaryPresetsConfig,
 )
-from b2t.monitor.feishu import FeishuNotifier
 from b2t.monitor.service import BilibiliMonitorService
-from b2t.storage import StoredArtifact
-from b2t.storage.local import LocalStorageBackend
-
-
-class DummyNotifier:
-    def __init__(self) -> None:
-        self.cards: list[tuple[str, str]] = []
-        self.image_cards: list[tuple[str, list[Path | str]]] = []
-        self.system_messages: list[tuple[str, str, str]] = []
-
-    def send_card(self, title: str, markdown_content: str) -> bool:
-        self.cards.append((title, markdown_content))
-        return True
-
-    def send_system_notification(self, level: str, title: str, content: str) -> bool:
-        self.system_messages.append((level, title, content))
-        return True
-
-    def send_image_card(self, title: str, image_paths: list[Path | str]) -> bool:
-        self.image_cards.append((title, image_paths))
-        return True
-
-    def close(self) -> None:
-        return None
 
 
 def _build_config(tmp_path: Path) -> AppConfig:
@@ -81,7 +56,6 @@ def _build_config(tmp_path: Path) -> AppConfig:
         ),
         converter=ConverterConfig(),
         rag=RagConfig(),
-        feishu=FeishuConfig(mode="disabled", summary_max_chars=120),
         monitor=MonitorConfig(
             enabled=True,
             state_file=str(tmp_path / "state.json"),
@@ -103,214 +77,6 @@ def _build_config(tmp_path: Path) -> AppConfig:
     )
 
 
-def test_monitor_processes_new_video_and_updates_state(tmp_path: Path) -> None:
-    config = _build_config(tmp_path)
-    notifier = DummyNotifier()
-    storage_backend = LocalStorageBackend(tmp_path / "transcriptions")
-    processed_urls: list[str] = []
-
-    def pipeline_runner(url: str, *_args, **_kwargs) -> dict[str, StoredArtifact]:
-        processed_urls.append(url)
-        work_dir = tmp_path / "transcriptions" / "BV1AB411c7mD_test"
-        work_dir.mkdir(parents=True, exist_ok=True)
-        markdown_path = work_dir / "BV1AB411c7mD_test.md"
-        summary_path = work_dir / "BV1AB411c7mD_test_summary.md"
-        markdown_path.write_text("# transcript", encoding="utf-8")
-        summary_path.write_text(
-            "这是自动总结内容\n\n- 要点 1\n- 要点 2",
-            encoding="utf-8",
-        )
-        return {
-            "markdown": storage_backend.store_file(
-                markdown_path,
-                object_key="unused/markdown.md",
-            ),
-            "summary": storage_backend.store_file(
-                summary_path,
-                object_key="unused/summary.md",
-            ),
-        }
-
-    service = BilibiliMonitorService(
-        config,
-        notifier=notifier,
-        storage_backend=storage_backend,
-        stt_storage_backend=storage_backend,
-        pipeline_runner=pipeline_runner,
-    )
-
-    recent_timestamp = int(time.time()) - 60
-    service.fetch_user_space_dynamics = lambda *_args, **_kwargs: {
-        "code": 0,
-        "data": {
-            "items": [
-                {
-                    "id_str": "999",
-                    "modules": {
-                        "module_author": {"pub_ts": recent_timestamp},
-                        "module_dynamic": {
-                            "major": {
-                                "type": "MAJOR_TYPE_ARCHIVE",
-                                "archive": {
-                                    "bvid": "BV1AB411c7mD",
-                                    "title": "新视频标题",
-                                },
-                            }
-                        },
-                    },
-                }
-            ]
-        },
-    }
-    fake_png = tmp_path / "summary_no_table.png"
-    fake_png.write_bytes(b"fake-png")
-    service._build_notification_pngs = lambda *_args, **_kwargs: [fake_png]
-
-    service.process_creator(config.monitor.creators[0])
-    service.close()
-
-    assert processed_urls == ["https://www.bilibili.com/video/BV1AB411c7mD"]
-    assert notifier.image_cards
-    assert notifier.image_cards[0][0] == "测试UP 发布新视频"
-    assert service.state.get_last_seen(123456) == "999"
-
-
-def test_monitor_can_bootstrap_latest_unsummarized_videos(tmp_path: Path) -> None:
-    config = _build_config(tmp_path)
-    notifier = DummyNotifier()
-    storage_backend = LocalStorageBackend(tmp_path / "transcriptions")
-    processed_bvids: list[str] = []
-
-    def pipeline_runner(url: str, *_args, **_kwargs) -> dict[str, StoredArtifact]:
-        processed_bvids.append(url.rsplit("/", 1)[-1])
-        bvid = processed_bvids[-1]
-        work_dir = tmp_path / "transcriptions" / f"{bvid}_test"
-        work_dir.mkdir(parents=True, exist_ok=True)
-        markdown_path = work_dir / f"{bvid}_test.md"
-        summary_path = work_dir / f"{bvid}_test_summary.md"
-        markdown_path.write_text("# transcript", encoding="utf-8")
-        summary_path.write_text("bootstrap summary", encoding="utf-8")
-        return {
-            "markdown": storage_backend.store_file(
-                markdown_path,
-                object_key=f"unused/{bvid}/markdown.md",
-            ),
-            "summary": storage_backend.store_file(
-                summary_path,
-                object_key=f"unused/{bvid}/summary.md",
-            ),
-        }
-
-    service = BilibiliMonitorService(
-        config,
-        notifier=notifier,
-        storage_backend=storage_backend,
-        stt_storage_backend=storage_backend,
-        pipeline_runner=pipeline_runner,
-    )
-
-    recent_timestamp = int(time.time()) - 60
-    service.fetch_user_space_dynamics = lambda *_args, **_kwargs: {
-        "code": 0,
-        "data": {
-            "items": [
-                {
-                    "id_str": "1000",
-                    "modules": {
-                        "module_author": {"pub_ts": recent_timestamp + 20},
-                        "module_dynamic": {
-                            "major": {
-                                "type": "MAJOR_TYPE_ARCHIVE",
-                                "archive": {
-                                    "bvid": "BV1AB411c7mD",
-                                    "title": "已总结视频",
-                                },
-                            }
-                        },
-                    },
-                },
-                {
-                    "id_str": "999",
-                    "modules": {
-                        "module_author": {"pub_ts": recent_timestamp + 10},
-                        "module_dynamic": {
-                            "major": {
-                                "type": "MAJOR_TYPE_ARCHIVE",
-                                "archive": {
-                                    "bvid": "BV1CD411c7mE",
-                                    "title": "待测试视频A",
-                                },
-                            }
-                        },
-                    },
-                },
-                {
-                    "id_str": "998",
-                    "modules": {
-                        "module_author": {"pub_ts": recent_timestamp},
-                        "module_dynamic": {
-                            "major": {
-                                "type": "MAJOR_TYPE_ARCHIVE",
-                                "archive": {
-                                    "bvid": "BV1EF411c7mF",
-                                    "title": "待测试视频B",
-                                },
-                            }
-                        },
-                    },
-                },
-            ]
-        },
-    }
-    service._has_summary_for_bvid = lambda bvid: bvid == "BV1AB411c7mD"
-    fake_png = tmp_path / "bootstrap_summary.png"
-    fake_png.write_bytes(b"fake-png")
-    service._build_notification_pngs = lambda *_args, **_kwargs: [fake_png]
-
-    service.process_creator(
-        config.monitor.creators[0],
-        bootstrap_unsummarized_count=2,
-    )
-    service.close()
-
-    assert processed_bvids == ["BV1EF411c7mF", "BV1CD411c7mE"]
-
-
-def test_feishu_webhook_notifier_sends_interactive_card() -> None:
-    requests: list[httpx.Request] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        requests.append(request)
-        return httpx.Response(200, json={"code": 0, "msg": "success"})
-
-    notifier = FeishuNotifier(
-        FeishuConfig(
-            mode="webhook",
-            webhook_url="https://open.feishu.cn/open-apis/bot/v2/hook/example",
-            title_prefix="B2T",
-        ),
-        client=httpx.Client(transport=httpx.MockTransport(handler)),
-    )
-
-    ok = notifier.send_card("测试标题", "**测试内容**")
-    notifier.close()
-
-    assert ok is True
-    assert len(requests) == 1
-    payload = json.loads(requests[0].content.decode("utf-8"))
-    assert payload["msg_type"] == "interactive"
-    assert payload["card"]["header"]["title"]["content"] == "B2T | 测试标题"
-
-
-def test_feishu_disabled_image_card_is_noop_success() -> None:
-    notifier = FeishuNotifier(FeishuConfig(mode="disabled"))
-
-    ok = notifier.send_image_card("测试标题", [Path("/tmp/nonexistent.png")])
-    notifier.close()
-
-    assert ok is True
-
-
 def test_monitor_uses_structured_bilibili_cookie_fields(tmp_path: Path) -> None:
     captured_headers: dict[str, str] = {}
 
@@ -320,7 +86,6 @@ def test_monitor_uses_structured_bilibili_cookie_fields(tmp_path: Path) -> None:
 
     service = BilibiliMonitorService(
         _build_config(tmp_path),
-        notifier=DummyNotifier(),
         client=httpx.Client(transport=httpx.MockTransport(handler)),
     )
 
@@ -332,306 +97,290 @@ def test_monitor_uses_structured_bilibili_cookie_fields(tmp_path: Path) -> None:
     assert "DedeUserID=10001" in captured_headers["cookie"]
 
 
-def test_monitor_updates_state_after_each_successful_video(tmp_path: Path) -> None:
-    config = _build_config(tmp_path)
-    notifier = DummyNotifier()
-    storage_backend = LocalStorageBackend(tmp_path / "transcriptions")
-    processed_bvids: list[str] = []
-
-    def pipeline_runner(url: str, *_args, **_kwargs) -> dict[str, StoredArtifact]:
-        bvid = url.rsplit("/", 1)[-1]
-        processed_bvids.append(bvid)
-        if bvid == "BV1AB411c7mD":
-            raise RuntimeError("boom")
-
-        work_dir = tmp_path / "transcriptions" / f"{bvid}_test"
-        work_dir.mkdir(parents=True, exist_ok=True)
-        markdown_path = work_dir / f"{bvid}_test.md"
-        summary_path = work_dir / f"{bvid}_test_summary.md"
-        markdown_path.write_text("# transcript", encoding="utf-8")
-        summary_path.write_text("ok", encoding="utf-8")
-        return {
-            "markdown": storage_backend.store_file(
-                markdown_path,
-                object_key=f"unused/{bvid}/markdown.md",
-            ),
-            "summary": storage_backend.store_file(
-                summary_path,
-                object_key=f"unused/{bvid}/summary.md",
-            ),
-        }
-
-    service = BilibiliMonitorService(
-        config,
-        notifier=notifier,
-        storage_backend=storage_backend,
-        stt_storage_backend=storage_backend,
-        pipeline_runner=pipeline_runner,
-    )
-
-    recent_timestamp = int(time.time()) - 60
-    service.state.set_last_seen(123456, "997")
-    service.state.save()
-    service.fetch_user_space_dynamics = lambda *_args, **_kwargs: {
-        "code": 0,
-        "data": {
-            "items": [
-                {
-                    "id_str": "999",
-                    "modules": {
-                        "module_author": {"pub_ts": recent_timestamp + 20},
-                        "module_dynamic": {
-                            "major": {
-                                "type": "MAJOR_TYPE_ARCHIVE",
-                                "archive": {
-                                    "bvid": "BV1AB411c7mD",
-                                    "title": "失败视频",
-                                },
-                            }
-                        },
-                    },
-                },
-                {
-                    "id_str": "998",
-                    "modules": {
-                        "module_author": {"pub_ts": recent_timestamp + 10},
-                        "module_dynamic": {
-                            "major": {
-                                "type": "MAJOR_TYPE_ARCHIVE",
-                                "archive": {
-                                    "bvid": "BV1CD411c7mE",
-                                    "title": "成功视频",
-                                },
-                            }
-                        },
-                    },
-                },
-                {
-                    "id_str": "997",
-                    "modules": {
-                        "module_author": {"pub_ts": recent_timestamp},
-                        "module_dynamic": {
-                            "major": {
-                                "type": "MAJOR_TYPE_ARCHIVE",
-                                "archive": {
-                                    "bvid": "BV1EF411c7mF",
-                                    "title": "旧视频",
-                                },
-                            }
-                        },
-                    },
-                },
-            ]
-        },
-    }
-    fake_png = tmp_path / "partial_success.png"
-    fake_png.write_bytes(b"fake-png")
-    service._build_notification_pngs = lambda *_args, **_kwargs: [fake_png]
-
-    try:
-        service.process_creator(config.monitor.creators[0])
-    except RuntimeError as exc:
-        assert str(exc) == "boom"
-    finally:
-        service.close()
-
-    assert processed_bvids == ["BV1CD411c7mE", "BV1AB411c7mD"]
-    assert service.state.get_last_seen(123456) == "998"
-
-
-def test_monitor_recovers_when_last_seen_is_missing(tmp_path: Path) -> None:
-    config = _build_config(tmp_path)
-    notifier = DummyNotifier()
-    storage_backend = LocalStorageBackend(tmp_path / "transcriptions")
-    processed_bvids: list[str] = []
-
-    def pipeline_runner(url: str, *_args, **_kwargs) -> dict[str, StoredArtifact]:
-        processed_bvids.append(url.rsplit("/", 1)[-1])
-        bvid = processed_bvids[-1]
-        work_dir = tmp_path / "transcriptions" / f"{bvid}_test"
-        work_dir.mkdir(parents=True, exist_ok=True)
-        markdown_path = work_dir / f"{bvid}_test.md"
-        summary_path = work_dir / f"{bvid}_test_summary.md"
-        markdown_path.write_text("# transcript", encoding="utf-8")
-        summary_path.write_text("ok", encoding="utf-8")
-        return {
-            "markdown": storage_backend.store_file(
-                markdown_path,
-                object_key=f"unused/{bvid}/markdown.md",
-            ),
-            "summary": storage_backend.store_file(
-                summary_path,
-                object_key=f"unused/{bvid}/summary.md",
-            ),
-        }
-
-    service = BilibiliMonitorService(
-        config,
-        notifier=notifier,
-        storage_backend=storage_backend,
-        stt_storage_backend=storage_backend,
-        pipeline_runner=pipeline_runner,
-    )
-
-    recent_timestamp = int(time.time()) - 60
-    service.state.set_last_seen(123456, "stale-id")
-    service.state.save()
-    service.fetch_user_space_dynamics = lambda *_args, **_kwargs: {
-        "code": 0,
-        "data": {
-            "items": [
-                {
-                    "id_str": "1001",
-                    "modules": {
-                        "module_author": {"pub_ts": recent_timestamp + 30},
-                        "module_dynamic": {
-                            "major": {
-                                "type": "MAJOR_TYPE_ARCHIVE",
-                                "archive": {
-                                    "bvid": "BV1GH411c7mG",
-                                    "title": "最新视频",
-                                },
-                            }
-                        },
-                    },
-                },
-                {
-                    "id_str": "1000",
-                    "modules": {
-                        "module_author": {"pub_ts": recent_timestamp + 20},
-                        "module_dynamic": {
-                            "major": {
-                                "type": "MAJOR_TYPE_ARCHIVE",
-                                "archive": {
-                                    "bvid": "BV1CD411c7mE",
-                                    "title": "次新视频",
-                                },
-                            }
-                        },
-                    },
-                },
-                {
-                    "id_str": "999",
-                    "modules": {
-                        "module_author": {"pub_ts": recent_timestamp + 10},
-                        "module_dynamic": {
-                            "major": {
-                                "type": "MAJOR_TYPE_ARCHIVE",
-                                "archive": {
-                                    "bvid": "BV1AB411c7mD",
-                                    "title": "更早视频",
-                                },
-                            }
-                        },
-                    },
-                },
-            ]
-        },
-    }
-    fake_png = tmp_path / "recover_missing_last_seen.png"
-    fake_png.write_bytes(b"fake-png")
-    service._build_notification_pngs = lambda *_args, **_kwargs: [fake_png]
-
-    service.process_creator(config.monitor.creators[0])
-    service.close()
-
-    assert processed_bvids == ["BV1AB411c7mD", "BV1CD411c7mE", "BV1GH411c7mG"]
-    assert service.state.get_last_seen(123456) == "1001"
-
-
-def test_monitor_does_not_advance_last_seen_for_non_video_dynamics(
+def test_running_monitor_reads_credentials_saved_by_login_process(
     tmp_path: Path,
 ) -> None:
     config = _build_config(tmp_path)
-    notifier = DummyNotifier()
-    storage_backend = LocalStorageBackend(tmp_path / "transcriptions")
-    processed_bvids: list[str] = []
-
-    def pipeline_runner(url: str, *_args, **_kwargs) -> dict[str, StoredArtifact]:
-        processed_bvids.append(url.rsplit("/", 1)[-1])
-        bvid = processed_bvids[-1]
-        work_dir = tmp_path / "transcriptions" / f"{bvid}_test"
-        work_dir.mkdir(parents=True, exist_ok=True)
-        markdown_path = work_dir / f"{bvid}_test.md"
-        summary_path = work_dir / f"{bvid}_test_summary.md"
-        markdown_path.write_text("# transcript", encoding="utf-8")
-        summary_path.write_text("ok", encoding="utf-8")
-        return {
-            "markdown": storage_backend.store_file(
-                markdown_path,
-                object_key=f"unused/{bvid}/markdown.md",
-            ),
-            "summary": storage_backend.store_file(
-                summary_path,
-                object_key=f"unused/{bvid}/summary.md",
-            ),
-        }
-
-    service = BilibiliMonitorService(
+    credential_path = str(tmp_path / "login.json")
+    config = replace(
         config,
-        notifier=notifier,
-        storage_backend=storage_backend,
-        stt_storage_backend=storage_backend,
-        pipeline_runner=pipeline_runner,
+        bilibili=BilibiliConfig(credentials_file=credential_path, SESSDATA="manual"),
     )
+    received = []
 
-    recent_timestamp = int(time.time()) - 60
-    service.state.set_last_seen(123456, "999")
-    service.state.save()
+    def handler(request):
+        received.append(request.headers.get("Cookie"))
+        return httpx.Response(200, json={"code": 0, "data": {"items": []}})
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        service = BilibiliMonitorService(config, client=client)
+        try:
+            service.fetch_user_space_dynamics(123456)
+            save_credentials(
+                credential_path,
+                {"SESSDATA": "scanned", "bili_jct": "csrf", "DedeUserID": "123"},
+            )
+            service.fetch_user_space_dynamics(123456)
+        finally:
+            service.close()
+    assert received[0] == "SESSDATA=manual"
+    assert "SESSDATA=scanned" in received[1]
+
+
+def test_recent_videos_visible_regardless_of_age(tmp_path: Path) -> None:
+    config = _build_config(tmp_path)
+    snapshots = []
+    service = BilibiliMonitorService(config, on_update=snapshots.append)
+    old = int(time.time()) - 10 * 86400
+    items = [
+        {
+            "id_str": str(100 + index),
+            "modules": {
+                "module_author": {"pub_ts": old + index * 100},
+                "module_dynamic": {
+                    "major": {
+                        "type": "MAJOR_TYPE_ARCHIVE",
+                        "archive": {
+                            "bvid": f"BV1AB411c7m{index}",
+                            "title": f"第 {index} 期",
+                        },
+                    }
+                },
+            },
+        }
+        for index in range(7)
+    ]
     service.fetch_user_space_dynamics = lambda *_args, **_kwargs: {
         "code": 0,
-        "data": {
-            "items": [
-                {
-                    "id_str": "1001",
-                    "modules": {
-                        "module_author": {"pub_ts": recent_timestamp + 20},
-                        "module_dynamic": {
-                            "major": {
-                                "type": "MAJOR_TYPE_OPUS",
-                            }
-                        },
-                    },
-                },
-                {
-                    "id_str": "1000",
-                    "modules": {
-                        "module_author": {"pub_ts": recent_timestamp + 10},
-                        "module_dynamic": {
-                            "major": {
-                                "type": "MAJOR_TYPE_ARCHIVE",
-                                "archive": {
-                                    "bvid": "BV1CD411c7mE",
-                                    "title": "新视频",
-                                },
-                            }
-                        },
-                    },
-                },
-                {
-                    "id_str": "999",
-                    "modules": {
-                        "module_author": {"pub_ts": recent_timestamp},
-                        "module_dynamic": {
-                            "major": {
-                                "type": "MAJOR_TYPE_ARCHIVE",
-                                "archive": {
-                                    "bvid": "BV1AB411c7mD",
-                                    "title": "旧视频",
-                                },
-                            }
-                        },
-                    },
-                },
-            ]
-        },
+        "data": {"items": items},
     }
-    fake_png = tmp_path / "non_video_dynamic.png"
-    fake_png.write_bytes(b"fake-png")
-    service._build_notification_pngs = lambda *_args, **_kwargs: [fake_png]
+    try:
+        service.process_creator(config.monitor.creators[0])
+    finally:
+        service.close()
+    latest = snapshots[-1].creators[0]
+    assert [video.title for video in latest.videos] == [
+        f"第 {i} 期" for i in (6, 5, 4, 3, 2)
+    ]
+    assert all(video.status == "未总结" for video in latest.videos)
+    assert latest.checked_at is not None
+    assert latest.next_check > latest.checked_at
+    assert service.checks == 1
 
-    service.process_creator(config.monitor.creators[0])
-    service.close()
 
-    assert processed_bvids == ["BV1CD411c7mE"]
-    assert service.state.get_last_seen(123456) == "1000"
+def test_check_failure_visible_and_state_not_advanced(tmp_path: Path) -> None:
+    import pytest
+
+    service = BilibiliMonitorService(_build_config(tmp_path))
+    service.state.set_last_seen(123456, "old")
+    service.fetch_user_space_dynamics = lambda *_args, **_kwargs: {
+        "code": -101,
+        "message": "登录失效",
+    }
+    try:
+        with pytest.raises(RuntimeError):
+            service.process_creator(service.config.monitor.creators[0])
+        current = service.snapshot().creators[0]
+        assert service.failed == 1
+        assert service.checks == 0
+        assert current.status == "失败，等待重试"
+        assert "登录失效" in current.error
+        assert current.next_check is not None
+        assert service.state.get_last_seen(123456) == "old"
+    finally:
+        service.close()
+
+
+def test_idle_monitor_stop_does_not_wait_for_interval(tmp_path: Path) -> None:
+    import threading
+
+    service = BilibiliMonitorService(_build_config(tmp_path))
+    checked = threading.Event()
+
+    def fetch(*args, **kwargs):
+        checked.set()
+        return {"code": 0, "data": {"items": []}}
+
+    service.fetch_user_space_dynamics = fetch
+    worker = threading.Thread(target=service.run, daemon=True)
+    try:
+        worker.start()
+        assert checked.wait(2)
+        service.request_stop()
+        worker.join(timeout=2)
+        assert not worker.is_alive()
+    finally:
+        service.request_stop()
+        worker.join(timeout=2)
+        service.close()
+
+
+def test_pagination_collects_five_unique_videos_from_sparse_pages(
+    tmp_path: Path,
+) -> None:
+    requests = []
+    now = int(time.time())
+
+    def video(index):
+        return {
+            "id_str": str(100 + index),
+            "modules": {
+                "module_author": {"pub_ts": str(now - index * 86400)},
+                "module_dynamic": {
+                    "major": {
+                        "type": "MAJOR_TYPE_ARCHIVE",
+                        "archive": {
+                            "bvid": f"BV1AB411c7m{index}",
+                            "title": f"第 {index} 期",
+                        },
+                    }
+                },
+            },
+        }
+
+    def handler(request):
+        offset = request.url.params["offset"]
+        page = int(offset) if offset else 0
+        requests.append(page)
+        items = [video(page), {"id_str": f"text-{page}", "modules": {}}]
+        if page:
+            items.insert(0, video(page - 1))
+        return httpx.Response(
+            200,
+            json={
+                "code": 0,
+                "data": {
+                    "items": items,
+                    "has_more": True,
+                    "offset": str(page + 1),
+                },
+            },
+        )
+
+    config = _build_config(tmp_path)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        service = BilibiliMonitorService(config, client=client)
+        try:
+            payload = service.fetch_user_space_dynamics(123456)
+            events = [
+                service.extract_video_event(item, None)
+                for item in payload["data"]["items"]
+            ]
+            events = [event for event in events if event]
+            assert len(events) == 5
+            assert requests == [0, 1, 2, 3, 4]
+            assert len({event.bvid for event in events}) == 5
+            assert events[0].publish_timestamp == now
+            assert len(events[0].publish_time) == 19
+        finally:
+            service.close()
+
+
+def test_pagination_stops_when_cursor_repeats(tmp_path: Path) -> None:
+    calls = []
+
+    def handler(request):
+        calls.append(request.url.params["offset"])
+        return httpx.Response(
+            200,
+            json={
+                "code": 0,
+                "data": {
+                    "items": [{"id_str": "same", "modules": {}}],
+                    "has_more": True,
+                    "offset": "repeat",
+                },
+            },
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        service = BilibiliMonitorService(_build_config(tmp_path), client=client)
+        try:
+            payload = service.fetch_user_space_dynamics(123456)
+            assert calls == ["", "repeat"]
+            assert len(payload["data"]["items"]) == 1
+        finally:
+            service.close()
+
+
+def test_string_timestamp_is_normalized_for_display(tmp_path: Path) -> None:
+    service = BilibiliMonitorService(_build_config(tmp_path))
+    try:
+        item = {
+            "id_str": "new",
+            "modules": {
+                "module_author": {
+                    "pub_ts": str(int(time.time()) - 60),
+                    "pub_time": "1分钟前",
+                },
+                "module_dynamic": {
+                    "major": {
+                        "type": "MAJOR_TYPE_ARCHIVE",
+                        "archive": {
+                            "bvid": "BV1AB411c7mD",
+                            "title": "新一期",
+                        },
+                    }
+                },
+            },
+        }
+        assert service.extract_video_event(item, None).publish_timestamp > 0
+        assert service.get_publish_time(item) != "1分钟前"
+    finally:
+        service.close()
+
+
+def test_monitor_only_displays_existing_and_new_videos(tmp_path, monkeypatch):
+    from unittest.mock import Mock
+
+    import b2t.pipeline
+    import b2t.storage
+
+    pipeline = Mock(side_effect=AssertionError("monitor must not run pipeline"))
+    storage = Mock(side_effect=AssertionError("monitor must not initialize storage"))
+    monkeypatch.setattr(b2t.pipeline, "run_pipeline", pipeline)
+    monkeypatch.setattr(b2t.storage, "create_storage_backend", storage)
+    monkeypatch.setattr(b2t.storage, "create_stt_storage_backend", storage)
+    history = Mock(spec=["has_summary_for_bvid"])
+    history.has_summary_for_bvid.side_effect = lambda bvid: bvid == "BV1AB411c7m0"
+    config = _build_config(tmp_path)
+    service = BilibiliMonitorService(config, history_db=history)
+    items = []
+    service.fetch_user_space_dynamics = lambda *_: {"code": 0, "data": {"items": items}}
+
+    def video(index):
+        return {
+            "id_str": str(100 + index),
+            "modules": {
+                "module_author": {"pub_ts": str(int(time.time()) - 60 + index)},
+                "module_dynamic": {
+                    "major": {
+                        "type": "MAJOR_TYPE_ARCHIVE",
+                        "archive": {
+                            "bvid": f"BV1AB411c7m{index}",
+                            "title": f"视频{index}",
+                        },
+                    }
+                },
+            },
+        }
+
+    try:
+        items.extend([video(1), video(0)])
+        service.run(once=True)
+        assert [v.status for v in service.snapshot().creators[0].videos] == [
+            "未总结",
+            "已总结",
+        ]
+        items.insert(0, video(2))
+        service.run(once=True)
+        service.run(once=True)
+        assert service.checks == 3
+        assert service.state.get_last_seen(123456) == "102"
+        assert service.snapshot().creators[0].videos[0].status == "未总结"
+        assert service.snapshot().creators[0].next_check is None
+        assert not Path(config.download.output_dir).exists()
+        pipeline.assert_not_called()
+        storage.assert_not_called()
+    finally:
+        service.close()
