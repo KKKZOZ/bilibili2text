@@ -33,7 +33,7 @@
 `bilibili-to-text` 是一个面向长内容的自动化处理工具。它将视频或播客转换为带上下文的 Markdown 文稿，并进一步生成结构化总结、表格、时间线、Fancy HTML 与知识库索引。可以通过 Web UI 或 CLI 处理内容，也可以使用独立监控服务查看 UP 主视频更新。
 
 > [!TIP]
-> **在线体验：** [b2t.kkkzoz.top:27676](http://b2t.kkkzoz.top:27676)
+> **在线体验：** [b2t.kkkzoz.top](https://b2t.kkkzoz.top/)
 >
 > Open Public 模式使用访问者自己的 API Key；Key 只保存在当前浏览器本地，并仅在任务请求或连接测试时发送给服务端。
 
@@ -63,9 +63,6 @@ LLM 总结 · 表格 · 时间线 · Fancy HTML
         ↓
 历史记录 · 多格式导出 · RAG 知识检索
 ```
-
-> [!NOTE]
-> 当前主要在 Linux 和 macOS 上验证 Web UI、RAG、Open Public、UP 主监控。CLI 与 Docker/Nginx 部署脚本仍属于实验性使用路径。
 
 ## 界面预览
 
@@ -269,19 +266,6 @@ uv run b2t --help
 uv run b2t monitor-login
 ```
 
-登录和监控命令默认读取项目根目录的 `config.toml`，无需额外依赖参数。
-如需使用其他配置，可传入 `--config 路径`；未传入时也支持 `B2T_CONFIG` 环境变量覆盖。
-命令会在终端显示二维码。用哔哩哔哩 App 扫码并确认，凭据保存成功后自动退出。
-无需浏览器，不监听端口，也不依赖 `web-ui/backend` 。
-二维码被终端折行时请放宽终端窗口；过期后重新运行命令，按 Ctrl+C 可取消。
-查询失败会显示不含凭据的错误类型及接口状态码，并最多连续重试两次。
-
-登录凭据以仅当前用户可读写的文件保存到 `[bilibili].credentials_file`，默认是
-配置文件所在目录下的 `db_data/bilibili_credentials.json`。扫码凭据优先于 TOML
-中的手动 Cookie；不要将凭据文件提交到版本库。登录命令和 monitor 需要使用同一份
-配置文件，并能读取同一个凭据文件。运行中的 monitor 每次请求自动读取更新，无需重启。
-登录不会自动启动监控；监控通过下面的独立命令运行。当前不自动续期，失效后重新扫码。
-扫码使用 B 站网页登录接口，兼容响应 Cookie 和旧版回调 URL 两种凭据返回方式。
 
 在 `config.toml` 的 `[monitor]` 和 `[[monitor.creators]]` 中配置监控对象。
 启动监控：
@@ -289,28 +273,6 @@ uv run b2t monitor-login
 ```bash
 uv run b2t monitor
 ```
-
-交互终端默认显示 Textual 面板：每个 UP 主最近 5 个视频的标题、发布时间、
-历史总结状态，以及检查倒计时、检查次数和近期日志。
-视频列表自动翻页补取最近 5 期；每轮最多检查 10 页，不足 5 期时展示实际获取到的视频。
-
-- ↑↓ 选择视频，←→ 切换 UP 主（不会自动轮播打断选择）。
-- Enter 打开生成菜单，选择“生成总结”“生成阅读报告”或“总结和阅读报告都生成”，再按 Enter 提交；Esc 取消。
-- Ctrl+C 退出监控；已提交给 backend 的任务继续运行。
-
-生成前在另一个终端运行 `uv run b2t backend`。monitor 根据 `[backend].host/port`
-连接 backend（监听 `0.0.0.0` / `::` 时使用本机回环地址），通过 `POST /api/process`
-提交任务、`GET /api/process/{job_id}` 查询进度。monitor 不直接执行转录或调用 LLM。
-模型、profile 和模板全部使用 backend 默认配置；无需在 TUI 选择。
-单独生成阅读报告会跳过普通总结，“都生成”只提交一个同时包含两种产物的任务。
-结果由 backend 保存，可在网页历史记录中查看。
-
-未手动提交的视频只检测和展示，不会自动处理；“已总结 / 未总结”仅反映历史记录。
-backend 未启动时仍可监控，但生成操作会提示连接失败。
-提交超时且结果不明时不会自动重试，以免重复生成，请在网页确认任务。
-任务进度仅在本次 TUI 会话中跟踪，重启 monitor 不会恢复此前任务的进度追踪。
-旧配置中的回看窗口、首次处理数量及总结选项已停用，`--bootstrap-unsummarized` 已移除。
-重定向日志或单次检查时使用普通日志输出，不提供生成菜单。
 
 单次检查可以使用 `--once`。首次配置建议先运行：
 
