@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import math
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
@@ -17,6 +17,7 @@ from b2t.cancellation import CancellationToken, PipelineCancelled
 from b2t.download.platform import Platform, PlatformDownloader, PlatformMetadata
 from b2t.download.subtitle import Subtitle, SubtitleItem
 from b2t.download.url_detect import normalize_youtube_url
+from b2t.timezone import SHANGHAI_TZ
 
 logger = logging.getLogger(__name__)
 _MAX_SUBTITLE_BYTES = 20 * 1024 * 1024
@@ -189,13 +190,15 @@ class YoutubeDownloader(PlatformDownloader):
         info = self._extract(url)
         timestamp = int(info.get("timestamp") or info.get("release_timestamp") or 0)
         pubdate = (
-            datetime.fromtimestamp(timestamp, UTC).isoformat() if timestamp else ""
+            datetime.fromtimestamp(timestamp, tz=SHANGHAI_TZ).isoformat()
+            if timestamp
+            else ""
         )
         if not pubdate and info.get("upload_date"):
             try:
                 pubdate = (
                     datetime.strptime(info["upload_date"], "%Y%m%d")
-                    .replace(tzinfo=UTC)
+                    .replace(tzinfo=SHANGHAI_TZ)
                     .date()
                     .isoformat()
                 )

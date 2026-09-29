@@ -37,6 +37,15 @@
 >
 > Open Public 模式使用访问者自己的 API Key；Key 只保存在当前浏览器本地，并仅在任务请求或连接测试时发送给服务端。
 
+<details>
+<summary><strong> 欢迎加入 B2T 微信交流群!</strong></summary>
+
+<p align="center">
+  <img src="./assets/qr_code.jpg" alt="交流群二维码" width="320" />
+</p>
+
+</details>
+
 ## 功能概览
 
 | 能力 | 说明 |
@@ -387,15 +396,6 @@ bun run build
 ## 社区
 
 欢迎通过 GitHub Issues 提交问题和建议。
-
-<details>
-<summary><strong>加入交流群</strong></summary>
-
-<p align="center">
-  <img src="./assets/qr_code.jpg" alt="交流群二维码" width="320" />
-</p>
-
-</details>
 
 ## 致谢
 

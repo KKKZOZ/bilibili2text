@@ -544,7 +544,7 @@ def run_pipeline(
                 for artifact in newly_stored:
                     try:
                         storage_backend.delete_file(artifact.storage_key)
-                    except Exception as exc:  # noqa: BLE001
+                    except Exception as exc:
                         logger.warning(
                             "清理未完成任务产物失败: %s: %s",
                             artifact.storage_key,

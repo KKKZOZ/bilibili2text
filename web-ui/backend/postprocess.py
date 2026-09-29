@@ -2,11 +2,11 @@
 
 import logging
 from datetime import datetime
-from time import localtime, strftime
 
 from b2t.cancellation import PipelineCancelled
 from b2t.config import STOCK_STATUS_MODE_BACKGROUND_HYBRID, get_stock_status_mode
 from b2t.report.options import ReportOptions
+from b2t.timezone import SHANGHAI_TZ
 from backend.dependencies import get_history_db, get_rag_store, get_storage_backend
 from backend.ephemeral_uploads import (
     ephemeral_upload_expires_at,
@@ -165,7 +165,7 @@ class PostProcessScheduler:
         def report_progress(message: str) -> None:
             _append_job_log(
                 job_id,
-                f"{strftime(JOB_LOG_DATE_FORMAT, localtime())} [INFO] b2t.report.pi: {_redact_text(message)}",
+                f"{datetime.now(tz=SHANGHAI_TZ).strftime(JOB_LOG_DATE_FORMAT)} [INFO] b2t.report.pi: {_redact_text(message)}",
             )
 
         source_artifact = results.get("markdown")
@@ -283,7 +283,7 @@ class PostProcessScheduler:
                 _append_job_log(
                     job_id,
                     (
-                        f"{datetime.now().strftime(JOB_LOG_DATE_FORMAT)} "
+                        f"{datetime.now(tz=SHANGHAI_TZ).strftime(JOB_LOG_DATE_FORMAT)} "
                         f"[WARNING] b2t.pipeline: {message}"
                     ),
                 )
@@ -301,7 +301,7 @@ class PostProcessScheduler:
             )
             _append_job_log(
                 job_id,
-                f"{datetime.now().strftime(JOB_LOG_DATE_FORMAT)} [WARNING] b2t.pipeline: {message}",
+                f"{datetime.now(tz=SHANGHAI_TZ).strftime(JOB_LOG_DATE_FORMAT)} [WARNING] b2t.pipeline: {message}",
             )
 
 

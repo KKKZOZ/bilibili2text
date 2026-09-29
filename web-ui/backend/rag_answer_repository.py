@@ -56,7 +56,7 @@ class RagAnswerRepository:
             if artifact is not None:
                 try:
                     storage.delete_file(artifact.storage_key)
-                except Exception as cleanup_exc:  # noqa: BLE001
+                except Exception as cleanup_exc:
                     logger.warning(
                         "清理未归档的 RAG 答案失败: %s: %s",
                         artifact.storage_key,

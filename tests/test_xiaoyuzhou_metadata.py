@@ -60,7 +60,7 @@ def test_fetch_metadata_reads_xiaoyuzhou_current_fields(monkeypatch) -> None:
 
     assert metadata.title == "投资实战派 — E191 AI四大半导体新方向"
     assert metadata.author == "wong永庆"
-    assert metadata.pubdate == "2026-07-19 23:54:05"
+    assert metadata.pubdate == "2026-07-20 07:54:05"
     assert metadata.pubdate_timestamp > 0
 
 
@@ -93,5 +93,5 @@ def test_fetch_metadata_falls_back_to_podcaster_and_schema_publish_time(
 
     assert metadata.title == "投资实战派 — 多人对话节目"
     assert metadata.author == "大卫"
-    assert metadata.pubdate == "2026-07-20 01:02:03"
+    assert metadata.pubdate == "2026-07-20 09:02:03"
     assert metadata.extra["podcasters"] == [{"nickname": "大卫", "bio": "主持人"}]

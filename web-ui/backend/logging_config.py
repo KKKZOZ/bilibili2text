@@ -2,7 +2,9 @@
 
 import logging
 import re
+from datetime import datetime
 
+from b2t.timezone import SHANGHAI_TZ
 from backend.jobs import _append_job_log
 
 LOG_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
@@ -39,13 +41,19 @@ class _SensitiveDataFilter(logging.Filter):
 _SENSITIVE_DATA_FILTER = _SensitiveDataFilter()
 
 
+class _ShanghaiFormatter(logging.Formatter):
+    @staticmethod
+    def converter(timestamp: float):
+        return datetime.fromtimestamp(timestamp, tz=SHANGHAI_TZ).timetuple()
+
+
 class _JobLogHandler(logging.Handler):
     def __init__(self, job_id: str, thread_id: int) -> None:
         super().__init__(level=logging.INFO)
         self._job_id = job_id
         self._thread_id = thread_id
         self.setFormatter(
-            logging.Formatter(fmt=JOB_LOG_FORMAT, datefmt=JOB_LOG_DATE_FORMAT)
+            _ShanghaiFormatter(fmt=JOB_LOG_FORMAT, datefmt=JOB_LOG_DATE_FORMAT)
         )
         self.addFilter(_SENSITIVE_DATA_FILTER)
 
@@ -72,7 +80,7 @@ class _JobLogHandler(logging.Handler):
 
 def _configure_logging() -> None:
     """Unify backend log format with second-level timestamps."""
-    formatter = logging.Formatter(fmt=LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
+    formatter = _ShanghaiFormatter(fmt=LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
     for logger_name in ("", "uvicorn", "uvicorn.error", "uvicorn.access"):
         target_logger = logging.getLogger(logger_name)
         for handler in target_logger.handlers:

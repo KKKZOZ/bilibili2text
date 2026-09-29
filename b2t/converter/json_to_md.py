@@ -5,6 +5,8 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
+from b2t.timezone import SHANGHAI_TZ
+
 logger = logging.getLogger(__name__)
 TIMELINE_SCHEMA_VERSION = 1
 
@@ -170,7 +172,7 @@ def convert_json_to_md(
     lines.append(f"{file_name}_原文\n")
 
     # Date and time
-    current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
+    current_time = datetime.now(tz=SHANGHAI_TZ).strftime("%Y-%m-%d %H:%M")
     lines.append(f"{current_time}")
 
     # Process transcription content (compatible with Qwen and Groq)

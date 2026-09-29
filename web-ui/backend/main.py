@@ -34,7 +34,7 @@ def on_startup() -> None:
     start_ephemeral_upload_cleanup()
     try:
         warmup_png_renderer()
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning("PNG 渲染器预热失败，将在首次转换时重试: %s", exc)
 
 

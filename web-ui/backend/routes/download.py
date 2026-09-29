@@ -226,7 +226,7 @@ def _lookup_artifact_summary_metadata(storage_key: str) -> tuple[str, str, str]:
                 """,
                 (storage_key,),
             ).fetchone()
-    except Exception:  # noqa: BLE001
+    except Exception:
         return "", "", ""
     if row is None:
         return "", "", ""

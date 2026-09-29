@@ -22,6 +22,7 @@ from b2t.download.yutto_cli import (
     normalize_bilibili_target,
 )
 from b2t.pipeline import run_pipeline
+from b2t.timezone import SHANGHAI_TZ
 from backend.bvid_locks import bvid_transcription_locks
 from backend.dependencies import (
     get_storage_backend,
@@ -153,7 +154,7 @@ def _run_job(
         )
         _append_job_log(
             job_id,
-            f"{datetime.now().strftime(JOB_LOG_DATE_FORMAT)} [ERROR] b2t.pipeline: {_redact_text(error_message)}",
+            f"{datetime.now(tz=SHANGHAI_TZ).strftime(JOB_LOG_DATE_FORMAT)} [ERROR] b2t.pipeline: {_redact_text(error_message)}",
         )
         _cleanup_upload_temp_dir(upload_temp_dir)
         return
@@ -169,7 +170,7 @@ def _run_job(
         )
         _append_job_log(
             job_id,
-            f"{datetime.now().strftime(JOB_LOG_DATE_FORMAT)} [ERROR] b2t.pipeline: {_redact_text(error_message)}",
+            f"{datetime.now(tz=SHANGHAI_TZ).strftime(JOB_LOG_DATE_FORMAT)} [ERROR] b2t.pipeline: {_redact_text(error_message)}",
         )
         _cleanup_upload_temp_dir(upload_temp_dir)
         return
@@ -257,7 +258,7 @@ def _run_job(
             )
             _append_job_log(
                 job_id,
-                f"{datetime.now().strftime(JOB_LOG_DATE_FORMAT)} [WARNING] b2t.pipeline: {_redact_text(error_message)}",
+                f"{datetime.now(tz=SHANGHAI_TZ).strftime(JOB_LOG_DATE_FORMAT)} [WARNING] b2t.pipeline: {_redact_text(error_message)}",
             )
             _cleanup_upload_temp_dir(upload_temp_dir)
             return
@@ -380,7 +381,7 @@ def _run_job(
             )
             _append_job_log(
                 job_id,
-                f"{datetime.now().strftime(JOB_LOG_DATE_FORMAT)} [ERROR] b2t.pipeline: {_redact_text(str(exc))}",
+                f"{datetime.now(tz=SHANGHAI_TZ).strftime(JOB_LOG_DATE_FORMAT)} [ERROR] b2t.pipeline: {_redact_text(str(exc))}",
             )
             return
 
@@ -424,7 +425,7 @@ def _run_job(
                 logger.warning("后处理及文件导出失败（不影响转录结果）: %s", exc)
                 _append_job_log(
                     job_id,
-                    f"{datetime.now().strftime(JOB_LOG_DATE_FORMAT)} [WARNING] b2t.pipeline: 后处理及文件导出失败（不影响转录结果）: {_redact_text(str(exc))}",
+                    f"{datetime.now(tz=SHANGHAI_TZ).strftime(JOB_LOG_DATE_FORMAT)} [WARNING] b2t.pipeline: 后处理及文件导出失败（不影响转录结果）: {_redact_text(str(exc))}",
                 )
 
         try:
@@ -443,7 +444,7 @@ def _run_job(
             )
             _append_job_log(
                 job_id,
-                f"{datetime.now().strftime(JOB_LOG_DATE_FORMAT)} [ERROR] b2t.pipeline: {_redact_text(str(exc))}",
+                f"{datetime.now(tz=SHANGHAI_TZ).strftime(JOB_LOG_DATE_FORMAT)} [ERROR] b2t.pipeline: {_redact_text(str(exc))}",
             )
             return
 
@@ -493,7 +494,7 @@ def _run_job(
             )
             _append_job_log(
                 job_id,
-                f"{datetime.now().strftime(JOB_LOG_DATE_FORMAT)} [ERROR] b2t.pipeline: {_redact_text(str(exc))}",
+                f"{datetime.now(tz=SHANGHAI_TZ).strftime(JOB_LOG_DATE_FORMAT)} [ERROR] b2t.pipeline: {_redact_text(str(exc))}",
             )
             return
 

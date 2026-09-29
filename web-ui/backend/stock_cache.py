@@ -55,7 +55,7 @@ def get_or_fetch_stock_statuses(
             prefer_baostock_for_a_shares=prefer_baostock_for_a_shares,
             max_workers=max_workers,
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning("Failed to fetch stock status cache for %s: %s", bvid, exc)
         return cached
 
@@ -134,7 +134,7 @@ def _fetch_stock_daily_statuses(
                         as_of_date=as_of_date,
                     )
                 result_queue.put((symbol, statuses, None))
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 result_queue.put((symbol, [], exc))
 
     worker_count = min(len(symbols), max(1, int(max_workers)))

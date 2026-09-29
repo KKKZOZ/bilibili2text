@@ -15,6 +15,7 @@ from b2t.download.bilibili_categories import (
     get_bilibili_tname,
 )
 from b2t.download.platform import PlatformMetadata
+from b2t.timezone import SHANGHAI_TZ
 
 logger = logging.getLogger(__name__)
 
@@ -120,9 +121,9 @@ async def get_video_metadata_async(bvid: str) -> VideoMetadata:
         # Convert timestamp to readable format
         pubdate_readable = ""
         if pubdate_timestamp:
-            pubdate_readable = datetime.fromtimestamp(pubdate_timestamp).strftime(
-                "%Y-%m-%d %H:%M:%S"
-            )
+            pubdate_readable = datetime.fromtimestamp(
+                pubdate_timestamp, tz=SHANGHAI_TZ
+            ).strftime("%Y-%m-%d %H:%M:%S")
 
         metadata = VideoMetadata(
             bvid=video_data.get("bvid", bvid),

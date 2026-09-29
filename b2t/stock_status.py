@@ -14,6 +14,8 @@ from typing import Any
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
+from b2t.timezone import SHANGHAI_TZ, to_shanghai_datetime
+
 logger = logging.getLogger(__name__)
 
 _STOCK_CODE_RE = re.compile(
@@ -93,7 +95,7 @@ def build_stock_table_cards_html(
         if symbols:
             try:
                 statuses = fetch_stock_daily_status(symbols, as_of_date=as_of_date)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 logger.warning("Failed to fetch stock status data: %s", exc)
         status_by_symbol = {status.symbol: status for status in statuses}
     elif isinstance(stock_statuses, Mapping):
@@ -137,7 +139,7 @@ def fetch_stock_daily_status(
     effective_date = (
         effective_datetime.date()
         if effective_datetime is not None
-        else (_parse_as_of_date(as_of_date) or date.today())
+        else (_parse_as_of_date(as_of_date) or datetime.now(tz=SHANGHAI_TZ).date())
     )
     statuses: list[StockDailyStatus] = []
     for symbol in symbols:
@@ -150,7 +152,7 @@ def fetch_stock_daily_status(
                 )
             else:
                 status = _fetch_status_for_symbol(symbol, effective_date)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("stock status fetch failed for %s: %s", symbol, exc)
             continue
         if status is not None and not _is_stale_after_market_close(
@@ -198,7 +200,7 @@ def _fetch_yfinance_status_for_symbol(
         return None
     try:
         import yfinance as yf
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning("yfinance unavailable: %s", exc)
         return None
 
@@ -233,7 +235,7 @@ def _fetch_yfinance_status_for_symbol(
             info,
             _yfinance_index_to_date(history.index[selected_position]),
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning("yfinance query failed for %s: %s", symbol, exc)
         return None
 
@@ -268,7 +270,7 @@ def _fetch_baostock_status_for_symbol(
 ) -> StockDailyStatus | None:
     try:
         import baostock as bs
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning("baostock unavailable: %s", exc)
         return None
 
@@ -289,7 +291,7 @@ def _fetch_baostock_status_for_symbol(
     finally:
         try:
             bs.logout()
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
 
 
@@ -311,7 +313,7 @@ def _fetch_tickflow_hk_status_for_symbol(
             return None
         instrument = _fetch_tickflow_instrument(client, symbol)
         return _tickflow_row_to_status(symbol, row, instrument)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning("tickflow query failed for %s: %s", symbol, exc)
         return None
 
@@ -541,42 +543,33 @@ def _parse_as_of_date(value: date | datetime | str | None) -> date | None:
     if value is None:
         return None
     if isinstance(value, datetime):
-        return value.date()
+        return to_shanghai_datetime(value).date()
     if isinstance(value, date):
         return value
 
     text = str(value).strip()
     if not text:
         return None
-    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"):
-        try:
-            return datetime.strptime(text[: len(fmt)], fmt).date()
-        except ValueError:
-            continue
     try:
-        return datetime.fromisoformat(text).date()
+        return to_shanghai_datetime(datetime.fromisoformat(text)).date()
     except ValueError:
         return None
 
 
 def _parse_as_of_datetime(value: date | datetime | str | None) -> datetime | None:
     if isinstance(value, datetime):
-        return value
+        return to_shanghai_datetime(value)
     if value is None or isinstance(value, date):
         return None
 
     text = str(value).strip()
     if not text:
         return None
-    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
-        try:
-            return datetime.strptime(text[: len(fmt)], fmt)
-        except ValueError:
-            continue
     try:
         parsed = datetime.fromisoformat(text)
     except ValueError:
         return None
+    parsed = to_shanghai_datetime(parsed)
     return parsed if parsed.time() != time.min else None
 
 
@@ -593,7 +586,7 @@ def _is_stale_after_market_close(
         return False
 
     try:
-        trade_date = datetime.strptime(status.trade_date[:10], "%Y-%m-%d").date()
+        trade_date = date.fromisoformat(status.trade_date[:10])
     except ValueError:
         return False
     return trade_date < as_of_datetime.date()
@@ -637,7 +630,7 @@ def _fetch_baostock_daily_row(
         if not rows:
             return {}
         return dict(zip(rs.fields, rows[-1], strict=False))
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning("baostock daily query failed for %s: %s", symbol, exc)
         return {}
 
@@ -661,7 +654,7 @@ def _fetch_baostock_basic_row(bs: Any, symbol: str) -> dict[str, Any]:
         if not rows:
             return {}
         return dict(zip(rs.fields, rows[-1], strict=False))
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning("baostock basic query failed for %s: %s", symbol, exc)
         return {}
 
@@ -686,7 +679,7 @@ def _fetch_baostock_profit_row(
                 rows.append(rs.get_row_data())
             if rows:
                 return dict(zip(rs.fields, rows[-1], strict=False))
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning(
                 "baostock profit query failed for %s %sQ%s: %s",
                 symbol,
@@ -699,7 +692,7 @@ def _fetch_baostock_profit_row(
 
 def _profit_query_year(trade_date: str) -> int | None:
     if not trade_date or trade_date == "-":
-        return date.today().year
+        return datetime.now(tz=SHANGHAI_TZ).year
     try:
         return int(trade_date[:4])
     except ValueError:

@@ -102,7 +102,7 @@ def generate_history_report(run_id: str, payload: HistoryReportRequest):
                 fancy_html_status="succeeded",
                 fancy_html_error="",
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             db.update_run_fancy_html_status(
                 run_id,
                 status="failed",

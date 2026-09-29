@@ -19,6 +19,7 @@ from b2t.download.platform import (
     sanitize_filename_component,
 )
 from b2t.download.url_detect import extract_platform_id
+from b2t.timezone import SHANGHAI_TZ, to_shanghai_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +107,7 @@ def _parse_datetime_value(value: Any) -> tuple[str, int]:
     """Parse ISO or timestamp-like datetime to (formatted_str, timestamp)."""
     if isinstance(value, (int, float)) and value > 0:
         timestamp = int(value / 1000) if value > 10_000_000_000 else int(value)
-        return datetime.fromtimestamp(timestamp).strftime(
+        return datetime.fromtimestamp(timestamp, tz=SHANGHAI_TZ).strftime(
             "%Y-%m-%d %H:%M:%S"
         ), timestamp
 
@@ -118,7 +119,7 @@ def _parse_datetime_value(value: Any) -> tuple[str, int]:
 
     normalized = cleaned.strip().replace("Z", "+00:00")
     try:
-        dt = datetime.fromisoformat(normalized)
+        dt = to_shanghai_datetime(datetime.fromisoformat(normalized))
         ts = int(dt.timestamp())
         return dt.strftime("%Y-%m-%d %H:%M:%S"), ts
     except (ValueError, TypeError):

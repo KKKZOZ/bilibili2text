@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import logging
 import sys
 from collections.abc import Callable
@@ -14,7 +15,6 @@ from rich.table import Table
 from b2t.config import load_config
 from b2t.download.yutto_cli import extract_bvid, normalize_bilibili_target
 from b2t.history import HistoryDB, record_pipeline_run
-from b2t.monitor import BilibiliMonitorService
 from b2t.pipeline import run_pipeline
 from b2t.storage import StoredArtifact
 
@@ -494,7 +494,7 @@ def _run_pipeline_with_args(args: CLIArgs, console: Console) -> int:
             summary_preset=args.summary_preset,
             summary_profile=args.summary_profile,
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning("记录历史转录失败: %s", exc)
 
     return 0
@@ -502,6 +502,19 @@ def _run_pipeline_with_args(args: CLIArgs, console: Console) -> int:
 
 def _run_monitor_with_args(args: MonitorCLIArgs, console: Console) -> int:
     _configure_logging(args.verbose)
+
+    try:
+        monitor_module = importlib.import_module("b2t.monitor")
+    except ModuleNotFoundError as exc:
+        if exc.name != "b2t.monitor":
+            raise
+        console.print("[bold red]监控组件未安装:[/] 当前环境不包含 b2t.monitor")
+        return 1
+
+    monitor_service_class = getattr(monitor_module, "BilibiliMonitorService", None)
+    if monitor_service_class is None:
+        console.print("[bold red]监控组件不可用:[/] 缺少 BilibiliMonitorService")
+        return 1
 
     try:
         config = load_config(args.config)
@@ -513,7 +526,7 @@ def _run_monitor_with_args(args: MonitorCLIArgs, console: Console) -> int:
         console.print("[bold red]配置错误:[/] [monitor].enabled = true 后才能启动监控")
         return 1
 
-    service = BilibiliMonitorService(config)
+    service = monitor_service_class(config)
     use_tui = console.is_terminal and not args.once
     try:
         if args.reset_state:

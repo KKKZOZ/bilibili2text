@@ -196,7 +196,7 @@ def _persist_regenerated_summary(
             continue
         try:
             storage_backend.delete_file(artifact.storage_key)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning(
                 "清理被覆盖的总结文件 %s 失败: %s",
                 artifact.filename,
@@ -627,7 +627,7 @@ def delete_history_artifact(run_id: str, download_id: str) -> HistoryDetailRespo
             continue
         try:
             storage_backend.delete_file(artifact.storage_key)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("删除文件 %s 失败: %s", artifact.filename, exc)
             failed_files.append(artifact.filename)
     if failed_files:
@@ -697,7 +697,7 @@ def delete_history(run_id: str) -> dict[str, str]:
         try:
             storage_backend.delete_file(artifact.storage_key)
             deleted_count += 1
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning(
                 "删除文件 %s 失败: %s",
                 artifact.filename,

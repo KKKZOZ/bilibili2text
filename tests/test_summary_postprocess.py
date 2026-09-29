@@ -9,6 +9,7 @@ from b2t.config import (
     SummaryPresetsConfig,
 )
 from b2t.download.metadata import VideoMetadata
+from b2t.timezone import SHANGHAI_TZ
 
 
 def _summarize_config() -> SummarizeConfig:
@@ -57,7 +58,7 @@ def test_post_process_summary_markdown_injects_metadata_and_demotes_h1() -> None
         "# 核心结论\n\n- 要点一\n",
         metadata=metadata,
         fallback_title="兜底标题",
-        now=datetime(2026, 3, 31, 12, 0, 0),
+        now=datetime(2026, 3, 31, 12, 0, 0, tzinfo=SHANGHAI_TZ),
     )
 
     assert processed.startswith("# 测试视频标题\n\n- Creator: 测试UP主\n")

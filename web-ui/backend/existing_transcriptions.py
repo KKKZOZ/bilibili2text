@@ -11,6 +11,7 @@ from b2t.download.comments import DEFAULT_COMMENT_LIMIT
 from b2t.history import infer_run_id
 from b2t.storage import SUMMARY_ARTIFACT_KINDS, StorageBackend
 from b2t.storage.base import StoredArtifact
+from b2t.timezone import SHANGHAI_TZ
 from backend.artifacts import summary_family_storage_keys
 from backend.dependencies import get_history_db
 from backend.jobs import _append_job_log, _update_job
@@ -340,7 +341,7 @@ class ExistingTranscriptionService:
                 )
             except PipelineCancelled:
                 return True
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 _update_job(
                     job_id, fancy_html_status="failed", fancy_html_error=str(exc)
                 )
@@ -503,7 +504,7 @@ def _append_info(job_id: str, message: str) -> None:
     _append_job_log(
         job_id,
         (
-            f"{datetime.now().strftime(JOB_LOG_DATE_FORMAT)} "
+            f"{datetime.now(tz=SHANGHAI_TZ).strftime(JOB_LOG_DATE_FORMAT)} "
             f"[INFO] b2t.pipeline: {_redact_text(message)}"
         ),
     )
@@ -520,7 +521,7 @@ def _fail_job(job_id: str, message: str) -> None:
     _append_job_log(
         job_id,
         (
-            f"{datetime.now().strftime(JOB_LOG_DATE_FORMAT)} "
+            f"{datetime.now(tz=SHANGHAI_TZ).strftime(JOB_LOG_DATE_FORMAT)} "
             f"[ERROR] b2t.pipeline: {_redact_text(message)}"
         ),
     )

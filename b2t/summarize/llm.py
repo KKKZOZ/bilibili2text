@@ -26,6 +26,7 @@ from b2t.summary_context import (
     render_summary_context_block,
     resolve_author_summary_context,
 )
+from b2t.timezone import SHANGHAI_TZ, to_shanghai_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -167,7 +168,7 @@ def _parse_pubdate_datetime(pubdate: str) -> datetime | None:
 
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
         try:
-            return datetime.strptime(cleaned, fmt)
+            return datetime.strptime(cleaned, fmt).replace(tzinfo=SHANGHAI_TZ)
         except ValueError:
             continue
 
@@ -176,9 +177,7 @@ def _parse_pubdate_datetime(pubdate: str) -> datetime | None:
         parsed = datetime.fromisoformat(normalized)
     except ValueError:
         return None
-    if parsed.tzinfo is not None:
-        return parsed.astimezone().replace(tzinfo=None)
-    return parsed
+    return to_shanghai_datetime(parsed)
 
 
 def _format_publish_time(metadata: VideoMetadata | None) -> str:
@@ -188,14 +187,14 @@ def _format_publish_time(metadata: VideoMetadata | None) -> str:
     pubdate = (metadata.pubdate or "").strip()
     if metadata.pubdate_timestamp > 0:
         if not pubdate:
-            return datetime.fromtimestamp(metadata.pubdate_timestamp).strftime(
-                "%Y-%m-%d %H:%M:%S"
-            )
+            return datetime.fromtimestamp(
+                metadata.pubdate_timestamp, tz=SHANGHAI_TZ
+            ).strftime("%Y-%m-%d %H:%M:%S")
         return pubdate
 
     published_at = _parse_pubdate_datetime(pubdate)
     if published_at is not None:
-        return pubdate or published_at.strftime("%Y-%m-%d %H:%M:%S")
+        return published_at.strftime("%Y-%m-%d %H:%M:%S")
 
     return pubdate or "Unknown"
 
@@ -496,7 +495,7 @@ def summarize_with_comment_viewpoints(
         summary_path = summary_future.result()
         try:
             comment_summary = comment_future.result()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("Failed to summarize platform comments: %s", exc)
             return summary_path
 

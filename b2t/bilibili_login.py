@@ -89,7 +89,7 @@ async def terminal_login(
         console.file.write(compact_terminal_qr(login.get_qrcode_terminal()) + "\n")
         console.file.flush()
         console.print("等待扫码…（二维码 3 分钟内有效，Ctrl+C 取消）")
-    except Exception as exc:  # noqa: BLE001 -- SDK messages may expose credentials.
+    except Exception as exc:  # SDK messages may expose credentials.
         console.print(_login_error(exc, "获取二维码"), markup=False)
         return 1
 
@@ -140,7 +140,7 @@ async def terminal_login(
         except InvalidLoginCredentials as exc:
             console.print(f"登录凭据校验失败：{exc}。旧凭据未修改。", markup=False)
             return 1
-        except Exception as exc:  # noqa: BLE001 -- Show only sanitized diagnostics.
+        except Exception as exc:  # Show only sanitized diagnostics.
             failures += 1
             console.print(_login_error(exc, stage), markup=False)
             if failures >= 3:

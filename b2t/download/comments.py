@@ -20,6 +20,7 @@ import httpx
 from b2t.download.metadata import VideoMetadata
 from b2t.download.platform import Platform
 from b2t.download.url_detect import extract_platform_id
+from b2t.timezone import SHANGHAI_TZ
 
 logger = logging.getLogger(__name__)
 
@@ -208,7 +209,9 @@ def _to_int(value: Any, default: int = 0) -> int:
 def _format_ctime(timestamp: int) -> str:
     if timestamp <= 0:
         return ""
-    return datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
+    return datetime.fromtimestamp(timestamp, tz=SHANGHAI_TZ).strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
 
 
 def _parse_comment(raw: dict[str, Any], *, up_uid: int) -> PlatformComment:

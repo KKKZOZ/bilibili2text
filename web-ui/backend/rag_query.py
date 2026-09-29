@@ -117,7 +117,7 @@ class RagQueryService:
                     answer_bytes=answer_bytes,
                     filename=filename,
                 )
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 logger.warning("RAG 答案持久化失败（不影响回答）: %s", exc)
 
             yield RagQueryEvent(
@@ -127,7 +127,7 @@ class RagQueryService:
                 download_id=download_id,
                 filename=filename,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.error("RAG 查询失败: %s", exc)
             yield RagQueryEvent(stage="error", message=str(exc))
 

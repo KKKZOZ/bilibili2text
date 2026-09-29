@@ -565,11 +565,11 @@ class _ChromiumWorker:
                         break
                     try:
                         task.fn(browser)
-                    except Exception as exc:  # noqa: BLE001
+                    except Exception as exc:
                         task.error = exc
                     finally:
                         task.done.set()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._startup_error = exc
             self._ready.set()
             while True:
@@ -585,7 +585,7 @@ class _ChromiumWorker:
             if browser is not None:
                 try:
                     browser.close()
-                except Exception:  # noqa: BLE001
+                except Exception:
                     pass
 
 
@@ -1493,7 +1493,7 @@ def warmup_png_renderer() -> None:
     # Pre-download CSS to local cache to avoid waiting for external requests on first conversion.
     try:
         MarkdownToPngConverter()._resolve_css_href(GITHUB_CSS_URL)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning("Failed to warm up local CSS cache: %s", exc)
     _CHROMIUM_WORKER.start()
 

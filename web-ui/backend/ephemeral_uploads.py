@@ -70,7 +70,7 @@ def _delete_local_parent_dirs(storage_keys: set[str]) -> None:
         try:
             if directory.exists() and directory.is_dir():
                 shutil.rmtree(directory)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("删除临时上传目录失败 %s: %s", directory, exc)
 
 
@@ -92,7 +92,7 @@ def cleanup_expired_ephemeral_uploads() -> int:
         for storage_key in storage_keys:
             try:
                 storage_backend.delete_file(storage_key)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 logger.warning("删除临时上传文件失败 %s: %s", storage_key, exc)
         if storage_backend.persist_local_outputs:
             _delete_local_parent_dirs(storage_keys)
@@ -109,7 +109,7 @@ def _cleanup_loop() -> None:
             count = cleanup_expired_ephemeral_uploads()
             if count:
                 logger.info("已清理 %s 个过期临时上传任务", count)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("临时上传清理任务失败: %s", exc)
 
 

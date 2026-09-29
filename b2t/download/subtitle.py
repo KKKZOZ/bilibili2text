@@ -85,7 +85,7 @@ def fetch_bilibili_subtitle(
     except subprocess.TimeoutExpired:
         logger.warning("Fetching Bilibili subtitle timed out, falling back to ASR")
         return None
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning("Fetching Bilibili subtitle failed: %s", exc)
         return None
 

@@ -773,7 +773,7 @@ def _run_summary_only_from_existing(
                     continue
                 try:
                     storage_backend.delete_file(artifact.storage_key)
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     logger.warning(
                         "清理已取消的总结产物失败: %s: %s",
                         artifact.storage_key,
