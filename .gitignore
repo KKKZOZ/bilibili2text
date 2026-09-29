@@ -43,6 +43,9 @@ output/
 web-ui/frontend/node_modules/
 web-ui/frontend/dist/
 
+/b2t/monitor/
+/tests/test_monitor*.py
+
 # Local scratch / external experiments
 /docs/cloudflare-deployment.md
 .wrangler/

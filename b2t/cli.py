@@ -30,6 +30,7 @@ class CLIArgs:
     summary_preset: str | None = None
     summary_profile: str | None = None
     prefer_bilibili_subtitle: bool = True
+    prefer_subtitles: bool | None = None
     verbose: bool = False
 
 
@@ -82,7 +83,7 @@ def _parse_bool_input(raw: str, *, default: bool) -> bool:
 def _parse_required_url(raw: str) -> str:
     value = raw.strip()
     if not value:
-        raise ValueError("Bilibili 视频 URL 不能为空")
+        raise ValueError("视频或播客 URL 不能为空")
     return value
 
 
@@ -104,9 +105,9 @@ def _configure_logging(verbose: bool) -> None:
 def _build_script_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="b2t",
-        description="Bilibili 视频转文字：下载音频 → 转录 → Markdown → 总结",
+        description="视频/播客转文字：平台字幕或音频转录 → Markdown → 总结",
     )
-    parser.add_argument("url", help="Bilibili 视频 URL")
+    parser.add_argument("url", help="Bilibili、YouTube、小宇宙或喜马拉雅 URL")
     parser.add_argument(
         "-c", "--config", default=None, help="配置文件路径（默认 ./config.toml）"
     )
@@ -128,6 +129,9 @@ def _build_script_parser() -> argparse.ArgumentParser:
         help="不优先使用 B 站字幕，直接下载音频并进行 ASR 转录",
     )
     parser.add_argument("-v", "--verbose", action="store_true", help="显示详细日志")
+    parser.add_argument(
+        "--no-subtitles", action="store_true", help="跳过所有平台字幕，使用音频 ASR"
+    )
     return parser
 
 
@@ -180,6 +184,7 @@ def _validate_script_args(
         summary_preset=summary_preset,
         summary_profile=summary_profile,
         prefer_bilibili_subtitle=not bool(parsed.no_bilibili_subtitle),
+        prefer_subtitles=False if parsed.no_subtitles else None,
         verbose=bool(parsed.verbose),
     )
 
@@ -449,6 +454,7 @@ def _run_pipeline_with_args(args: CLIArgs, console: Console) -> int:
             summary_profile=args.summary_profile,
             output_dir=args.output,
             prefer_bilibili_subtitle=args.prefer_bilibili_subtitle,
+            prefer_subtitles=args.prefer_subtitles,
         )
     except KeyboardInterrupt:
         console.print("[bold #334155]已取消[/bold #334155]")
@@ -461,7 +467,10 @@ def _run_pipeline_with_args(args: CLIArgs, console: Console) -> int:
     console.print("[bold #16a34a]完成[/bold #16a34a]")
     _print_results(console, results)
 
-    bvid = extract_bvid(normalize_bilibili_target(args.url))
+    metadata = results.get("_metadata")
+    bvid = (
+        metadata.bvid if metadata else extract_bvid(normalize_bilibili_target(args.url))
+    )
     if bvid is None:
         return 0
 

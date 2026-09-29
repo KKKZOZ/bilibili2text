@@ -1,6 +1,7 @@
 <script setup>
   import { computed } from 'vue'
   import { ExternalLink, Video } from 'lucide-vue-next'
+  import { resourceUrl } from '../../utils/fileUtils'
 
   const props = defineProps({
     job: { type: Object, required: true },
@@ -10,11 +11,7 @@
   })
 
   const bvid = computed(() => props.job.bvid || props.sourceBvid || '')
-  const videoUrl = computed(() =>
-    bvid.value.startsWith('BV')
-      ? `https://www.bilibili.com/video/${bvid.value}`
-      : ''
-  )
+  const videoUrl = computed(() => resourceUrl(bvid.value) || '')
 
   const formatDuration = (seconds) => {
     const total = Math.max(0, Number.parseInt(seconds, 10) || 0)

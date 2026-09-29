@@ -6,6 +6,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "web-ui"))
 from backend import runner
 
 
+def test_youtube_urls_share_canonical_cache_id() -> None:
+    for url in (
+        "https://youtu.be/BaW_jenozKc?si=tracking",
+        "https://www.youtube.com/watch?v=BaW_jenozKc&list=PLexample",
+        "https://www.youtube.com/shorts/BaW_jenozKc",
+    ):
+        assert runner._infer_resource_id_from_url(url) == (
+            "https://www.youtube.com/watch?v=BaW_jenozKc",
+            "youtube_BaW_jenozKc",
+        )
+
+
 def test_infer_resource_id_for_supported_podcast_urls(monkeypatch) -> None:
     xiaoyuzhou_url = "https://www.xiaoyuzhoufm.com/episode/6a0a7365e1eb34a93997ffa2"
     normalized, resource_id = runner._infer_resource_id_from_url(xiaoyuzhou_url)

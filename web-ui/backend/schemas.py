@@ -61,7 +61,7 @@ class ProcessRequest(SummarySelectionRequest):
     url: str = Field(
         ...,
         min_length=1,
-        description="视频或播客 URL（支持 Bilibili、小宇宙、喜马拉雅）",
+        description="视频或播客 URL（支持 Bilibili、YouTube、小宇宙、喜马拉雅）",
     )
     skip_summary: bool = Field(
         default=False,
@@ -74,6 +74,10 @@ class ProcessRequest(SummarySelectionRequest):
     prefer_bilibili_subtitle: bool = Field(
         default=True,
         description="是否优先使用 B 站原生字幕，失败后回退到音频 ASR",
+    )
+    prefer_subtitles: bool | None = Field(
+        default=None,
+        description="优先使用平台字幕；未指定时 YouTube 默认启用，B 站沿用原参数",
     )
     include_comments: bool = Field(
         default=True,
@@ -142,6 +146,8 @@ class ProcessStatusResponse(BaseModel):
     )
     fancy_html_error: str | None = None
     used_bilibili_subtitle: bool = False
+    subtitle_source: str = ""
+    subtitle_language: str = ""
     already_transcribed: bool = False
     notice: str | None = None
     all_downloads: list[DownloadItemResponse] = Field(default_factory=list)
@@ -205,8 +211,7 @@ class RuntimeFeaturesResponse(BaseModel):
     requires_user_api_key: bool
     api_key_configured: bool
     deepseek_api_key_configured: bool = False
-    counterscale_site_id: str = ""
-    counterscale_tracker_url: str = ""
+    analytics_script_url: str = ""
 
 
 class OpenPublicApiKeyStatusResponse(BaseModel):

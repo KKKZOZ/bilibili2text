@@ -16,6 +16,12 @@ _MULTIPART_SUFFIX_PATTERN = re.compile(r"^_p[1-9][0-9]*(?:_|-|$)", re.IGNORECASE
 
 
 def _matches_transcription_id(value: str, transcription_id: str) -> bool:
+    if transcription_id.startswith("youtube_"):
+        # YouTube video IDs are case-sensitive, unlike legacy BV lookups.
+        return value.startswith(transcription_id) and (
+            len(value) == len(transcription_id)
+            or value[len(transcription_id)] in {"_", "-"}
+        )
     value_lower = value.lower()
     target_lower = transcription_id.lower()
     if not value_lower.startswith(target_lower):

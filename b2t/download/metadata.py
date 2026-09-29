@@ -70,6 +70,7 @@ class VideoMetadata:
             pubdate=pm.pubdate,
             pubdate_timestamp=pm.pubdate_timestamp,
             description=pm.description,
+            duration_seconds=pm.duration_seconds,
         )
 
 

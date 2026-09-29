@@ -36,6 +36,8 @@ _TABLE_TITLE_COLUMNS = (
     "topic",
 )
 _TABLE_SYMBOL_COLUMNS = ("股票代码", "代码", "证券代码")
+_TABLE_SECTOR_COLUMNS = ("板块",)
+_TABLE_WIDE_FIELD_COLUMNS = ("投资逻辑/估值情况", "投资逻辑", "估值情况")
 
 
 @dataclass(frozen=True)
@@ -824,7 +826,12 @@ def _render_table_card(
     symbol = _first_matching_value(row.values, _TABLE_SYMBOL_COLUMNS) or (
         effective_status.symbol if effective_status else ""
     )
-    heading_columns = {*_TABLE_TITLE_COLUMNS, *_TABLE_SYMBOL_COLUMNS}
+    sector = _first_matching_value(row.values, _TABLE_SECTOR_COLUMNS) or ""
+    heading_columns = {
+        *_TABLE_TITLE_COLUMNS,
+        *_TABLE_SYMBOL_COLUMNS,
+        *_TABLE_SECTOR_COLUMNS,
+    }
     body_items = [
         (key, value)
         for key, value in row.values.items()
@@ -845,13 +852,16 @@ def _render_table_card(
 
     body_parts: list[str] = []
     for label, value in body_items:
+        field_class = "stock-table-field"
+        if label in _TABLE_WIDE_FIELD_COLUMNS:
+            field_class += " stock-table-field-wide"
         value_html = (
             _render_video_times(value, bvid=bvid)
             if label == "视频时间"
             else html.escape(value)
         )
         body_parts.append(
-            '      <div class="stock-table-field">'
+            f'      <div class="{field_class}">'
             f"<span>{html.escape(label)}</span><p>{value_html}</p>"
             "</div>"
         )
@@ -866,11 +876,17 @@ def _render_table_card(
         if body_html
         else ""
     )
+    sector_html = (
+        '\n          <span class="stock-table-sector">'
+        f"板块 {html.escape(sector)}</span>"
+        if sector
+        else ""
+    )
     return f"""  <article class="stock-table-card stock-status-{html.escape(status_class)}">
     <div class="stock-table-head">
       <div>
         <h3>
-          <span>{html.escape(title)}</span>{pct_change_html}
+          <span>{html.escape(title)}</span>{pct_change_html}{sector_html}
         </h3>
         <p>{html.escape(symbol)}</p>
       </div>

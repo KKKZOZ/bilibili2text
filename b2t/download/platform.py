@@ -107,6 +107,7 @@ def build_transcription_artifact_name(
 
 class Platform(Enum):
     BILIBILI = "bilibili"
+    YOUTUBE = "youtube"
     XIAOYUZHOU = "xiaoyuzhou"
     XIMALAYA = "ximalaya"
 

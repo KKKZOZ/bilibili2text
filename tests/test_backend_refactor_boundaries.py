@@ -30,7 +30,7 @@ def test_png_render_options_share_desktop_and_mobile_presets() -> None:
     assert _png_render_options("mobile") == {
         "width": 460,
         "height": 932,
-        "dpr": 3,
+        "dpr": 2,
     }
     assert _png_render_options("mobile", html_source=True)["is_mobile"] is True
     assert _png_render_options("desktop", html_source=True)["is_mobile"] is False
@@ -210,7 +210,7 @@ def test_find_precomputed_conversion_uses_summary_no_table_png(
     )
 
 
-def test_convert_artifact_uses_higher_dpr_only_for_summary_png(monkeypatch) -> None:
+def test_convert_artifact_uses_dpr_two_for_summary_png(monkeypatch) -> None:
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_root = Path(temp_dir)
         summary_path = temp_root / "BV123_summary.md"
@@ -286,7 +286,7 @@ def test_convert_artifact_uses_higher_dpr_only_for_summary_png(monkeypatch) -> N
         )
 
         assert captured[0]["name"] == "BV123_summary.md"
-        assert captured[0]["options"]["dpr"] == 4
+        assert captured[0]["options"]["dpr"] == 2
         assert captured[0]["options"]["is_table"] is False
         assert captured[0]["options"]["summary_document"] is True
 
@@ -298,7 +298,7 @@ def test_convert_artifact_uses_higher_dpr_only_for_summary_png(monkeypatch) -> N
         assert captured[2]["name"] == "BV123_summary.md"
         assert captured[2]["options"]["width"] == 460
         assert captured[2]["options"]["height"] == 932
-        assert captured[2]["options"]["dpr"] == 3
+        assert captured[2]["options"]["dpr"] == 2
         assert captured[2]["options"]["summary_document"] is True
 
 

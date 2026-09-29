@@ -14,20 +14,27 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
-class BilibiliSubtitle:
-    """Subtitle text and optional timeline items returned by Bilibili."""
+class Subtitle:
+    """Platform subtitle text with normalized millisecond timestamps."""
 
     text: str
-    items: tuple[BilibiliSubtitleItem, ...] = ()
+    items: tuple[SubtitleItem, ...] = ()
+    source: str = "bilibili_subtitle"
+    language: str = ""
 
 
 @dataclass(frozen=True)
-class BilibiliSubtitleItem:
-    """One timestamped Bilibili subtitle item."""
+class SubtitleItem:
+    """One timestamped subtitle item."""
 
     start_ms: int
     end_ms: int
     text: str
+
+
+# Public compatibility aliases for existing integrations.
+BilibiliSubtitle = Subtitle
+BilibiliSubtitleItem = SubtitleItem
 
 
 def _resolve_bili_command() -> str:

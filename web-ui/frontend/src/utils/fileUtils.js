@@ -47,12 +47,22 @@ export function resolveFileType(filename, kind) {
   return fromKindMap[kind] || '文件'
 }
 
-export function inferBvidFromFilename(filename) {
+export function inferResourceIdFromFilename(filename) {
   if (typeof filename !== 'string' || filename.length === 0) {
-    return 'BV号'
+    return ''
   }
-  const match = filename.match(/BV[0-9A-Za-z]{10}/i)
-  return match ? match[0].toUpperCase() : 'BV号'
+  const patterns = [
+    /^(youtube_[A-Za-z0-9_-]{11})(?=[_.-]|$)/i,
+    /^(xiaoyuzhou_[A-Za-z0-9]{24})(?=[_.-]|$)/i,
+    /^(ximalaya_\d+)(?=[_.-]|$)/i,
+    /^(upload-[a-f0-9]{32})(?=[_.-]|$)/i,
+    /^(BV[0-9A-Za-z]{10})(?=[_.-]|$)/i
+  ]
+  for (const pattern of patterns) {
+    const match = filename.match(pattern)
+    if (match) return match[1]
+  }
+  return ''
 }
 
 export function inferSummaryPresetFromFilename(filename) {
@@ -74,7 +84,8 @@ export function inferSummaryPresetFromFilename(filename) {
 }
 
 export function buildArtifactDisplayName(artifact, options = {}) {
-  const bvid = options.bvid || inferBvidFromFilename(artifact.filename)
+  const bvid =
+    options.bvid || inferResourceIdFromFilename(artifact.filename) || '资源'
   const stem = (artifact.filename || '').replace(/\.[^.]*$/, '')
   if (
     artifact.kind === 'summary' ||
@@ -163,6 +174,11 @@ export function bilibiliVideoLabel(bvid, page = null) {
 }
 
 const PLATFORM_RESOURCE_PREFIXES = {
+  youtube: {
+    name: 'YouTube',
+    authorLabel: '作者',
+    url: (id) => `https://www.youtube.com/watch?v=${encodeURIComponent(id)}`
+  },
   xiaoyuzhou: {
     name: '小宇宙',
     authorLabel: '主播',

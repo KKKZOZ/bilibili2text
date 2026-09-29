@@ -10,7 +10,11 @@ from b2t.cancellation import CancellationToken, PipelineCancelled
 from b2t.config import STOCK_STATUS_MODE_BACKGROUND_HYBRID, get_stock_status_mode
 from b2t.download.comments import DEFAULT_COMMENT_LIMIT
 from b2t.download.platform import Platform
-from b2t.download.url_detect import detect_platform, extract_platform_id
+from b2t.download.url_detect import (
+    detect_platform,
+    extract_platform_id,
+    normalize_youtube_url,
+)
 from b2t.download.ximalaya import resolve_ximalaya_sound_url
 from b2t.download.yutto_cli import (
     extract_bilibili_target_id,
@@ -63,6 +67,8 @@ def _infer_resource_id_from_url(url: str) -> tuple[str, str | None]:
             pass
         return normalized_url, extract_bilibili_target_id(normalized_url)
 
+    if platform == Platform.YOUTUBE:
+        normalized_url = normalize_youtube_url(normalized_url)
     if platform == Platform.XIMALAYA:
         try:
             normalized_url, platform_id = resolve_ximalaya_sound_url(normalized_url)
@@ -95,6 +101,7 @@ def _run_job(
     summary_prompt_template: str | None,
     auto_generate_fancy_html: bool,
     prefer_bilibili_subtitle: bool = True,
+    prefer_subtitles: bool | None = None,
     include_comments: bool = True,
     comment_limit: int | None = DEFAULT_COMMENT_LIMIT,
     ephemeral_upload: bool = False,
@@ -341,6 +348,12 @@ def _run_job(
                     storage_backend=storage_backend,
                     stt_storage_backend=stt_storage_backend,
                     prefer_bilibili_subtitle=prefer_bilibili_subtitle,
+                    prefer_subtitles=prefer_subtitles,
+                    subtitle_used_callback=lambda subtitle: _update_job(
+                        job_id,
+                        subtitle_source=subtitle.source,
+                        subtitle_language=subtitle.language,
+                    ),
                     include_comments=include_comments,
                     comment_limit=comment_limit,
                     progress_callback=_progress,

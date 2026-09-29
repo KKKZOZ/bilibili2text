@@ -23,6 +23,7 @@ _RUN_ID_SUFFIX_PATTERN = re.compile(r"^-[0-9a-f]{8}(?:_|$)", re.IGNORECASE)
 _MULTIPART_TITLE_PATTERN = re.compile(r"^p([1-9][0-9]*)_(.+)$", re.IGNORECASE)
 _BILIBILI_BVID_PATTERN = re.compile(r"^BV[0-9A-Za-z]{10}$", re.IGNORECASE)
 _HISTORY_PLATFORM_SQL: dict[str, str] = {
+    "youtube": "(record_type = 'transcription' AND instr(lower(bvid), 'youtube_') = 1)",
     "bilibili": "(record_type = 'transcription' AND length(bvid) = 12 AND lower(substr(bvid, 1, 2)) = 'bv')",
     "xiaoyuzhou": "(record_type = 'transcription' AND instr(lower(bvid), 'xiaoyuzhou_') = 1)",
     "ximalaya": "(record_type = 'transcription' AND instr(lower(bvid), 'ximalaya_') = 1)",
@@ -85,6 +86,16 @@ CREATE TABLE IF NOT EXISTS stock_status_cache (
 
 CREATE INDEX IF NOT EXISTS idx_stock_status_cache_bvid_date
     ON stock_status_cache(bvid, as_of_date);
+
+CREATE TABLE IF NOT EXISTS monitor_comments (
+    bvid        TEXT PRIMARY KEY COLLATE NOCASE,
+    status      TEXT NOT NULL,
+    root_rpid   TEXT NOT NULL DEFAULT '',
+    reply_ids   TEXT NOT NULL DEFAULT '[]',
+    error       TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
 """
 
 
@@ -158,6 +169,19 @@ class HistoryPage:
     has_more: bool
 
 
+@dataclass(frozen=True)
+class MonitorCommentRecord:
+    """Locally persisted result of one monitor comment thread."""
+
+    bvid: str
+    status: str
+    root_rpid: str = ""
+    reply_ids: tuple[str, ...] = ()
+    error: str = ""
+    created_at: str = ""
+    updated_at: str = ""
+
+
 class HistoryDB:
     """Thread-safe SQLite metadata store.
 
@@ -182,6 +206,107 @@ class HistoryDB:
             self._local.conn = conn
             self._ensure_schema(conn)
         return conn
+
+    def upsert_monitor_comment(
+        self,
+        bvid: str,
+        *,
+        status: str,
+        reply_ids: tuple[str, ...] = (),
+        error: str = "",
+    ) -> MonitorCommentRecord:
+        normalized_bvid = bvid.strip()
+        if not _BILIBILI_BVID_PATTERN.fullmatch(normalized_bvid):
+            raise ValueError(f"Invalid Bilibili BV ID: {bvid}")
+        if status not in {"submitting", "sent", "unknown", "failed"}:
+            raise ValueError(f"Invalid monitor comment status: {status}")
+
+        normalized_reply_ids = tuple(
+            dict.fromkeys(str(reply_id).strip() for reply_id in reply_ids if reply_id)
+        )
+        root_rpid = normalized_reply_ids[0] if normalized_reply_ids else ""
+        now = datetime.now(tz=UTC).isoformat()
+        conn = self._conn()
+        with conn:
+            conn.execute(
+                """\
+                INSERT INTO monitor_comments
+                    (bvid, status, root_rpid, reply_ids, error, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(bvid) DO UPDATE SET
+                    status = excluded.status,
+                    root_rpid = excluded.root_rpid,
+                    reply_ids = excluded.reply_ids,
+                    error = excluded.error,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    normalized_bvid,
+                    status,
+                    root_rpid,
+                    json.dumps(normalized_reply_ids, ensure_ascii=False),
+                    error.strip(),
+                    now,
+                    now,
+                ),
+            )
+        record = self.get_monitor_comment(normalized_bvid)
+        if record is None:
+            raise RuntimeError("Failed to persist monitor comment")
+        return record
+
+    def get_monitor_comment(self, bvid: str) -> MonitorCommentRecord | None:
+        normalized_bvid = bvid.strip()
+        if not normalized_bvid:
+            return None
+        row = (
+            self._conn()
+            .execute(
+                """\
+            SELECT bvid, status, root_rpid, reply_ids, error, created_at, updated_at
+            FROM monitor_comments
+            WHERE bvid = ? COLLATE NOCASE
+            """,
+                (normalized_bvid,),
+            )
+            .fetchone()
+        )
+        return self._monitor_comment_record(row) if row is not None else None
+
+    def list_monitor_comments(self) -> list[MonitorCommentRecord]:
+        rows = (
+            self._conn()
+            .execute(
+                """\
+            SELECT bvid, status, root_rpid, reply_ids, error, created_at, updated_at
+            FROM monitor_comments
+            ORDER BY updated_at DESC
+            """
+            )
+            .fetchall()
+        )
+        return [self._monitor_comment_record(row) for row in rows]
+
+    @staticmethod
+    def _monitor_comment_record(row: sqlite3.Row) -> MonitorCommentRecord:
+        try:
+            raw_reply_ids = json.loads(row["reply_ids"] or "[]")
+        except (TypeError, ValueError):
+            raw_reply_ids = []
+        reply_ids = (
+            tuple(str(item) for item in raw_reply_ids)
+            if isinstance(raw_reply_ids, list)
+            else ()
+        )
+        return MonitorCommentRecord(
+            bvid=str(row["bvid"]),
+            status=str(row["status"]),
+            root_rpid=str(row["root_rpid"] or ""),
+            reply_ids=reply_ids,
+            error=str(row["error"] or ""),
+            created_at=str(row["created_at"]),
+            updated_at=str(row["updated_at"]),
+        )
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -1210,6 +1335,7 @@ __all__ = [
     "HistoryDetail",
     "HistoryItem",
     "HistoryPage",
+    "MonitorCommentRecord",
     "build_history_artifacts",
     "infer_run_id",
     "infer_title",

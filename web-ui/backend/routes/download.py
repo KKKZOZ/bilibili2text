@@ -27,7 +27,7 @@ PNG_PAD_VIEWPORT_HEIGHT = 1112
 PNG_DESKTOP_DPR = 2
 PNG_MOBILE_VIEWPORT_WIDTH = 460
 PNG_MOBILE_VIEWPORT_HEIGHT = 932
-PNG_MOBILE_DPR = 3
+PNG_MOBILE_DPR = 2
 PNG_RENDER_PRESETS = {
     "desktop": {
         "width": PNG_PAD_VIEWPORT_WIDTH,
@@ -553,7 +553,7 @@ def convert_artifact(payload: ConvertRequest) -> ConvertResponse:
                         f"{render_source_path.stem}_{payload.render_mode}.png"
                     )
                 elif source_kind == "summary":
-                    convert_options["dpr"] = 4
+                    convert_options["dpr"] = 2
                     explicit_output_path = render_source_path.with_suffix(".png")
             if target_format == ConversionFormat.PNG and source_kind == "summary":
                 convert_options["enhance_stock_tables"] = (

@@ -172,6 +172,7 @@
           </InlineNotice>
           <FileList
             :items="downloadRows"
+            :bvid="job.bvid || ''"
             :history-run-id="job.history_run_id || ''"
           />
         </template>

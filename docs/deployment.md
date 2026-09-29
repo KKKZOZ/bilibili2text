@@ -10,6 +10,7 @@
 | uv | Python 包管理 | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
 | Bun | 前端构建与开发 | `npm install -g bun` |
 | ffmpeg | 音频处理（格式转换/分块） | `brew install ffmpeg` |
+| Deno 2.3+（推荐）或 Node.js 22+ | yt-dlp 的 YouTube JavaScript 运行时 | `brew install deno` 或安装 Node.js |
 | pandoc | Markdown ↔ HTML/PDF/TXT | `brew install pandoc` |
 | Playwright Chromium | PDF/PNG 渲染 | `playwright install chromium` |
 
@@ -96,6 +97,19 @@ cd web-ui/frontend && bun run dev
 | `audio_quality` | str | `"30216"` | yutto 音频质量码 |
 | `output_dir` | str | `"./transcriptions"` | 转录产物的本地输出目录 |
 | `db_dir` | str | `"./db_data"` | SQLite 历史数据库目录 |
+| `youtube_subtitle_language` | str | `""` | 优先原语言字幕；可指定 `en`、`zh-Hans` 等语言，无匹配轨道时回退 ASR |
+
+### YouTube
+
+`uv sync` 会安装 `yt-dlp[default]`（包括 `yt-dlp-ejs`）。后端环境还需要 Deno 2.3+（推荐）或 Node.js 22+，以及用于输出 M4A 音频的 FFmpeg。前端使用的 Bun 不作为 YouTube 运行时。
+
+支持公开单视频的 `watch?v=`、`youtu.be`、Shorts、embed 和已完成的直播回放链接；带播放列表参数的单视频链接只处理当前视频。不支持频道、整张播放列表、进行中的直播或需要登录的内容。
+
+默认依次尝试原语言人工字幕、原语言自动字幕，再下载音频并使用配置的 ASR。保留字幕语言、来源和时间戳，跳过自动翻译和直播聊天轨道。原语言未知时从可用的非翻译轨道中选择一条；可用 `download.youtube_subtitle_language` 明确指定。CLI 的 `--no-subtitles` 或 API 的 `prefer_subtitles=false` 可强制音频转录；旧的 `--no-bilibili-subtitle` 仍仅作用于 B 站。
+
+后端网络必须能访问 YouTube、字幕和媒体域名。403、429、登录验证或 PO Token 要求属于上游访问限制；字幕请求失败会明确记录后尝试音频，音频也失败时任务报错。此版本不自动处理登录或 PO Token。遇到上游变更可先更新依赖：`uv lock --upgrade-package yt-dlp --upgrade-package yt-dlp-ejs`，再执行 `uv sync`。
+
+音频回退使用现有 STT profile，包括其 `language` 设置；处理英文视频时请将对应 profile 的语言配置为 `en`。字幕语言配置只负责选择字幕轨道，不会更改 ASR 或总结语言。
 
 ### `[storage]` — 产物存储
 
@@ -208,11 +222,14 @@ cd web-ui/frontend && bun run dev
 |------|------|--------|------|
 | `enabled` | bool | `false` | 是否启用 |
 | `state_file` | str | `"./db_data/bilibili_monitor_state.json"` | 监控状态持久化 |
-| `default_check_interval` | int | `300` | 默认检查间隔（秒） |
+| `default_check_interval` | int | `300` | 默认检查间隔上限（秒）；每轮在上限前 100 秒至上限之间重新随机 |
 
 运行 `uv run b2t monitor` 打开 Textual 面板，自动展示最近 5 个视频、历史总结状态、
 检查次数和下一次检查倒计时。↑↓ 选择视频，←→ 切换 UP 主，Enter 选择生成总结、
-阅读报告或两者都生成，Esc 取消。Ctrl+C 退出监控，已提交的后台任务继续运行。
+阅读报告或两者都生成，Esc 取消。新视频处理模式可选择“关闭”“自动生成”或
+“自动生成并评论”，按 A 循环切换；按 C 可使用已有产物手动评论。评论文字取时间线，
+并附带阅读报告、无表格总结和表格的 mobile PNG。发送状态及评论 ID 持久化到
+`b2t_history.db`，重启后只检查本地记录防重复。Ctrl+C 退出监控，已提交的后台任务继续运行。
 
 生成操作需要另行运行 `uv run b2t backend`。monitor 使用 `[backend].host/port` 连接 API，
 模型、profile、模板均由 backend 默认配置决定。结果由 backend 保存，TUI 查询并展示任务进度。
@@ -225,7 +242,7 @@ cd web-ui/frontend && bun run dev
 |------|------|
 | `uid` | B站用户 UID |
 | `name` | 显示名称 |
-| `check_interval` | 检查间隔（秒） |
+| `check_interval` | 检查间隔上限（秒）；每轮在上限前 100 秒至上限之间重新随机 |
 
 ## 环境变量
 

@@ -4,6 +4,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from b2t.stock_status import (
+    StockDailyStatus,
     _baostock_row_to_status,
     _fetch_status_for_symbol,
     _fetch_tickflow_daily_row,
@@ -544,6 +545,40 @@ def test_build_stock_table_cards_html_expands_single_field_to_full_width() -> No
 
     assert 'class="stock-table-fields stock-table-fields-single"' in rendered
     assert "安装依赖并检查版本" in rendered
+
+
+def test_stock_card_places_sector_after_change_and_logic_full_width() -> None:
+    markdown = """| 股票名称 | 股票代码 | 板块 | 投资逻辑/估值情况 | 预期/风险点 |
+| --- | --- | --- | --- | --- |
+| 中国食品 | 00506.HK | 食品饮料 | 约9.9倍PE | 消费低谷 |
+"""
+
+    status = StockDailyStatus(
+        symbol="00506.HK",
+        name="中国食品",
+        trade_date="2026-09-29",
+        close="2.80",
+        change="-0.03",
+        pct_change="-1.06%",
+        market_cap="100.00亿",
+        pe="9.90",
+        volume="100.00万",
+        amount="500.00万",
+        direction="down",
+    )
+    rendered = build_stock_table_cards_html(
+        markdown,
+        stock_statuses={status.symbol: status},
+    )
+
+    assert '<span class="stock-table-sector">板块 食品饮料</span>' in rendered
+    assert rendered.index("中国食品") < rendered.index("-1.06%")
+    assert rendered.index("-1.06%") < rendered.index("板块 食品饮料")
+    assert "<span>板块</span><p>食品饮料</p>" not in rendered
+    assert (
+        '<div class="stock-table-field stock-table-field-wide">'
+        "<span>投资逻辑/估值情况</span><p>约9.9倍PE</p>"
+    ) in rendered
 
 
 def test_build_stock_table_cards_html_cleans_inline_markdown_for_name_match(

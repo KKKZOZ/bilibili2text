@@ -10,6 +10,8 @@ audio_quality = "30216"
 output_dir = "./transcriptions"
 # 数据库文件存放目录（CLI 和 Web UI 共享）
 db_dir = "./db_data"
+# YouTube 字幕语言：空字符串优先原语言；可指定 en、zh-Hans 等，不使用自动翻译轨道。
+youtube_subtitle_language = ""
 
 [storage]
 # 可选: "local"、"minio"、"alicloud"
@@ -143,21 +145,22 @@ DedeUserID = ""
 DedeUserID__ckMd5 = ""
 refresh_token = ""
 
-[analytics.counterscale]
-site_id = ""
-tracker_url = ""
+[analytics]
+# 可选统计脚本的完整 URL（含站点参数）；个人配置只填写在被 Git 忽略的 config.toml 中。
+script_url = ""
 
 [monitor]
 enabled = false
 state_file = "./db_data/bilibili_monitor_state.json"
 user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+# 每轮在 200-300 秒间重新随机；修改后仍以此值为上限，随机窗口为上限前 100 秒。
 default_check_interval = 300
 
 # 监控功能的 creator 配置暂不在 README 中展开。需要时按下面格式添加：
 # [[monitor.creators]]
 # uid = 123456
 # name = "creator-name"
-# check_interval = 300
+# check_interval = 300  # 每轮在 200-300 秒间重新随机
 
 # Pi 报告容器网络；B2T_REPORT_NETWORK 环境变量可覆盖此配置。
 [report]

@@ -14,7 +14,7 @@ from backend.report_service import generate_stored_report
 
 from b2t.cancellation import CancellationToken, PipelineCancelled
 from b2t.config import SummarizeModelProfile, create_app_config
-from b2t.report.generate import finish_html, source_units
+from b2t.report.generate import finish_html, generate_report, source_units
 from b2t.report.options import ReportOptions
 from b2t.report.pi import child_environment, consume, model_config, run_pi
 from b2t.storage import ArtifactKind, StoredArtifact
@@ -65,6 +65,87 @@ def test_report_requires_valid_bindings_and_applies_csp():
         finish_html(raw, {"u000002"}, {})
     with pytest.raises(ValueError, match="占位符"):
         finish_html(raw.replace("内容", "{{SOURCES}}"), {"u000001"}, {})
+
+
+@pytest.mark.parametrize(
+    "refs",
+    [
+        "u000001 u000002 u000003",
+        "u000001,u000002;u000003",
+        "u000001-u000003",
+        "u000001–u000003",
+        "u000001—u000003",
+        "u000001 – u000002，u000003",
+        "u000001-u000002; u000002-u000003",
+    ],
+)
+def test_report_accepts_explicit_ids_and_valid_inclusive_ranges(refs):
+    raw = (
+        f'<html><head></head><body><p data-source-units="{refs}">内容</p></body></html>'
+    )
+    result = finish_html(raw, {"u000001", "u000002", "u000003"}, {})
+    assert "Content-Security-Policy" in result
+    assert f'data-source-units="{refs}"' in result
+
+
+@pytest.mark.parametrize(
+    ("refs", "detail"),
+    [
+        ("u000001-u000003", "u000002"),  # Existing endpoints, missing interior ID.
+        ("u000003-u000001", "倒序"),
+        ("u000001-u999999", "超出"),
+        ("u000005", "u000005"),
+        ("u000001-003", "格式"),
+        ("u000001...u000003", "格式"),
+        ("u*", "格式"),
+        ("", "为空"),
+    ],
+)
+def test_report_rejects_invalid_refs_with_location_and_reason(refs, detail):
+    raw = f'<html><head></head><body>\n<p data-source-units="{refs}">内容</p></body></html>'
+    with pytest.raises(ValueError) as error:
+        finish_html(raw, {"u000001", "u000003", "u000004"}, {})
+    message = str(error.value)
+    assert "第 2 行 <p>" in message
+    assert detail in message
+
+
+def test_standard_report_with_compressed_source_bindings_is_published(
+    monkeypatch, tmp_path
+):
+    source = tmp_path / "youtube_example.md"
+    source.write_text("Transcript")
+    payload_path = tmp_path / "youtube_example.json"
+    payload_path.write_text(
+        json.dumps(
+            {
+                "segments": [
+                    {"start": i, "end": i + 1, "text": f"Source unit {i + 1}"}
+                    for i in range(464)
+                ]
+            }
+        )
+    )
+
+    async def fake_run_pi(workspace, *args, **kwargs):
+        transcript = (workspace / "transcript.md").read_text()
+        assert "u000001" in transcript and "u000464" in transcript
+        report = workspace / "report.html"
+        report.write_text(
+            '<html><head></head><body><section data-source-units="u000001–u000461">Report</section></body></html>'
+        )
+        return report
+
+    monkeypatch.setattr("b2t.report.generate.run_pi", fake_run_pi)
+    output = generate_report(
+        source,
+        create_app_config(summarize_api_key="test-key"),
+        json_path=payload_path,
+        options=ReportOptions(mode="standard"),
+    )
+    assert output.is_file()
+    assert 'data-source-units="u000001–u000461"' in output.read_text()
+    assert "b2t-report-settings" in output.read_text()
 
 
 class Writer:

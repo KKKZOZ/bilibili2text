@@ -61,6 +61,8 @@ class JobState:
     fancy_html_status: str
     fancy_html_error: str | None
     used_bilibili_subtitle: bool
+    subtitle_source: str = ""
+    subtitle_language: str = ""
     report_dispatched: bool = False
     report_source_url: str = ""
     report_options: dict = field(default_factory=dict)
@@ -160,6 +162,8 @@ class JobPatch:
     fancy_html_status: str | None = None
     fancy_html_error: str | None = None
     used_bilibili_subtitle: bool | None = None
+    subtitle_source: str | None = None
+    subtitle_language: str | None = None
     already_transcribed: bool | None = None
     notice: str | None = None
     all_downloads: list[dict[str, str]] | None = None

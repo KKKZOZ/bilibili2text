@@ -156,6 +156,17 @@
   }
 
   const stageLabel = (stage) => {
+    if (stage.key === 'downloading' && props.job.subtitle_source) {
+      const labels = {
+        bilibili_subtitle: '已使用 B 站字幕',
+        youtube_subtitle: '已使用 YouTube 人工字幕',
+        youtube_auto_subtitle: '已使用 YouTube 自动字幕'
+      }
+      const label = labels[props.job.subtitle_source] || '已使用平台字幕'
+      return props.job.subtitle_language
+        ? `${label} · ${props.job.subtitle_language}`
+        : label
+    }
     if (stage.key === 'downloading' && props.job.used_bilibili_subtitle) {
       return '已使用 B 站字幕'
     }

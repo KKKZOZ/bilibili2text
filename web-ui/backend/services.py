@@ -559,7 +559,7 @@ def _generate_summary_png_exports(
             as_of_date=as_of_date,
             enhance_stock_tables=True,
             stock_statuses=stock_statuses,
-            dpr=4,
+            dpr=2,
         )
         generated["summary_png"] = replace(
             _store_sibling_artifact(

@@ -16,6 +16,23 @@ def test_process_comment_limit_matches_shared_default() -> None:
     assert request.comment_limit == DEFAULT_COMMENT_LIMIT
 
 
+def test_process_passes_generic_subtitle_preference(monkeypatch) -> None:
+    captured = {}
+    monkeypatch.setattr(process, "_ensure_runtime_ready", lambda **kwargs: None)
+    monkeypatch.setattr(process, "_create_job", lambda **kwargs: {"job_id": "youtube"})
+    monkeypatch.setattr(
+        process, "submit_job", lambda fn, **kwargs: captured.update(kwargs)
+    )
+    process.process_video(
+        ProcessRequest(
+            url="https://youtu.be/BaW_jenozKc",
+            prefer_subtitles=False,
+            skip_summary=True,
+        )
+    )
+    assert captured["prefer_subtitles"] is False
+
+
 def test_process_video_passes_bilibili_subtitle_preference(monkeypatch) -> None:
     captured: dict[str, object] = {}
 

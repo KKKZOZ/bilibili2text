@@ -42,6 +42,7 @@ class DownloadConfig:
     audio_quality: str = "30216"
     output_dir: str = "./transcriptions"
     db_dir: str = "./db_data"
+    youtube_subtitle_language: str = ""
 
 
 @dataclass(frozen=True)
@@ -329,14 +330,8 @@ class BilibiliConfig:
 
 
 @dataclass(frozen=True)
-class CounterscaleConfig:
-    site_id: str = ""
-    tracker_url: str = ""
-
-
-@dataclass(frozen=True)
 class AnalyticsConfig:
-    counterscale: CounterscaleConfig = field(default_factory=CounterscaleConfig)
+    script_url: str = ""
 
 
 @dataclass(frozen=True)
@@ -1325,38 +1320,16 @@ def _load_analytics_config(raw_analytics: dict) -> AnalyticsConfig:
     if not isinstance(raw_analytics, dict):
         raise ValueError("analytics 配置必须是 TOML 表")
 
-    allowed_fields = {"counterscale"}
+    allowed_fields = {"script_url"}
     unknown_fields = sorted(set(raw_analytics.keys()) - allowed_fields)
     if unknown_fields:
         raise ValueError(f"analytics 包含未知字段: {', '.join(unknown_fields)}")
 
-    raw_counterscale = raw_analytics.get("counterscale", {})
-    if not isinstance(raw_counterscale, dict):
-        raise ValueError("analytics.counterscale 配置必须是 TOML 表")
+    script_url = raw_analytics.get("script_url", "")
+    if not isinstance(script_url, str):
+        raise ValueError("analytics.script_url 必须是字符串")
 
-    counterscale_allowed_fields = {"site_id", "tracker_url"}
-    counterscale_unknown_fields = sorted(
-        set(raw_counterscale.keys()) - counterscale_allowed_fields
-    )
-    if counterscale_unknown_fields:
-        raise ValueError(
-            "analytics.counterscale 包含未知字段: "
-            + ", ".join(counterscale_unknown_fields)
-        )
-
-    site_id = raw_counterscale.get("site_id", "")
-    tracker_url = raw_counterscale.get("tracker_url", "")
-    if not isinstance(site_id, str):
-        raise ValueError("analytics.counterscale.site_id 必须是字符串")
-    if not isinstance(tracker_url, str):
-        raise ValueError("analytics.counterscale.tracker_url 必须是字符串")
-
-    return AnalyticsConfig(
-        counterscale=CounterscaleConfig(
-            site_id=site_id.strip(),
-            tracker_url=tracker_url.strip(),
-        )
-    )
+    return AnalyticsConfig(script_url=script_url.strip())
 
 
 def build_bilibili_cookie(config: AppConfig) -> str:

@@ -4,6 +4,7 @@
   import {
     AudioLines,
     Brain,
+    Github,
     History,
     KeyRound,
     Sparkles
@@ -100,6 +101,17 @@
             <span>{{ item.label }}</span>
           </button>
         </nav>
+
+        <a
+          class="github-link"
+          href="https://github.com/KKKZOZ/bilibili2text"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="在 GitHub 查看 bilibili2text"
+          title="GitHub"
+        >
+          <Github :size="21" aria-hidden="true" />
+        </a>
       </div>
     </header>
 
@@ -128,7 +140,7 @@
 
   .topbar-inner {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
     width: 100%;
     max-width: 1440px;
@@ -232,6 +244,29 @@
     outline-offset: -3px;
   }
 
+  .github-link {
+    display: grid;
+    width: 38px;
+    height: 38px;
+    margin-left: 16px;
+    place-items: center;
+    border-radius: 7px;
+    color: #354150;
+    transition:
+      background-color 0.15s ease,
+      color 0.15s ease;
+  }
+
+  .github-link:hover {
+    background: #eef1f4;
+    color: #101820;
+  }
+
+  .github-link:focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 2px;
+  }
+
   .workspace-content {
     width: 100%;
     max-width: 1440px;
@@ -265,7 +300,7 @@
 
   @media (max-width: 760px) {
     .topbar-inner {
-      grid-template-columns: minmax(0, 1fr);
+      grid-template-columns: minmax(0, 1fr) auto;
       min-height: 0;
       padding: 10px 20px 0;
     }
@@ -276,8 +311,15 @@
 
     .top-tabs {
       grid-column: 1 / -1;
+      grid-row: 2;
       min-height: 44px;
       margin-top: 7px;
+    }
+
+    .github-link {
+      grid-column: 2;
+      grid-row: 1;
+      margin-left: 12px;
     }
 
     .top-tabs button {

@@ -4,15 +4,112 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 import b2t.converter.md_to_png as md_to_png_module
-from b2t.converter.md_to_png import MarkdownToPngConverter
+from b2t.converter.md_to_png import HtmlToPngConverter, MarkdownToPngConverter
 
 
 def test_stock_card_single_field_uses_full_width_grid() -> None:
     assert ".stock-table-fields-single" in md_to_png_module.HTML_TEMPLATE
     assert "grid-template-columns: minmax(0, 1fr);" in (md_to_png_module.HTML_TEMPLATE)
+    assert ".stock-table-field-wide" in md_to_png_module.HTML_TEMPLATE
+    assert "grid-column: 1 / -1;" in md_to_png_module.HTML_TEMPLATE
+
+
+def test_optimize_png_uses_high_quality_imagequant_settings(
+    tmp_path: Path, monkeypatch
+) -> None:
+    png_path = tmp_path / "export.png"
+    Image.new("RGB", (32, 32), "#14b8a6").save(png_path)
+    captured = {}
+
+    def fake_quantize(image_data, width, height, **kwargs):
+        captured["pixel"] = tuple(image_data[:4])
+        captured["size"] = (width, height)
+        captured.update(kwargs)
+        return bytes(width * height), [0, 0, 0, 255]
+
+    monkeypatch.setattr(
+        md_to_png_module.imagequant,
+        "quantize_raw_rgba_bytes",
+        fake_quantize,
+    )
+
+    md_to_png_module.optimize_png_file(png_path)
+
+    assert captured == {
+        "pixel": (20, 184, 166, 255),
+        "size": (32, 32),
+        "max_colors": 256,
+        "min_quality": 85,
+        "max_quality": 95,
+    }
+    with Image.open(png_path) as optimized:
+        assert optimized.mode == "P"
+
+
+def test_optimize_png_preserves_original_when_quantization_fails(
+    tmp_path: Path, monkeypatch
+) -> None:
+    png_path = tmp_path / "export.png"
+    Image.new("RGB", (32, 32), "#14b8a6").save(png_path)
+    original = png_path.read_bytes()
+
+    def fail_quantize(*_args, **_kwargs):
+        raise RuntimeError("quality too low")
+
+    monkeypatch.setattr(
+        md_to_png_module.imagequant,
+        "quantize_raw_rgba_bytes",
+        fail_quantize,
+    )
+
+    with pytest.raises(RuntimeError, match="quality too low"):
+        md_to_png_module.optimize_png_file(png_path)
+
+    assert png_path.read_bytes() == original
+    assert list(tmp_path.glob(".export-*.png")) == []
+
+
+def test_html_png_export_is_optimized_by_default(tmp_path: Path, monkeypatch) -> None:
+    html_path = tmp_path / "report.html"
+    png_path = tmp_path / "report.png"
+    html_path.write_text("<html><body>report</body></html>", encoding="utf-8")
+
+    class FakeBrowser:
+        def close(self) -> None:
+            return None
+
+    class FakePlaywright:
+        def __init__(self) -> None:
+            self.chromium = self
+
+        def launch(self, **_kwargs) -> FakeBrowser:
+            return FakeBrowser()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    converter = HtmlToPngConverter()
+    monkeypatch.setattr(md_to_png_module, "sync_playwright", lambda: FakePlaywright())
+    monkeypatch.setattr(
+        converter,
+        "_render",
+        lambda _browser, **kwargs: Image.new("RGB", (32, 32), "#14b8a6").save(
+            kwargs["png_path"]
+        ),
+    )
+
+    result = converter.convert(html_path, png_path, reuse_browser=False)
+
+    assert result == png_path.resolve()
+    with Image.open(png_path) as optimized:
+        assert optimized.mode == "P"
 
 
 def test_normalize_markdown_for_tables_rewrites_fullwidth_table_chars() -> None:
@@ -444,6 +541,8 @@ def test_non_reused_renderer_launches_playwright_chromium_without_overrides(
     monkeypatch.delenv("B2T_CHROMIUM_EXECUTABLE_PATH", raising=False)
     monkeypatch.setattr(md_to_png_module, "sync_playwright", lambda: FakePlaywright())
     monkeypatch.setattr(converter, "_render_with_browser", lambda *args, **kwargs: None)
+    optimized = []
+    monkeypatch.setattr(md_to_png_module, "optimize_png_file", optimized.append)
 
     converter._render_html_to_png(
         tmp_path / "input.html",
@@ -457,6 +556,34 @@ def test_non_reused_renderer_launches_playwright_chromium_without_overrides(
     )
 
     assert launch_options == [{}]
+    assert optimized == [(tmp_path / "output.png").resolve()]
+
+
+def test_reused_renderer_optimizes_png(tmp_path: Path, monkeypatch) -> None:
+    converter = MarkdownToPngConverter()
+    rendered = []
+    optimized = []
+
+    monkeypatch.setattr(
+        md_to_png_module._CHROMIUM_WORKER,
+        "submit",
+        lambda render: rendered.append(render),
+    )
+    monkeypatch.setattr(md_to_png_module, "optimize_png_file", optimized.append)
+
+    converter._render_html_to_png(
+        tmp_path / "input.html",
+        tmp_path / "output.png",
+        width=390,
+        height=844,
+        dpr=3,
+        max_full_page_height=5000,
+        tile_height=1800,
+        reuse_browser=True,
+    )
+
+    assert len(rendered) == 1
+    assert optimized == [(tmp_path / "output.png").resolve()]
 
 
 def test_non_reused_renderer_uses_configured_chromium_executable(
@@ -489,6 +616,7 @@ def test_non_reused_renderer_uses_configured_chromium_executable(
     monkeypatch.setenv("B2T_CHROMIUM_EXECUTABLE_PATH", str(executable_path))
     monkeypatch.setattr(md_to_png_module, "sync_playwright", lambda: FakePlaywright())
     monkeypatch.setattr(converter, "_render_with_browser", lambda *args, **kwargs: None)
+    monkeypatch.setattr(md_to_png_module, "optimize_png_file", lambda _path: None)
 
     converter._render_html_to_png(
         tmp_path / "input.html",

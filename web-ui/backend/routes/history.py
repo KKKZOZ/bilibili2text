@@ -48,6 +48,7 @@ _PLATFORM_NAMES = {
     "bilibili": "Bilibili",
     "xiaoyuzhou": "小宇宙",
     "ximalaya": "喜马拉雅",
+    "youtube": "YouTube",
     "upload": "本地上传",
     "knowledge_base": "知识库查询",
 }

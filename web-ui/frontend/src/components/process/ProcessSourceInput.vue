@@ -55,7 +55,7 @@
           :value="url"
           type="text"
           aria-label="视频或播客 URL"
-          placeholder="支持 Bilibili、小宇宙 FM、喜马拉雅播客链接..."
+          placeholder="支持 Bilibili、YouTube、小宇宙 FM、喜马拉雅链接..."
           :disabled="disabled"
           @input="emit('update:url', $event.target.value)"
         />

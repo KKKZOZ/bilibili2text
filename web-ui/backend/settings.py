@@ -365,6 +365,5 @@ def get_runtime_features() -> dict[str, str | bool]:
         "requires_user_api_key": requires_user_api_key(),
         "api_key_configured": is_public_api_key_configured(),
         "deepseek_api_key_configured": is_public_deepseek_api_key_configured(),
-        "counterscale_site_id": config.analytics.counterscale.site_id,
-        "counterscale_tracker_url": config.analytics.counterscale.tracker_url,
+        "analytics_script_url": config.analytics.script_url,
     }

@@ -101,6 +101,34 @@ def source_units(markdown: str, payload: dict | None = None) -> list[dict]:
     return [{"id": f"u{index:06d}", **unit} for index, unit in enumerate(units, 1)]
 
 
+def validate_source_refs(value: str, ids: set[str]) -> None:
+    """Validate explicit IDs and inclusive ranges against the actual transcript.
+
+    Pi may compress long standard-mode bindings to u000001–u000010. Check
+    every member, not just the endpoints; bound expansion by the input ID count.
+    """
+    normalized = re.sub(
+        r"(u[0-9]{6})\s*([-–—])\s*(u[0-9]{6})", r"\1\2\3", value.strip()
+    )
+    if not normalized:
+        raise ValueError("来源绑定为空")
+    for ref in re.split(r"[\s,;，；]+", normalized):
+        if ref in ids:
+            continue
+        span = re.fullmatch(r"u([0-9]{6})[-–—]u([0-9]{6})", ref)
+        if span is None:
+            raise ValueError(f"未知 ID 或格式不支持：{ref[:80]!r}")
+        start, end = map(int, span.groups())
+        if start > end:
+            raise ValueError(f"来源区间倒序：{ref}")
+        if end - start + 1 > len(ids):
+            raise ValueError(f"来源区间超出转录单元数量：{ref}")
+        for index in range(start, end + 1):
+            unit_id = f"u{index:06d}"
+            if unit_id not in ids:
+                raise ValueError(f"来源区间 {ref} 包含不存在的 ID：{unit_id}")
+
+
 class ReportValidator(HTMLParser):
     def __init__(self, ids: set[str]):
         super().__init__()
@@ -112,9 +140,13 @@ class ReportValidator(HTMLParser):
         self.tags.add(tag)
         for key, value in attrs:
             if key == "data-source-units":
-                refs = set(re.split(r"[\s,;]+", (value or "").strip()))
-                if not refs or "" in refs or refs - self.ids:
-                    raise ValueError("报告包含无效来源 ID，请重新生成")
+                try:
+                    validate_source_refs(value or "", self.ids)
+                except ValueError as exc:
+                    line, _ = self.getpos()
+                    raise ValueError(
+                        f"报告包含无效来源 ID（第 {line} 行 <{tag}>：{exc}），请重新生成"
+                    ) from None
                 self.bindings += 1
 
 

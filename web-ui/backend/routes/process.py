@@ -264,6 +264,7 @@ def process_video(payload: ProcessRequest) -> ProcessStartResponse:
         summary_prompt_template=summary_prompt_template,
         auto_generate_fancy_html=payload.auto_generate_fancy_html,
         prefer_bilibili_subtitle=payload.prefer_bilibili_subtitle,
+        prefer_subtitles=payload.prefer_subtitles,
         include_comments=payload.include_comments,
         comment_limit=payload.comment_limit,
         **payload.runtime_config_kwargs(),

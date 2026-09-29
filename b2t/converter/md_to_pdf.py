@@ -94,9 +94,17 @@ HTML_TEMPLATE = r"""<!doctype html>
       margin-bottom: 8px;
     }}
     .markdown-body .stock-table-head h3 {{
+      display: flex;
+      align-items: baseline;
+      width: 100%;
+      min-width: 0;
       margin: 0;
       font-size: 17px;
       line-height: 1.3;
+    }}
+    .markdown-body .stock-table-head > div {{
+      width: 100%;
+      min-width: 0;
     }}
     .markdown-body .stock-table-head h3 span,
     .markdown-body .stock-table-head h3 strong {{
@@ -107,6 +115,14 @@ HTML_TEMPLATE = r"""<!doctype html>
       font-size: 16px;
       font-weight: 800;
       color: #64748b;
+    }}
+    .markdown-body .stock-table-head h3 .stock-table-sector {{
+      flex-shrink: 0;
+      margin-left: auto;
+      padding-left: 24px;
+      color: #57606a;
+      font-size: 13px;
+      font-weight: 600;
     }}
     .markdown-body .stock-status-up .stock-table-head h3,
     .markdown-body .stock-status-up .stock-table-head h3 strong,
@@ -137,6 +153,9 @@ HTML_TEMPLATE = r"""<!doctype html>
     }}
     .markdown-body .stock-table-field {{
       min-width: 0;
+    }}
+    .markdown-body .stock-table-field-wide {{
+      grid-column: 1 / -1;
     }}
     .markdown-body .stock-table-field span {{
       display: inline;
