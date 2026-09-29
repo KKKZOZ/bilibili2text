@@ -33,7 +33,7 @@
 `bilibili-to-text` 是一个面向长内容的自动化处理工具。它将视频或播客转换为带上下文的 Markdown 文稿，并进一步生成结构化总结、表格、时间线、Fancy HTML 与知识库索引。可以通过 Web UI 或 CLI 处理内容。
 
 > [!TIP]
-> **在线体验：** [b2t.kkkzoz.top:27676](http://b2t.kkkzoz.top:27676)
+> **在线体验：** [b2t.kkkzoz.top](https://b2t.kkkzoz.top/)
 >
 > Open Public 模式使用访问者自己的 API Key；Key 只保存在当前浏览器本地，并仅在任务请求或连接测试时发送给服务端。
 
@@ -62,9 +62,6 @@ LLM 总结 · 表格 · 时间线 · Fancy HTML
         ↓
 历史记录 · 多格式导出 · RAG 知识检索
 ```
-
-> [!NOTE]
-> 当前主要在 Linux 和 macOS 上验证 Web UI、RAG 和 Open Public。CLI 与 Docker/Nginx 部署脚本仍属于实验性使用路径。
 
 ## 界面预览
 
