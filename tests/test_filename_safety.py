@@ -95,14 +95,14 @@ def test_pipeline_limits_long_utf8_names_without_losing_platform_id_or_extension
         stt_storage_backend=storage,
     )
 
-    artifact_paths = [
-        Path(results[key].storage_key) for key in ("audio", "json", "markdown")
-    ]
+    artifact_paths = [Path(results[key].storage_key) for key in ("json", "markdown")]
     work_dir = artifact_paths[0].parent
 
     assert work_dir.name.startswith(platform_id)
     assert len(work_dir.name.encode("utf-8")) <= 255
-    assert artifact_paths[0].name.endswith(".m4a")
+    assert "audio" not in results
+    assert source_audio.read_bytes() == b"audio"
+    assert not list(work_dir.rglob("*.m4a"))
     for artifact_path in artifact_paths:
         assert artifact_path.name.startswith(platform_id)
         assert len(artifact_path.name.encode("utf-8")) <= 255

@@ -102,9 +102,11 @@ class MinIOStorageBackend(PublicURLStorageBackend):
         try:
             response = self._client.get_object(self._bucket, storage_key)
         except S3Error as exc:
-            raise FileNotFoundError(
-                f"MinIO object does not exist: {storage_key}"
-            ) from exc
+            if exc.code in {"NoSuchKey", "NoSuchObject"}:
+                raise FileNotFoundError(
+                    f"MinIO object does not exist: {storage_key}"
+                ) from exc
+            raise RuntimeError(f"Failed to read S3 object: {exc.code}") from exc
 
         try:
             yield response

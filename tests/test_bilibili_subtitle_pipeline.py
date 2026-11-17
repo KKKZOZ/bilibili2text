@@ -275,7 +275,9 @@ def test_pipeline_falls_back_to_asr_when_bilibili_subtitle_missing(
     )
 
     assert used_callback_calls == 0
-    assert {"audio", "json", "markdown"} <= results.keys()
+    assert {"json", "markdown"} <= results.keys()
+    assert "audio" not in results
+    assert not list(tmp_path.rglob("*.m4a"))
     payload = json.loads(Path(results["json"].storage_key).read_text(encoding="utf-8"))
     assert payload["timeline_schema_version"] == 1
     markdown = Path(results["markdown"].storage_key).read_text(encoding="utf-8")

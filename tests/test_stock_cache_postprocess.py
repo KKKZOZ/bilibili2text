@@ -3,6 +3,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "web-ui"))
 
 from backend.postprocess import PostProcessScheduler
@@ -18,6 +20,14 @@ from b2t.config import (
 )
 from b2t.stock_status import StockDailyStatus
 from b2t.storage import StoredArtifact
+
+
+@pytest.fixture(autouse=True)
+def isolated_png_cache(monkeypatch, tmp_path):
+    from b2t.png_cache import PngCache
+
+    cache = PngCache(tmp_path)
+    monkeypatch.setattr("backend.services.PngCache", lambda _: cache)
 
 
 class _FakeStorage:

@@ -222,8 +222,19 @@ def _ensure_runtime_ready(
         )
 
 
+def _validate_generation_options(
+    *, skip_summary: bool, auto_generate_fancy_html: bool
+) -> None:
+    if skip_summary and not auto_generate_fancy_html:
+        raise HTTPException(status_code=400, detail="总结和阅读报告至少需要开启一项")
+
+
 @router.post("/api/process", response_model=ProcessStartResponse)
 def process_video(payload: ProcessRequest) -> ProcessStartResponse:
+    _validate_generation_options(
+        skip_summary=payload.skip_summary,
+        auto_generate_fancy_html=payload.auto_generate_fancy_html,
+    )
     if not payload.url.strip():
         raise HTTPException(status_code=400, detail="URL 不能为空")
 
@@ -288,6 +299,10 @@ def process_uploaded_audio(
     custom_llm_api_key: str | None = Form(default=None),
     custom_llm_model: str | None = Form(default=None),
 ) -> ProcessStartResponse:
+    _validate_generation_options(
+        skip_summary=skip_summary,
+        auto_generate_fancy_html=auto_generate_fancy_html,
+    )
     if not is_upload_enabled():
         raise HTTPException(
             status_code=403,

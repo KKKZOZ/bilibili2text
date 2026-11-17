@@ -377,10 +377,16 @@ async def run_pi(
         else:
             env.update(PI_CODING_AGENT_DIR=str(config_dir), HOME=config_tmp)
             command = ["pi", *args]
+        report_path = (
+            "/work/report.html" if container else str(workspace / "report.html")
+        )
         prompt = (
             f"读取 input.json 和完整 transcript.md，执行 skill/SKILL.md。report_mode={options.mode}。"
             "只读取对应模式和模板，按需选择编辑参考。直接从完整来源生成自包含 report.html，"
             "不要先总结再改写。来源 ID 已提供，保留 data-source-units。"
+            f"最终 HTML 必须写入工作区根目录的绝对路径 {report_path}。"
+            "当前工作区已经是本次任务的独立输出目录，满足 Skill 的独立输出目录要求；"
+            "不要另建 output 子目录存放最终报告。交付前确认该绝对路径下的文件存在。"
             "来源绑定优先逐个列出 transcript.md 中的完整 ID，以空格分隔，如 u000001 u000002。"
             "Standard 可用连续闭区间 u000001-u000010，区间内每个 ID 都必须存在且支持该处内容；"
             "Brief 必须逐个列出。禁止省略号、通配符、缩写 ID 或倒序区间。"
@@ -439,11 +445,12 @@ async def run_pi(
                     await process.wait()
                 except ProcessLookupError:
                     await process.wait()
-    report = workspace / "report.html"
-    if (
-        report.is_symlink()
-        or not report.is_file()
-        or report.stat().st_size > 10_000_000
-    ):
-        raise RuntimeError("Pi 未交付有效的 report.html")
-    return report
+    for report in (workspace / "report.html", workspace / "output" / "report.html"):
+        if (
+            not report.parent.is_symlink()
+            and not report.is_symlink()
+            and report.is_file()
+            and report.stat().st_size <= 10_000_000
+        ):
+            return report
+    raise RuntimeError("Pi 未交付有效的 report.html（已检查根目录和 output 子目录）")

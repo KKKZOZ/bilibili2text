@@ -292,7 +292,6 @@ def run_pipeline(
 
     Returns:
         Storage info for output files from each stage:
-        - "audio": Audio file (only when ASR path is used)
         - "json": Transcription JSON
         - "markdown": Original Markdown
         - "summary": Summary Markdown (excluded when skip_summary is True)
@@ -466,28 +465,30 @@ def run_pipeline(
             )
         else:
             token.raise_if_cancelled()
-            # Move audio to work directory
+            # Keep ASR input temporary; only transcription outputs are persisted.
             audio_filename = _ensure_bvid_prefixed_name(
                 f"{work_dir.name}{audio_file.suffix}",
                 transcription_id,
                 preserve_extension=True,
             )
-            new_audio_path = work_dir / audio_filename
-            if use_local_audio:
-                shutil.copy2(str(audio_file), new_audio_path)
-            else:
-                shutil.move(str(audio_file), new_audio_path)
-            local_results["audio"] = new_audio_path
             logger.info("Work directory: %s", work_dir)
 
             # 2. Transcribe (each provider handles its own details, e.g. Qwen's OSS upload)
             token.raise_if_cancelled()
             stt_provider = create_stt_provider(config, stt_storage_backend)
-            json_path = stt_provider.transcribe(
-                new_audio_path,
-                work_dir,
-                progress_callback=emit_progress,
-            )
+            with tempfile.TemporaryDirectory(
+                prefix="asr-", dir=temp_download_dir
+            ) as audio_tmp:
+                new_audio_path = Path(audio_tmp) / audio_filename
+                if use_local_audio:
+                    shutil.copy2(str(audio_file), new_audio_path)
+                else:
+                    shutil.move(str(audio_file), new_audio_path)
+                json_path = stt_provider.transcribe(
+                    new_audio_path,
+                    work_dir,
+                    progress_callback=emit_progress,
+                )
             transcription_payload = json.loads(json_path.read_text(encoding="utf-8"))
             if not isinstance(transcription_payload, dict):
                 raise ValueError("转录结果 JSON 顶层必须是对象")

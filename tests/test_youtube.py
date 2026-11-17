@@ -351,7 +351,8 @@ def test_pipeline_audio_fallback(monkeypatch, tmp_path, mode):
         prefer_subtitles=False if mode == "disabled" else None,
     )
     assert calls == (["subtitle"] if mode != "disabled" else []) + ["audio", "asr"]
-    assert "audio" in results
+    assert "audio" not in results
+    assert not list(tmp_path.rglob("*.m4a"))
 
 
 def test_subtitle_path_without_asr_key_is_allowed_but_missing_requires_key(

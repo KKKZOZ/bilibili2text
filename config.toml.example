@@ -161,6 +161,8 @@ default_check_interval = 300
 # uid = 123456
 # name = "creator-name"
 # check_interval = 300  # 每轮在 200-300 秒间重新随机
+# auto_mode = "generate_comment"  # off：关闭；generate：自动生成；generate_comment：自动生成并评论
+# comment_delay_minutes = 0  # 新视频立即转录；自动评论从检测时间起延迟（分钟），1440 = 24 小时
 
 # Pi 报告容器网络；B2T_REPORT_NETWORK 环境变量可覆盖此配置。
 [report]

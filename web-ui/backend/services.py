@@ -29,6 +29,7 @@ from b2t.download.comments import (
 from b2t.download.metadata import VideoMetadata
 from b2t.download.platform import Platform, build_transcription_artifact_name
 from b2t.history import HistoryArtifact, infer_run_id, record_pipeline_run
+from b2t.png_cache import PngCache
 from b2t.storage import (
     SUMMARY_ARTIFACT_KINDS,
     ArtifactKind,
@@ -499,6 +500,7 @@ def _generate_summary_png_exports(
         work_dir = Path(cleanup_temp_dir.name)
 
     generated: dict[str, StoredArtifact] = {}
+    png_cache = PngCache(config.download.db_dir)
     try:
         summary_path = materialize_artifact(
             storage_backend,
@@ -559,14 +561,14 @@ def _generate_summary_png_exports(
             as_of_date=as_of_date,
             enhance_stock_tables=True,
             stock_statuses=stock_statuses,
-            dpr=2,
+            dpr=1.5,
         )
         generated["summary_png"] = replace(
-            _store_sibling_artifact(
-                storage_backend=storage_backend,
-                config=config,
-                source_artifact=summary_artifact,
-                path=summary_png_path,
+            png_cache.store(
+                storage_backend,
+                summary_png_path,
+                output_dir=config.download.output_dir,
+                source_key=summary_artifact.storage_key,
             ),
             kind=ArtifactKind.SUMMARY_PNG,
             derived_from=summary_artifact.storage_key,
@@ -578,11 +580,12 @@ def _generate_summary_png_exports(
             no_table_png_path = no_table_md_path.with_suffix(".png")
             png_converter.convert(no_table_md_path, no_table_png_path, is_table=False)
             generated["summary_no_table_png"] = replace(
-                _store_sibling_artifact(
-                    storage_backend=storage_backend,
-                    config=config,
-                    source_artifact=summary_artifact,
-                    path=no_table_png_path,
+                png_cache.store(
+                    storage_backend,
+                    no_table_png_path,
+                    output_dir=config.download.output_dir,
+                    source_key=summary_artifact.storage_key,
+                    variant="summary_no_table",
                 ),
                 kind=ArtifactKind.SUMMARY_NO_TABLE_PNG,
                 derived_from=summary_artifact.storage_key,
@@ -598,11 +601,11 @@ def _generate_summary_png_exports(
                 stock_statuses=stock_statuses,
             )
             generated["summary_table_png"] = replace(
-                _store_sibling_artifact(
-                    storage_backend=storage_backend,
-                    config=config,
-                    source_artifact=summary_table_artifact,
-                    path=table_png_path,
+                png_cache.store(
+                    storage_backend,
+                    table_png_path,
+                    output_dir=config.download.output_dir,
+                    source_key=summary_table_artifact.storage_key,
                 ),
                 kind=ArtifactKind.SUMMARY_TABLE_PNG,
                 derived_from=summary_table_artifact.storage_key,

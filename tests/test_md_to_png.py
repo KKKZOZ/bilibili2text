@@ -42,8 +42,9 @@ def test_optimize_png_uses_high_quality_imagequant_settings(
     assert captured == {
         "pixel": (20, 184, 166, 255),
         "size": (32, 32),
-        "max_colors": 256,
-        "min_quality": 85,
+        "dithering_level": 0.3,
+        "max_colors": 128,
+        "min_quality": 80,
         "max_quality": 95,
     }
     with Image.open(png_path) as optimized:

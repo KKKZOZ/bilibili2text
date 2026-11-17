@@ -307,6 +307,8 @@ class MonitorCreatorConfig:
     uid: int
     name: str = ""
     check_interval: int = 300
+    auto_mode: str = "generate_comment"
+    comment_delay_minutes: int = 0
 
 
 @dataclass(frozen=True)
@@ -1268,11 +1270,29 @@ def _load_monitor_config(raw_monitor: dict, *, base_dir: Path) -> MonitorConfig:
         if not isinstance(interval, int) or interval <= 0:
             raise ValueError(f"monitor.creators[{index}].check_interval 必须是正整数")
 
+        auto_mode = raw_creator.get("auto_mode", "generate_comment")
+        if not isinstance(auto_mode, str) or auto_mode not in {
+            "off",
+            "generate",
+            "generate_comment",
+        }:
+            raise ValueError(
+                f"monitor.creators[{index}].auto_mode 必须是 off、generate 或 generate_comment"
+            )
+
+        comment_delay = raw_creator.get("comment_delay_minutes", 0)
+        if type(comment_delay) is not int or comment_delay < 0:
+            raise ValueError(
+                f"monitor.creators[{index}].comment_delay_minutes 必须是非负整数"
+            )
+
         creators.append(
             MonitorCreatorConfig(
                 uid=uid,
                 name=raw_name.strip(),
                 check_interval=interval,
+                auto_mode=auto_mode,
+                comment_delay_minutes=comment_delay,
             )
         )
 

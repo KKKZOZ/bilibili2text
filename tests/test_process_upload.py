@@ -48,7 +48,7 @@ def test_open_public_upload_accepts_plain_audio_filename(monkeypatch) -> None:
 
     response = process.process_uploaded_audio(
         file=_FakeUploadFile(filename="meeting.mp3", content=b"audio"),
-        skip_summary=True,
+        skip_summary=False,
         summary_preset=None,
         summary_profile=None,
         summary_prompt_template=None,
@@ -71,7 +71,7 @@ def test_default_upload_still_requires_bv_audio_filename(monkeypatch) -> None:
     try:
         process.process_uploaded_audio(
             file=_FakeUploadFile(filename="meeting.mp3", content=b"audio"),
-            skip_summary=True,
+            skip_summary=False,
             summary_preset=None,
             summary_profile=None,
             summary_prompt_template=None,
@@ -110,7 +110,7 @@ def test_open_public_video_upload_converts_before_submit(monkeypatch, tmp_path) 
 
     response = process.process_uploaded_audio(
         file=_FakeUploadFile(filename="clip.mp4", content=b"video"),
-        skip_summary=True,
+        skip_summary=False,
         summary_preset=None,
         summary_profile=None,
         summary_prompt_template=None,

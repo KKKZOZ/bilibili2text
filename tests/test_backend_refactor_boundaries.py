@@ -5,6 +5,8 @@ from contextlib import contextmanager
 from io import BytesIO
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "web-ui"))
 
 from backend.download_registry import DownloadRegistry, media_type_for_filename
@@ -18,22 +20,58 @@ from backend.routes.download import (
 from backend.schemas import ConvertRequest
 
 from b2t.converter.converter import ConversionFormat
+from b2t.png_cache import PngCache
 from b2t.storage import StoredArtifact
+
+
+@pytest.fixture(autouse=True)
+def isolated_png_cache(monkeypatch, tmp_path):
+    cache = PngCache(tmp_path)
+    monkeypatch.setattr("backend.routes.download.get_png_cache", lambda: cache)
+    return cache
 
 
 def test_png_render_options_share_desktop_and_mobile_presets() -> None:
     assert _png_render_options("desktop") == {
         "width": 834,
         "height": 1112,
-        "dpr": 2,
+        "dpr": 1.5,
     }
     assert _png_render_options("mobile") == {
         "width": 460,
         "height": 932,
-        "dpr": 2,
+        "dpr": 1.5,
     }
     assert _png_render_options("mobile", html_source=True)["is_mobile"] is True
     assert _png_render_options("desktop", html_source=True)["is_mobile"] is False
+
+
+def test_missing_png_download_requests_regeneration(monkeypatch, isolated_png_cache):
+    from backend.routes.download import download_markdown
+    from fastapi import HTTPException
+
+    artifact = StoredArtifact(
+        filename="expired.png", storage_key="cache/png/expired.png", backend="local"
+    )
+    isolated_png_cache.register(artifact, created_at=0)
+    monkeypatch.setattr(
+        "backend.routes.download.download_registry.get_content", lambda _: None
+    )
+    monkeypatch.setattr(
+        "backend.routes.download.download_registry.get_artifact", lambda _: artifact
+    )
+
+    class MissingStorage:
+        @contextmanager
+        def open_stream(self, key):
+            raise FileNotFoundError(key)
+            yield  # pragma: no cover
+
+    monkeypatch.setattr("backend.routes.download.get_storage_backend", MissingStorage)
+    with pytest.raises(HTTPException) as error:
+        download_markdown("expired")
+    assert error.value.status_code == 410
+    assert "重新导出" in error.value.detail
 
 
 def test_job_repository_create_patch_cancel() -> None:
@@ -133,6 +171,9 @@ def test_preview_timeline_text_returns_inline_plain_text(monkeypatch) -> None:
     )
 
     class FakeStorage:
+        persist_local_outputs = False
+        backend_name = "local"
+
         @contextmanager
         def open_stream(self, storage_key: str) -> Iterator[object]:
             assert storage_key == artifact.storage_key
@@ -152,8 +193,13 @@ def test_preview_timeline_text_returns_inline_plain_text(monkeypatch) -> None:
     assert response.headers["content-disposition"].startswith("inline;")
 
 
-def test_find_precomputed_conversion_uses_summary_sibling_png(monkeypatch) -> None:
+def test_find_precomputed_conversion_uses_summary_sibling_png(
+    monkeypatch, isolated_png_cache
+) -> None:
     class FakeStorage:
+        persist_local_outputs = False
+        backend_name = "local"
+
         @contextmanager
         def open_stream(self, storage_key: str) -> Iterator[object]:
             if storage_key != "runs/BV123_summary.png":
@@ -165,6 +211,15 @@ def test_find_precomputed_conversion_uses_summary_sibling_png(monkeypatch) -> No
         filename="BV123_summary.md",
         storage_key="runs/BV123_summary.md",
         backend="local",
+    )
+
+    isolated_png_cache.register(
+        StoredArtifact(
+            filename="BV123_summary.png",
+            storage_key="runs/BV123_summary.png",
+            backend="local",
+        ),
+        source_key=artifact.storage_key,
     )
 
     found = _find_precomputed_conversion(
@@ -182,8 +237,12 @@ def test_find_precomputed_conversion_uses_summary_sibling_png(monkeypatch) -> No
 
 def test_find_precomputed_conversion_uses_summary_no_table_png(
     monkeypatch,
+    isolated_png_cache,
 ) -> None:
     class FakeStorage:
+        persist_local_outputs = False
+        backend_name = "local"
+
         @contextmanager
         def open_stream(self, storage_key: str) -> Iterator[object]:
             if storage_key != "runs/BV123_summary_no_table.png":
@@ -195,6 +254,16 @@ def test_find_precomputed_conversion_uses_summary_no_table_png(
         filename="BV123_summary.md",
         storage_key="runs/BV123_summary.md",
         backend="local",
+    )
+
+    isolated_png_cache.register(
+        StoredArtifact(
+            filename="BV123_summary_no_table.png",
+            storage_key="runs/BV123_summary_no_table.png",
+            backend="local",
+        ),
+        source_key=artifact.storage_key,
+        variant="summary_no_table",
     )
 
     found = _find_precomputed_conversion(
@@ -232,6 +301,9 @@ def test_convert_artifact_uses_dpr_two_for_summary_png(monkeypatch) -> None:
         captured: list[dict[str, object]] = []
 
         class FakeStorage:
+            persist_local_outputs = False
+            backend_name = "local"
+
             @contextmanager
             def open_stream(self, storage_key: str) -> Iterator[object]:
                 with open(storage_key, "rb") as handle:
@@ -286,7 +358,7 @@ def test_convert_artifact_uses_dpr_two_for_summary_png(monkeypatch) -> None:
         )
 
         assert captured[0]["name"] == "BV123_summary.md"
-        assert captured[0]["options"]["dpr"] == 2
+        assert captured[0]["options"]["dpr"] == 1.5
         assert captured[0]["options"]["is_table"] is False
         assert captured[0]["options"]["summary_document"] is True
 
@@ -298,7 +370,7 @@ def test_convert_artifact_uses_dpr_two_for_summary_png(monkeypatch) -> None:
         assert captured[2]["name"] == "BV123_summary.md"
         assert captured[2]["options"]["width"] == 460
         assert captured[2]["options"]["height"] == 932
-        assert captured[2]["options"]["dpr"] == 2
+        assert captured[2]["options"]["dpr"] == 1.5
         assert captured[2]["options"]["summary_document"] is True
 
 
@@ -317,6 +389,9 @@ def test_convert_artifact_desktop_png_uses_pad_viewport(monkeypatch) -> None:
         captured: list[dict[str, object]] = []
 
         class FakeStorage:
+            persist_local_outputs = False
+            backend_name = "local"
+
             @contextmanager
             def open_stream(self, storage_key: str) -> Iterator[object]:
                 with open(storage_key, "rb") as handle:
@@ -365,7 +440,7 @@ def test_convert_artifact_desktop_png_uses_pad_viewport(monkeypatch) -> None:
         assert captured[0]["output_name"] == "BV123_summary_desktop.png"
         assert captured[0]["options"]["width"] == 834
         assert captured[0]["options"]["height"] == 1112
-        assert captured[0]["options"]["dpr"] == 2
+        assert captured[0]["options"]["dpr"] == 1.5
 
 
 def test_convert_artifact_uses_stock_status_options_for_summary_pdf(
@@ -392,6 +467,9 @@ def test_convert_artifact_uses_stock_status_options_for_summary_pdf(
         captured: list[dict[str, object]] = []
 
         class FakeStorage:
+            persist_local_outputs = False
+            backend_name = "local"
+
             @contextmanager
             def open_stream(self, storage_key: str) -> Iterator[object]:
                 with open(storage_key, "rb") as handle:
@@ -462,6 +540,9 @@ def test_convert_artifact_uses_only_cached_stock_statuses(monkeypatch) -> None:
         captured: dict[str, object] = {}
 
         class FakeStorage:
+            persist_local_outputs = False
+            backend_name = "local"
+
             @contextmanager
             def open_stream(self, storage_key: str) -> Iterator[object]:
                 with open(storage_key, "rb") as handle:

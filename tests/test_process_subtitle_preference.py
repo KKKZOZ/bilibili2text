@@ -27,7 +27,7 @@ def test_process_passes_generic_subtitle_preference(monkeypatch) -> None:
         ProcessRequest(
             url="https://youtu.be/BaW_jenozKc",
             prefer_subtitles=False,
-            skip_summary=True,
+            skip_summary=False,
         )
     )
     assert captured["prefer_subtitles"] is False
@@ -51,7 +51,7 @@ def test_process_video_passes_bilibili_subtitle_preference(monkeypatch) -> None:
     response = process.process_video(
         ProcessRequest(
             url="BV1ABcsztEcY",
-            skip_summary=True,
+            skip_summary=False,
             prefer_bilibili_subtitle=False,
         )
     )
@@ -73,6 +73,6 @@ def test_process_video_defaults_to_bilibili_subtitle_preference(monkeypatch) -> 
         process, "submit_job", lambda fn, **kwargs: captured.update(kwargs)
     )
 
-    process.process_video(ProcessRequest(url="BV1ABcsztEcY", skip_summary=True))
+    process.process_video(ProcessRequest(url="BV1ABcsztEcY", skip_summary=False))
 
     assert captured["prefer_bilibili_subtitle"] is True

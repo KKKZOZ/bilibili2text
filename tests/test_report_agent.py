@@ -237,7 +237,10 @@ def test_local_report_survives_temporary_workspace_cleanup(tmp_path, monkeypatch
     assert stored.filename.endswith("_summary_fancy.html")
 
 
-def test_local_pi_transport_with_fake_executable(tmp_path, monkeypatch):
+@pytest.mark.parametrize("output_location", ["root", "output", "both"])
+def test_local_pi_transport_with_fake_executable(
+    tmp_path, monkeypatch, output_location
+):
     """Exercise real pipes and staging without network or paid model calls."""
     executable = tmp_path / "pi"
     executable.write_text("""#!/usr/bin/env python3
@@ -247,20 +250,30 @@ assert json.loads((config / 'models.json').read_text())['providers']['b2t-user']
 assert os.environ['B2T_REPORT_API_KEY'] == 'user-a'
 assert 'OPENAI_API_KEY' not in os.environ
 assert not pathlib.Path('skill/modes/standard.md').exists()
-json.loads(sys.stdin.readline())
-pathlib.Path('report.html').write_text('<html><body>report</body></html>')
+prompt = json.loads(sys.stdin.readline())['message']
+assert str(pathlib.Path.cwd() / 'report.html') in prompt
+location = pathlib.Path('output-location').read_text()
+if location in ('root', 'both'):
+    pathlib.Path('report.html').write_text('<html><body>report</body></html>')
+if location in ('output', 'both'):
+    pathlib.Path('output').mkdir()
+    pathlib.Path('output/report.html').write_text('<html><body>fallback</body></html>')
 print(json.dumps({'type':'message_end','message':{'role':'assistant','stopReason':'stop'}}), flush=True)
 print(json.dumps({'type':'agent_settled'}), flush=True)
 """)
     executable.chmod(0o755)
     work = tmp_path / "work"
     work.mkdir()
+    (work / "output-location").write_text(output_location)
     monkeypatch.setenv("PATH", str(tmp_path) + os.pathsep + os.environ["PATH"])
     monkeypatch.setenv("B2T_REPORT_RUNTIME", "local")
     monkeypatch.setenv("B2T_WEB_UI_MODE", "default")
     monkeypatch.setenv("OPENAI_API_KEY", "server-secret")
     report = asyncio.run(run_pi(work, profile(), ReportOptions(mode="brief")))
     assert report.is_file()
+    assert report == work / (
+        "output/report.html" if output_location == "output" else "report.html"
+    )
     assert "user-a" not in "".join(
         p.read_text() for p in work.rglob("*") if p.is_file()
     )

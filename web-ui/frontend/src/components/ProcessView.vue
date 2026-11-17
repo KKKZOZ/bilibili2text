@@ -431,6 +431,10 @@
   }
 
   const submit = async () => {
+    if (!enableSummary.value && !autoGenerateFancyHtml.value) {
+      error.value = '总结和阅读报告至少需要开启一项'
+      return
+    }
     isStarting.value = true
     error.value = ''
     clearActiveJobId()
@@ -660,6 +664,13 @@
             @retry="loadSummaryProfiles"
           />
 
+          <InlineNotice
+            v-if="!enableSummary && !autoGenerateFancyHtml"
+            kind="warning"
+          >
+            总结和阅读报告至少需要开启一项
+          </InlineNotice>
+
           <div v-if="isJobDetailMode" class="new-job-hint">
             <button
               type="button"
@@ -677,7 +688,11 @@
           <button
             class="submit"
             type="submit"
-            :disabled="isStarting || isRunning"
+            :disabled="
+              isStarting ||
+              isRunning ||
+              (!enableSummary && !autoGenerateFancyHtml)
+            "
           >
             <LoaderCircle
               v-if="isStarting || isRunning"

@@ -72,8 +72,9 @@ def _load_playwright_render_timeout_ms() -> int:
 
 
 PLAYWRIGHT_RENDER_TIMEOUT_MS = _load_playwright_render_timeout_ms()
-PNG_QUANTIZE_MAX_COLORS = 256
-PNG_QUANTIZE_MIN_QUALITY = 85
+PNG_QUANTIZE_DITHERING_LEVEL = 0.3
+PNG_QUANTIZE_MAX_COLORS = 128
+PNG_QUANTIZE_MIN_QUALITY = 80
 PNG_QUANTIZE_MAX_QUALITY = 95
 
 
@@ -94,6 +95,7 @@ def optimize_png_file(path: Path) -> None:
                     rgba_source.tobytes(),
                     rgba_source.width,
                     rgba_source.height,
+                    dithering_level=PNG_QUANTIZE_DITHERING_LEVEL,
                     max_colors=PNG_QUANTIZE_MAX_COLORS,
                     min_quality=PNG_QUANTIZE_MIN_QUALITY,
                     max_quality=PNG_QUANTIZE_MAX_QUALITY,
@@ -599,7 +601,7 @@ class MarkdownToPngConverter:
         self,
         width: int = 390,
         height: int = 844,
-        dpr: int = 2,
+        dpr: float = 1.5,
         css_url: str = GITHUB_CSS_URL,
     ):
         """
@@ -1106,7 +1108,7 @@ class MarkdownToPngConverter:
         png_path: Path,
         width: int,
         height: int,
-        dpr: int,
+        dpr: float,
         max_full_page_height: int,
         tile_height: int,
     ) -> None:
@@ -1162,7 +1164,7 @@ class MarkdownToPngConverter:
         *,
         width: int,
         height: int,
-        dpr: int,
+        dpr: float,
         max_full_page_height: int,
         tile_height: int,
         reuse_browser: bool,
@@ -1208,7 +1210,7 @@ class MarkdownToPngConverter:
         *,
         page,
         output_path: Path,
-        dpr: int,
+        dpr: float,
         full_height: int,
         tile_height: int,
     ) -> None:
@@ -1282,7 +1284,7 @@ class HtmlToPngConverter:
         self,
         width: int = 1280,
         height: int = 900,
-        dpr: int = 2,
+        dpr: float = 1.5,
     ):
         self.width = width
         self.height = height
@@ -1352,7 +1354,7 @@ class HtmlToPngConverter:
         png_path: Path,
         width: int,
         height: int,
-        dpr: int,
+        dpr: float,
         is_mobile: bool,
     ) -> None:
         context = browser.new_context(

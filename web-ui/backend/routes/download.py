@@ -17,17 +17,19 @@ from b2t.storage.base import resolve_artifact_kind
 from backend.artifacts import materialize_artifact, sibling_storage_key
 from backend.dependencies import get_history_db, get_storage_backend
 from backend.download_registry import download_registry, media_type_for_filename
+from backend.png_cache import get_png_cache
 from backend.schemas import ConvertRequest, ConvertResponse
+from backend.settings import get_app_config
 from backend.stock_cache import get_cached_stock_statuses
 
 router = APIRouter()
 
 PNG_PAD_VIEWPORT_WIDTH = 834
 PNG_PAD_VIEWPORT_HEIGHT = 1112
-PNG_DESKTOP_DPR = 2
+PNG_DESKTOP_DPR = 1.5
 PNG_MOBILE_VIEWPORT_WIDTH = 460
 PNG_MOBILE_VIEWPORT_HEIGHT = 932
-PNG_MOBILE_DPR = 2
+PNG_MOBILE_DPR = 1.5
 PNG_RENDER_PRESETS = {
     "desktop": {
         "width": PNG_PAD_VIEWPORT_WIDTH,
@@ -87,6 +89,18 @@ def _find_precomputed_conversion(
     render_mode: str | None = None,
 ) -> StoredArtifact | None:
     source_kind = resolve_artifact_kind(artifact.kind, artifact.filename)
+    if target_format == ConversionFormat.PNG:
+        mode = render_mode or (
+            "desktop"
+            if Path(artifact.filename).suffix.lower() in {".html", ".htm"}
+            else ""
+        )
+        return get_png_cache().find(
+            get_storage_backend(),
+            source_key=artifact.storage_key,
+            variant=source_variant or "",
+            render_mode=mode,
+        )
     filename = _precomputed_convert_filename(
         artifact.filename,
         source_kind,
@@ -295,7 +309,11 @@ def download_markdown(download_id: str) -> StreamingResponse:
     try:
         stream = stream_cm.__enter__()
     except FileNotFoundError:
-        raise HTTPException(status_code=410, detail="文件不存在，请重新生成") from None
+        if artifact.filename.lower().endswith(".png"):
+            get_png_cache().forget(artifact.storage_key)
+        raise HTTPException(
+            status_code=410, detail="文件不存在或缓存已清理，请重新导出"
+        ) from None
     except Exception as exc:
         raise HTTPException(
             status_code=500,
@@ -553,7 +571,7 @@ def convert_artifact(payload: ConvertRequest) -> ConvertResponse:
                         f"{render_source_path.stem}_{payload.render_mode}.png"
                     )
                 elif source_kind == "summary":
-                    convert_options["dpr"] = 2
+                    convert_options["dpr"] = PNG_DESKTOP_DPR
                     explicit_output_path = render_source_path.with_suffix(".png")
             if target_format == ConversionFormat.PNG and source_kind == "summary":
                 convert_options["enhance_stock_tables"] = (
@@ -635,10 +653,23 @@ def convert_artifact(payload: ConvertRequest) -> ConvertResponse:
         # Store the converted file
         converted_filename = output_path.name
         try:
-            converted_artifact = storage_backend.store_file(
-                output_path,
-                object_key=f"converted/{uuid4().hex}/{converted_filename}",
-            )
+            if target_format == ConversionFormat.PNG:
+                mode = payload.render_mode or (
+                    "desktop" if source_suffix in _html_suffixes else ""
+                )
+                converted_artifact = get_png_cache().store(
+                    storage_backend,
+                    output_path,
+                    output_dir=get_app_config().download.output_dir,
+                    source_key=artifact.storage_key,
+                    variant=payload.source_variant or "",
+                    render_mode=mode,
+                )
+            else:
+                converted_artifact = storage_backend.store_file(
+                    output_path,
+                    object_key=f"converted/{uuid4().hex}/{converted_filename}",
+                )
         except Exception as exc:
             raise HTTPException(
                 status_code=500,
