@@ -567,6 +567,7 @@
   }
 
   const onConvertClick = (item, targetFormat) => {
+    openPngMenuKey.value = ''
     if (item.kind === 'summary_no_table') {
       convertNoTableAndDownload(item, targetFormat)
       return
@@ -639,7 +640,7 @@
       download(data.download_url, data.filename)
     } catch (err) {
       conversionError.value =
-        err instanceof Error ? err.message : '生成 Fancy HTML 失败'
+        err instanceof Error ? err.message : '生成阅读报告失败'
     } finally {
       fancyGenerating.value.delete(key)
     }
@@ -700,6 +701,7 @@
     if (!canDeleteMarkdownArtifact(item) || isDeleting(item)) {
       return
     }
+    deleteError.value = ''
     deleteConfirmItem.value = item
   }
 
@@ -710,6 +712,7 @@
     if (isDeleting(deleteConfirmItem.value)) {
       return
     }
+    deleteError.value = ''
     deleteConfirmItem.value = null
   }
 
@@ -789,7 +792,6 @@
 <template>
   <div class="file-list">
     <InlineNotice v-if="conversionError">{{ conversionError }}</InlineNotice>
-    <InlineNotice v-if="deleteError">{{ deleteError }}</InlineNotice>
     <InlineNotice v-if="previewError">{{ previewError }}</InlineNotice>
 
     <div v-if="displayItems.length > 0" class="all-downloads">
@@ -830,12 +832,12 @@
                     :disabled="isDeleting(item)"
                     :title="
                       item.kind === 'summary_fancy_html'
-                        ? '删除该 Fancy HTML'
+                        ? '删除该阅读报告'
                         : '删除该总结'
                     "
                     :aria-label="
                       item.kind === 'summary_fancy_html'
-                        ? '删除该 Fancy HTML'
+                        ? '删除该阅读报告'
                         : '删除该总结'
                     "
                     @click="requestDeleteArtifact(item)"
@@ -912,7 +914,7 @@
       :open="allowDelete && Boolean(deleteConfirmItem)"
       :title="
         isFancyHtmlArtifact(deleteConfirmItem)
-          ? '确认删除 Fancy HTML'
+          ? '确认删除阅读报告'
           : '确认删除总结'
       "
       confirm-label="确认删除"
@@ -922,7 +924,7 @@
       @confirm="handleDeleteArtifact"
     >
       <p v-if="isFancyHtmlArtifact(deleteConfirmItem)">
-        此操作将删除该 Fancy HTML 文件，无法恢复：
+        此操作将删除该阅读报告，无法恢复：
       </p>
       <p v-else>此操作会一次性删除以下派生文件，并且无法恢复：</p>
       <ul class="delete-preview-list">
@@ -938,6 +940,7 @@
           {{ name }}
         </li>
       </ul>
+      <InlineNotice v-if="deleteError" compact>{{ deleteError }}</InlineNotice>
       <template #confirm-icon><Trash2 :size="16" /></template>
     </ConfirmDialog>
   </div>
@@ -960,12 +963,19 @@
   .all-downloads {
     margin-top: 12px;
     padding-top: 12px;
-    border-top: 1px dashed rgba(20, 184, 166, 0.35);
+    border-top: 1px dashed var(--brand-line);
+  }
+
+  /* No divider when the list is the first thing in its container. */
+  .file-list > .all-downloads:first-child {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: 0;
   }
 
   .all-downloads-title {
     margin: 0 0 10px;
-    color: #0f766e;
+    color: var(--brand-strong);
     font-size: 0.83rem;
     font-weight: 700;
   }
@@ -985,9 +995,9 @@
     justify-content: space-between;
     gap: 12px;
     align-items: flex-start;
-    border: 1px solid rgba(20, 184, 166, 0.22);
-    border-radius: 8px;
-    background: #fff;
+    border: 1px solid var(--brand-line);
+    border-radius: var(--radius-lg);
+    background: var(--panel-bg);
     padding: 12px;
   }
 
@@ -1000,8 +1010,8 @@
     padding: 10px 12px;
     border-left: 3px solid var(--brand);
     border-radius: 0 6px 6px 0;
-    background: #f1f7f6;
-    color: #64748b;
+    background: var(--brand-soft);
+    color: var(--text-muted);
     font-size: 0.75rem;
   }
 
@@ -1026,34 +1036,34 @@
     overflow: hidden;
     padding: 0 7px;
     border: 1px solid transparent;
-    border-radius: 5px;
+    border-radius: var(--radius-md);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .summary-group-identity .summary-context-preset {
-    border-color: #f4d58b;
-    background: #fff9e9;
-    color: #8a5814;
+    border-color: var(--warning-line);
+    background: var(--warning-soft);
+    color: var(--warning-strong);
   }
 
   .summary-group-identity .summary-context-profile {
-    border-color: #a9dfbf;
-    background: #effaf4;
-    color: #247044;
+    border-color: var(--success-line);
+    background: var(--success-soft);
+    color: var(--success-strong);
   }
 
   .summary-group-identity i {
     width: 3px;
     height: 3px;
     border-radius: 50%;
-    background: #a7b3bf;
+    background: var(--text-faint);
   }
 
   .all-download-item-derived {
     margin-left: 22px;
     border-style: dashed;
-    background: rgba(248, 250, 252, 0.78);
+    background: var(--surface-subtle);
     position: relative;
   }
 
@@ -1064,8 +1074,8 @@
     top: 16px;
     bottom: 16px;
     width: 2px;
-    border-radius: 999px;
-    background: rgba(148, 163, 184, 0.65);
+    border-radius: var(--radius-pill);
+    background: var(--line-strong);
   }
 
   .all-download-item-derived::after {
@@ -1075,8 +1085,8 @@
     top: 26px;
     width: 10px;
     height: 2px;
-    border-radius: 999px;
-    background: rgba(148, 163, 184, 0.65);
+    border-radius: var(--radius-pill);
+    background: var(--line-strong);
   }
 
   .all-download-main {
@@ -1103,7 +1113,7 @@
     flex-wrap: wrap;
     align-items: center;
     gap: 5px 7px;
-    color: #7b8a9a;
+    color: var(--text-muted);
     font-size: 0.76rem;
   }
 
@@ -1118,7 +1128,7 @@
     flex: 1;
     min-width: 0;
     margin: 0;
-    color: #0f172a;
+    color: var(--text-main);
     font-size: 0.99rem;
     font-weight: 700;
     line-height: 1.3;
@@ -1128,9 +1138,9 @@
   .all-download-delete-icon {
     border: none;
     background: transparent;
-    color: #dc2626;
+    color: var(--danger);
     padding: 2px;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     min-width: 24px;
     min-height: 24px;
     display: inline-flex;
@@ -1144,8 +1154,8 @@
   }
 
   .all-download-delete-icon:hover:not(:disabled) {
-    background: rgba(254, 226, 226, 0.9);
-    color: #b91c1c;
+    background: var(--danger-soft);
+    color: var(--danger-strong);
   }
 
   .all-download-delete-icon:disabled {
@@ -1154,7 +1164,7 @@
   }
 
   .all-download-format {
-    color: #7b8a9a;
+    color: var(--text-muted);
     font-size: 0.7rem;
     font-weight: 700;
     text-transform: uppercase;
@@ -1174,7 +1184,7 @@
     max-width: 100%;
     padding: 4px 9px;
     border: 1px solid;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     font-size: 0.74rem;
     line-height: 1.5;
     overflow-wrap: anywhere;
@@ -1188,14 +1198,14 @@
     font-weight: 700;
   }
   .report-tag-mode {
-    background: #edf7ff;
-    border-color: #c8e2f5;
-    color: #23658b;
+    background: var(--info-soft);
+    border-color: var(--info-line);
+    color: var(--info-strong);
   }
   .report-tag-model {
-    background: #effaf4;
-    border-color: #a9dfbf;
-    color: #247044;
+    background: var(--success-soft);
+    border-color: var(--success-line);
+    color: var(--success-strong);
   }
 
   .all-download-tags strong {
@@ -1204,20 +1214,20 @@
     min-height: 21px;
     padding: 0 6px;
     border: 1px solid transparent;
-    border-radius: 5px;
+    border-radius: var(--radius-md);
     font-weight: 700;
   }
 
   .all-download-tags .summary-context-preset {
-    border-color: #f4d58b;
-    background: #fff9e9;
-    color: #8a5814;
+    border-color: var(--warning-line);
+    background: var(--warning-soft);
+    color: var(--warning-strong);
   }
 
   .all-download-tags .summary-context-profile {
-    border-color: #a9dfbf;
-    background: #effaf4;
-    color: #247044;
+    border-color: var(--success-line);
+    background: var(--success-soft);
+    color: var(--success-strong);
   }
 
   .all-download-tags i {
@@ -1225,7 +1235,7 @@
     height: 3px;
     margin: 0 2px;
     border-radius: 50%;
-    background: #b1bdc9;
+    background: var(--text-faint);
   }
 
   /* ─── Responsive ─────────────────────────────────────────────── */

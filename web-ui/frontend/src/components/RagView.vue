@@ -4,7 +4,7 @@
   import { usePublicCredentials } from '../composables/usePublicCredentials'
   import { useSummaryConfig } from '../composables/useSummaryConfig'
   import { renderMarkdown } from '../utils/markdown'
-  import { Sparkles } from 'lucide-vue-next'
+  import { LoaderCircle, Sparkles } from 'lucide-vue-next'
   import RagAnswerPanel from './rag/RagAnswerPanel.vue'
   import RagIndexPanel from './rag/RagIndexPanel.vue'
   import RagSearchPanel from './rag/RagSearchPanel.vue'
@@ -242,6 +242,21 @@
       <span>AI 会从你的历史转录视频中找到相关内容片段，并给出综合回答。</span>
     </div>
 
+    <article
+      v-if="isQuerying"
+      class="panel query-progress"
+      role="status"
+      aria-live="polite"
+    >
+      <p>
+        <LoaderCircle :size="15" class="spin" aria-hidden="true" />
+        <span>{{ queryStageMessage || '正在检索相关内容...' }}</span>
+      </p>
+      <div class="query-skeleton" aria-hidden="true">
+        <span></span><span></span><span></span>
+      </div>
+    </article>
+
     <RagAnswerPanel
       v-if="answer"
       :answer-html="renderedAnswer"
@@ -276,6 +291,49 @@
     margin: 0 auto;
   }
 
+  .query-progress {
+    display: grid;
+    gap: 16px;
+    padding: 22px 26px;
+    border-left: 3px solid var(--brand);
+  }
+
+  .query-progress p {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    color: var(--brand-strong);
+    font-size: 0.88rem;
+    font-weight: 600;
+  }
+
+  .query-skeleton {
+    display: grid;
+    gap: 10px;
+  }
+
+  .query-skeleton span {
+    height: 11px;
+    border-radius: var(--radius-md);
+    background: var(--line);
+    animation: query-pulse 1.2s ease-in-out infinite alternate;
+  }
+
+  .query-skeleton span:nth-child(2) {
+    width: 86%;
+  }
+
+  .query-skeleton span:nth-child(3) {
+    width: 62%;
+  }
+
+  @keyframes query-pulse {
+    to {
+      opacity: 0.45;
+    }
+  }
+
   .empty-state {
     display: flex;
     flex-direction: column;
@@ -283,9 +341,9 @@
     gap: 10px;
     min-height: 240px;
     padding: 44px 24px;
-    border: 1px dashed #cbd5df;
-    border-radius: 8px;
-    background: #f8fafb;
+    border: 1px dashed var(--line);
+    border-radius: var(--radius-lg);
+    background: var(--surface-subtle);
     color: var(--text-muted);
     text-align: center;
   }
@@ -296,7 +354,7 @@
     justify-content: center;
     width: 56px;
     height: 56px;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: var(--brand-soft);
     color: var(--brand);
   }

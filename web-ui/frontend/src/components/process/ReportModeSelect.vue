@@ -138,7 +138,7 @@
   }
   .mode-trigger svg {
     flex-shrink: 0;
-    color: #64748b;
+    color: var(--text-muted);
     transition: transform 0.18s ease;
   }
   .open .mode-trigger svg {
@@ -150,9 +150,9 @@
     top: calc(100% + 8px);
     width: 100%;
     padding: 6px;
-    border: 1px solid #cbd5e1;
-    border-radius: 8px;
-    background: #fff;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-lg);
+    background: var(--panel-bg);
     box-shadow: 0 18px 40px rgba(15, 23, 42, 0.2);
   }
   .mode-option {
@@ -163,9 +163,9 @@
     width: 100%;
     padding: 10px;
     border: 0;
-    border-radius: 5px;
+    border-radius: var(--radius-md);
     background: transparent;
-    color: #334155;
+    color: var(--text-soft);
     font: inherit;
     text-align: left;
     cursor: pointer;
@@ -183,7 +183,7 @@
   .mode-option:hover,
   .mode-option:focus-visible {
     outline: 0;
-    background: #f1f5f9;
+    background: var(--surface-muted);
   }
   .mode-option.active {
     background: var(--brand-soft);

@@ -217,7 +217,7 @@
     position: absolute;
     top: 50%;
     right: 14px;
-    color: #64748b;
+    color: var(--text-muted);
     pointer-events: none;
     transform: translateY(-50%);
   }
@@ -261,9 +261,9 @@
     grid-template-columns: minmax(160px, 0.8fr) minmax(240px, 1.2fr);
     width: min(620px, calc(100vw - 48px));
     overflow: hidden;
-    border: 1px solid #cbd5e1;
-    border-radius: 8px;
-    background: #fff;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-lg);
+    background: var(--panel-bg);
     box-shadow: 0 18px 40px rgba(15, 23, 42, 0.2);
   }
 
@@ -271,8 +271,8 @@
     max-height: 320px;
     overflow-y: auto;
     padding: 7px;
-    border-right: 1px solid #e2e8f0;
-    background: #f8fafc;
+    border-right: 1px solid var(--line);
+    background: var(--surface-subtle);
   }
 
   .summary-preset-option {
@@ -283,9 +283,9 @@
     width: 100%;
     padding: 9px 10px;
     border: 1px solid transparent;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: transparent;
-    color: #334155;
+    color: var(--text-soft);
     font: inherit;
     font-size: 0.82rem;
     cursor: pointer;
@@ -294,8 +294,8 @@
 
   .summary-preset-option:hover,
   .summary-preset-option.previewing {
-    background: #fff;
-    border-color: #cbd5e1;
+    background: var(--panel-bg);
+    border-color: var(--line-strong);
   }
 
   .summary-preset-option.active {
@@ -305,7 +305,7 @@
 
   .current-tag {
     padding: 2px 5px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background: var(--brand-soft);
     font-size: 0.68rem;
   }
@@ -317,7 +317,7 @@
 
   .summary-preset-preview p {
     margin: 0 0 5px;
-    color: #64748b;
+    color: var(--text-muted);
     font-size: 0.68rem;
     font-weight: 800;
   }
@@ -330,7 +330,7 @@
   .summary-preset-preview div {
     max-height: 250px;
     overflow-y: auto;
-    color: #475569;
+    color: var(--text-soft);
     font-size: 0.78rem;
     line-height: 1.55;
     white-space: pre-wrap;
@@ -338,7 +338,7 @@
 
   .compact .preset-select {
     min-height: 38px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     padding: 0 12px;
     font-size: 0.84rem;
   }
@@ -353,7 +353,7 @@
     .summary-preset-option-list {
       max-height: 190px;
       border-right: none;
-      border-bottom: 1px solid #e2e8f0;
+      border-bottom: 1px solid var(--line);
     }
 
     .summary-preset-preview {

@@ -76,8 +76,8 @@
   input {
     height: 34px;
     border: 1px solid var(--line);
-    border-radius: 7px;
-    background: #fff;
+    border-radius: var(--radius-lg);
+    background: var(--panel-bg);
     color: var(--text-soft);
   }
 

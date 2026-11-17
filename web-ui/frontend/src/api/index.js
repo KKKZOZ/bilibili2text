@@ -36,7 +36,7 @@ export const summaryApi = {
     requestJson(
       '/api/summary/fancy-html',
       { method: 'POST', json: payload },
-      '生成 Fancy HTML 失败'
+      '生成阅读报告失败'
     )
 }
 

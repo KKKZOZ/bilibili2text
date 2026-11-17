@@ -1,5 +1,5 @@
 <script setup>
-  import { onBeforeUnmount, watch } from 'vue'
+  import { nextTick, onBeforeUnmount, ref, useId, watch } from 'vue'
   import { LoaderCircle } from 'lucide-vue-next'
 
   const props = defineProps({
@@ -24,37 +24,101 @@
   })
 
   const emit = defineEmits(['cancel', 'confirm'])
+  const titleId = useId()
+  const dialog = ref(null)
+  const cancelButton = ref(null)
+  let previouslyFocused = null
+  let previousBodyOverflow = ''
+  let active = false
+
+  const focusableElements = () =>
+    dialog.value
+      ? [
+          ...dialog.value.querySelectorAll(
+            'button:not(:disabled), a[href], input:not(:disabled), [tabindex]:not([tabindex="-1"])'
+          )
+        ]
+      : []
 
   const onKeydown = (event) => {
-    if (event.key === 'Escape' && props.open && !props.busy) emit('cancel')
+    if (!props.open) return
+    if (event.key === 'Escape') {
+      if (!props.busy) emit('cancel')
+      return
+    }
+    if (event.key !== 'Tab') return
+    const items = focusableElements()
+    if (items.length === 0) {
+      event.preventDefault()
+      dialog.value?.focus()
+      return
+    }
+    const first = items[0]
+    const last = items[items.length - 1]
+    const current = document.activeElement
+    if (!dialog.value.contains(current)) {
+      event.preventDefault()
+      first.focus()
+    } else if (event.shiftKey && current === first) {
+      event.preventDefault()
+      last.focus()
+    } else if (!event.shiftKey && current === last) {
+      event.preventDefault()
+      first.focus()
+    }
+  }
+
+  const activate = () => {
+    if (active) return
+    active = true
+    previouslyFocused = document.activeElement
+    previousBodyOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    document.addEventListener('keydown', onKeydown)
+    // Focus the safe action first so Enter never confirms by accident.
+    void nextTick(() => (cancelButton.value || dialog.value)?.focus())
+  }
+
+  const deactivate = () => {
+    if (!active) return
+    active = false
+    document.removeEventListener('keydown', onKeydown)
+    document.body.style.overflow = previousBodyOverflow
+    if (
+      previouslyFocused instanceof HTMLElement &&
+      previouslyFocused.isConnected
+    ) {
+      previouslyFocused.focus()
+    }
+    previouslyFocused = null
   }
 
   watch(
     () => props.open,
-    (open) => {
-      if (open) document.addEventListener('keydown', onKeydown)
-      else document.removeEventListener('keydown', onKeydown)
-    },
+    (open) => (open ? activate() : deactivate()),
     { immediate: true }
   )
 
-  onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
+  onBeforeUnmount(deactivate)
 </script>
 
 <template>
   <Teleport to="body">
     <div v-if="open" class="modal-overlay" @click="!busy && emit('cancel')">
       <div
+        ref="dialog"
         class="modal-content"
         role="dialog"
         aria-modal="true"
-        :aria-labelledby="`confirm-dialog-${title}`"
+        :aria-labelledby="titleId"
+        tabindex="-1"
         @click.stop
       >
-        <h3 :id="`confirm-dialog-${title}`">{{ title }}</h3>
+        <h3 :id="titleId">{{ title }}</h3>
         <div class="confirm-dialog-body"><slot /></div>
         <div class="modal-actions">
           <button
+            ref="cancelButton"
             class="cancel-button"
             type="button"
             :disabled="busy"
@@ -79,6 +143,10 @@
 </template>
 
 <style scoped>
+  .modal-content:focus {
+    outline: none;
+  }
+
   .confirm-dialog-body {
     color: var(--text-soft);
     font-size: 0.92rem;
@@ -91,5 +159,9 @@
 
   .confirm-dialog-body :deep(ul) {
     margin: 0 0 20px;
+  }
+
+  .confirm-dialog-body :deep(.inline-notice) {
+    margin: -8px 0 16px;
   }
 </style>

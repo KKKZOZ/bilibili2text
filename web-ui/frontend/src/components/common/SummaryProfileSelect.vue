@@ -154,7 +154,7 @@
 
   .summary-profile-trigger svg {
     flex: 0 0 auto;
-    color: #64748b;
+    color: var(--text-muted);
     transition: transform 0.18s ease;
   }
 
@@ -171,9 +171,9 @@
     max-height: 260px;
     overflow-y: auto;
     padding: 6px;
-    border: 1px solid #cbd5e1;
-    border-radius: 8px;
-    background: #fff;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-lg);
+    background: var(--panel-bg);
     box-shadow: 0 18px 40px rgba(15, 23, 42, 0.2);
   }
 
@@ -186,9 +186,9 @@
     min-height: 38px;
     padding: 8px 10px;
     border: 0;
-    border-radius: 5px;
+    border-radius: var(--radius-md);
     background: transparent;
-    color: #334155;
+    color: var(--text-soft);
     font: inherit;
     font-size: 0.84rem;
     text-align: left;
@@ -198,7 +198,7 @@
   .summary-profile-option:hover,
   .summary-profile-option:focus-visible {
     outline: 0;
-    background: #f1f5f9;
+    background: var(--surface-muted);
   }
 
   .summary-profile-option.active {
@@ -223,7 +223,7 @@
 
   .compact .preset-select {
     min-height: 38px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     padding-left: 12px;
     font-size: 0.84rem;
   }

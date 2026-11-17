@@ -82,7 +82,7 @@
     gap: 5px;
   }
   .history-report-head > p:first-child {
-    color: #0284c7;
+    color: var(--info-strong);
     font-size: 0.72rem;
     font-weight: 800;
   }

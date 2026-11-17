@@ -54,9 +54,9 @@
     width: 46px;
     height: 26px;
     padding: 2px;
-    border: 1px solid #cbd5e1;
-    border-radius: 999px;
-    background: #e2e8f0;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-pill);
+    background: var(--line-strong);
     transition:
       background-color 0.25s ease,
       border-color 0.25s ease;
@@ -82,7 +82,7 @@
   }
 
   input:focus-visible + .toggle-track {
-    box-shadow: 0 0 0 4px rgba(20, 184, 166, 0.2);
+    box-shadow: 0 0 0 4px var(--brand-line);
   }
 
   input:disabled ~ span {

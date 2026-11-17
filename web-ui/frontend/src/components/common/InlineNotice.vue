@@ -20,7 +20,11 @@
 </script>
 
 <template>
-  <p class="inline-notice" :class="[`inline-notice-${kind}`, { compact }]">
+  <p
+    class="inline-notice"
+    :class="[`inline-notice-${kind}`, { compact }]"
+    :role="kind === 'error' ? 'alert' : 'status'"
+  >
     <component :is="icon" :size="compact ? 14 : 16" aria-hidden="true" />
     <span><slot /></span>
     <slot name="action"></slot>
@@ -47,11 +51,11 @@
   }
 
   .inline-notice-warning {
-    color: #92400e;
+    color: var(--warning-strong);
   }
 
   .inline-notice-success {
-    color: #047857;
+    color: var(--success);
   }
 
   .inline-notice-info {

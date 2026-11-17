@@ -1,5 +1,5 @@
 <script setup>
-  import { Brain, LoaderCircle, Search, Users } from 'lucide-vue-next'
+  import { LoaderCircle, Search, Users } from 'lucide-vue-next'
   import InlineNotice from '../common/InlineNotice.vue'
   import MultiSelectPopover from '../common/MultiSelectPopover.vue'
   import SummaryProfileSelect from '../common/SummaryProfileSelect.vue'
@@ -22,6 +22,13 @@
     'submit'
   ])
 
+  const isApplePlatform =
+    typeof navigator !== 'undefined' &&
+    /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || '')
+  const submitShortcut = isApplePlatform
+    ? '⌘ + Enter 提交'
+    : 'Ctrl + Enter 提交'
+
   const onKeydown = (event) => {
     if (event.key === 'Enter' && (event.ctrlKey || event.metaKey))
       emit('submit')
@@ -31,10 +38,7 @@
 <template>
   <article class="panel search-panel">
     <header>
-      <div class="header-badge">
-        <Brain :size="13" /><span>知识库问答</span>
-      </div>
-      <h1>跨视频内容检索</h1>
+      <h2>跨视频内容检索</h2>
       <p>
         基于历史转录内容，用自然语言提问，AI
         从所有视频中检索相关片段并生成回答。
@@ -44,13 +48,14 @@
       <div class="textarea-wrap">
         <textarea
           :value="question"
-          placeholder="关于中国民航信息网络，你知道多少"
+          aria-label="向知识库提问"
+          placeholder="例如：关于中国民航信息网络，你知道多少？"
           rows="3"
           :disabled="querying"
           @input="emit('update:question', $event.target.value)"
           @keydown="onKeydown"
         ></textarea>
-        <span>Ctrl + Enter 提交</span>
+        <span>{{ submitShortcut }}</span>
       </div>
       <div class="filters-row">
         <MultiSelectPopover
@@ -58,10 +63,10 @@
           :options="authorOptions"
           :trigger-label="
             selectedAuthors.length
-              ? `已选 ${selectedAuthors.length} 位 UP主`
-              : '全部 UP主'
+              ? `已选 ${selectedAuthors.length} 位 UP 主`
+              : '全部 UP 主'
           "
-          empty-text="暂无已索引的 UP主"
+          empty-text="暂无已索引的 UP 主"
           compact
           @update:model-value="emit('update:selectedAuthors', $event)"
         >
@@ -85,7 +90,7 @@
       >
         <LoaderCircle v-if="querying" :size="16" class="spin" />
         <Search v-else :size="16" />
-        {{ querying ? stageMessage || '检索中...' : '提交问题' }}
+        {{ querying ? '检索中...' : '提交问题' }}
       </button>
     </div>
     <InlineNotice v-if="error">{{ error }}</InlineNotice>
@@ -101,20 +106,7 @@
     margin-bottom: 18px;
   }
 
-  .header-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    margin-bottom: 10px;
-    padding: 4px 10px;
-    border-radius: 99px;
-    background: var(--brand-soft);
-    color: var(--brand-strong);
-    font-size: 0.75rem;
-    font-weight: 700;
-  }
-
-  h1 {
+  h2 {
     margin: 0 0 6px;
     font-size: 1.15rem;
   }
@@ -135,13 +127,13 @@
   .textarea-wrap {
     position: relative;
     border: 1.5px solid var(--line);
-    border-radius: 7px;
-    background: #fff;
+    border-radius: var(--radius-lg);
+    background: var(--panel-bg);
   }
 
   .textarea-wrap:focus-within {
     border-color: var(--brand);
-    box-shadow: 0 0 0 3px rgba(15, 143, 131, 0.1);
+    box-shadow: 0 0 0 3px var(--focus-ring);
   }
 
   textarea {
@@ -150,7 +142,7 @@
     resize: none;
     padding: 14px 16px 32px;
     border: none;
-    border-radius: 7px;
+    border-radius: var(--radius-lg);
     outline: none;
     background: transparent;
     color: var(--text-main);
@@ -163,7 +155,7 @@
     position: absolute;
     right: 14px;
     bottom: 10px;
-    color: #94a3b8;
+    color: var(--text-faint);
     font-size: 0.72rem;
   }
 

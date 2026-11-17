@@ -85,8 +85,8 @@
     grid-template-rows: subgrid;
     padding: 22px;
     border: 1px solid var(--line);
-    border-radius: 8px;
-    background: #fff;
+    border-radius: var(--radius-lg);
+    background: var(--panel-bg);
     box-shadow: var(--panel-shadow);
   }
 
@@ -97,16 +97,16 @@
   h3 span {
     margin-left: 5px;
     padding: 2px 6px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-size: 0.68rem;
   }
   h3 .required {
-    background: #fef2f2;
-    color: #b91c1c;
+    background: var(--danger-soft);
+    color: var(--danger-strong);
   }
   h3 .optional {
-    background: #f1f5f9;
-    color: #64748b;
+    background: var(--surface-muted);
+    color: var(--text-muted);
   }
   .description {
     color: var(--text-muted);
@@ -132,15 +132,15 @@
     align-items: center;
     gap: 5px;
     padding: 4px 8px;
-    border-radius: 5px;
+    border-radius: var(--radius-md);
   }
   .status-row .ok {
-    background: #ecfdf5;
-    color: #047857;
+    background: var(--success-soft);
+    color: var(--success);
   }
   .status-row .missing {
-    background: #fff7ed;
-    color: #c2410c;
+    background: var(--warning-soft);
+    color: var(--warning-strong);
   }
   .status-note {
     margin: 0 0 12px;
@@ -161,16 +161,16 @@
     min-height: 42px;
     padding: 0 12px;
     border: 1px solid var(--line);
-    border-radius: 8px;
-    background: #fff;
+    border-radius: var(--radius-lg);
+    background: var(--panel-bg);
   }
   .field-row:focus-within {
     border-color: var(--brand);
-    box-shadow: 0 0 0 3px rgba(15, 143, 131, 0.1);
+    box-shadow: 0 0 0 3px var(--focus-ring);
   }
   .field-row svg {
     flex: 0 0 auto;
-    color: #64748b;
+    color: var(--text-muted);
   }
   input {
     width: 100%;
@@ -193,8 +193,8 @@
     min-height: 36px;
     padding: 0 13px;
     border: 1px solid var(--line);
-    border-radius: 7px;
-    background: #fff;
+    border-radius: var(--radius-lg);
+    background: var(--panel-bg);
     color: var(--text-soft);
     font-weight: 700;
     cursor: pointer;
@@ -202,13 +202,13 @@
   .actions .submit {
     min-height: 36px;
     margin: 0;
-    background: var(--brand);
-    color: #fff;
+    background: var(--brand-solid);
+    color: var(--on-solid);
   }
   .actions .test-passed {
-    border-color: #86efac;
-    background: #f0fdf4;
-    color: #166534;
+    border-color: var(--success-line);
+    background: var(--success-soft);
+    color: var(--success-strong);
   }
   .actions button:disabled {
     cursor: not-allowed;

@@ -2,7 +2,7 @@
   import { ref } from 'vue'
   import { FileAudio2, FileVideo2, Link2, Upload } from 'lucide-vue-next'
 
-  defineProps({
+  const props = defineProps({
     inputMode: { type: String, required: true },
     url: { type: String, required: true },
     allowUpload: Boolean,
@@ -12,11 +12,33 @@
   })
 
   const emit = defineEmits(['update:inputMode', 'update:url', 'fileChange'])
-  const selectedFilename = ref('')
+  const selectedFile = ref(null)
+  const isDragging = ref(false)
 
-  const onFileChange = (event) => {
-    selectedFilename.value = event.target?.files?.[0]?.name || ''
-    emit('fileChange', event)
+  const EXAMPLE_URLS = [
+    'https://www.bilibili.com/video/BV1R9i4BoE7H',
+    'https://www.xiaoyuzhoufm.com/episode/6a0a7365e1eb34a93997ffa2'
+  ]
+
+  const formatFileSize = (bytes) => {
+    const size = Number(bytes) || 0
+    if (size >= 1024 ** 3) return `${(size / 1024 ** 3).toFixed(2)} GB`
+    if (size >= 1024 ** 2) return `${(size / 1024 ** 2).toFixed(1)} MB`
+    return `${Math.max(1, Math.round(size / 1024))} KB`
+  }
+
+  const selectFile = (file) => {
+    selectedFile.value = file || null
+    emit('fileChange', selectedFile.value)
+  }
+
+  const onFileChange = (event) => selectFile(event.target?.files?.[0])
+
+  const onDrop = (event) => {
+    isDragging.value = false
+    if (props.disabled) return
+    const file = event.dataTransfer?.files?.[0]
+    if (file) selectFile(file)
   }
 </script>
 
@@ -60,7 +82,14 @@
           @input="emit('update:url', $event.target.value)"
         />
       </div>
-      <div v-else class="upload-row">
+      <div
+        v-else
+        class="upload-row"
+        :class="{ dragging: isDragging }"
+        @dragover.prevent="isDragging = !disabled"
+        @dragleave.prevent="isDragging = false"
+        @drop.prevent="onDrop"
+      >
         <input
           id="audio-file"
           class="file-input"
@@ -76,10 +105,18 @@
             选择文件
           </span>
           <span class="file-picker-name">
-            {{
-              selectedFilename ||
-              (isOpenPublic ? '选择音频或视频文件' : '选择包含 BV 号的音频文件')
-            }}
+            <template v-if="selectedFile">
+              {{ selectedFile.name }}
+              <small>{{ formatFileSize(selectedFile.size) }}</small>
+            </template>
+            <template v-else-if="isDragging">松开鼠标以选择该文件</template>
+            <template v-else>
+              {{
+                isOpenPublic
+                  ? '选择或拖入音频 / 视频文件'
+                  : '选择或拖入包含 BV 号的音频文件'
+              }}
+            </template>
           </span>
         </label>
       </div>
@@ -87,21 +124,17 @@
 
     <template v-if="inputMode !== 'upload'">
       <div class="input-example">
-        <span>示例：</span>
-        <a
-          href="https://www.bilibili.com/video/BV1R9i4BoE7H"
-          target="_blank"
-          rel="noopener noreferrer"
+        <span>示例（点击填入）：</span>
+        <button
+          v-for="example in EXAMPLE_URLS"
+          :key="example"
+          type="button"
+          class="example-link"
+          :disabled="disabled"
+          @click="emit('update:url', example)"
         >
-          https://www.bilibili.com/video/BV1R9i4BoE7H
-        </a>
-        <a
-          href="https://www.xiaoyuzhoufm.com/episode/6a0a7365e1eb34a93997ffa2"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          https://www.xiaoyuzhoufm.com/episode/6a0a7365e1eb34a93997ffa2
-        </a>
+          {{ example }}
+        </button>
         <span>B 站视频默认优先读取原生字幕，无可用字幕时使用音频转录</span>
       </div>
     </template>
@@ -139,8 +172,8 @@
     gap: 4px;
     padding: 4px;
     border: 1px solid var(--line);
-    border-radius: 7px;
-    background: #f1f4f7;
+    border-radius: var(--radius-lg);
+    background: var(--surface-muted);
   }
 
   .input-mode-button {
@@ -150,16 +183,16 @@
     min-height: 38px;
     padding: 0 13px;
     border: none;
-    border-radius: 5px;
+    border-radius: var(--radius-md);
     background: transparent;
-    color: #475569;
+    color: var(--text-soft);
     font-size: 0.9rem;
     font-weight: 700;
     cursor: pointer;
   }
 
   .input-mode-button.active {
-    background: #fff;
+    background: var(--panel-bg);
     color: var(--brand-strong);
     box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
   }
@@ -177,18 +210,18 @@
     min-height: 48px;
     padding: 0 16px;
     border: 1px solid var(--line);
-    border-radius: 7px;
-    background: #fff;
+    border-radius: var(--radius-lg);
+    background: var(--panel-bg);
   }
 
   .input-row:focus-within {
     border-color: var(--brand);
-    box-shadow: 0 0 0 3px rgba(15, 143, 131, 0.12);
+    box-shadow: 0 0 0 3px var(--focus-ring);
   }
 
   .input-row svg {
     flex: 0 0 auto;
-    color: #64748b;
+    color: var(--text-muted);
   }
 
   .input-row input,
@@ -238,12 +271,24 @@
     gap: 6px;
     min-height: 34px;
     padding: 0 11px;
-    border: 1px solid #cbd5e1;
-    border-radius: 6px;
-    background: #f8fafc;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-md);
+    background: var(--surface-subtle);
     color: var(--text-soft);
     font-size: 0.84rem;
     font-weight: 700;
+  }
+
+  .upload-row.dragging {
+    border-style: dashed;
+    border-color: var(--brand);
+    background: var(--brand-soft);
+  }
+
+  .file-picker-name small {
+    margin-left: 6px;
+    color: var(--text-faint);
+    font-size: 0.78rem;
   }
 
   .file-picker-name {
@@ -257,7 +302,7 @@
 
   .file-input:focus-visible + .file-picker .file-picker-action {
     border-color: var(--brand);
-    box-shadow: 0 0 0 3px rgba(15, 143, 131, 0.12);
+    box-shadow: 0 0 0 3px var(--focus-ring);
   }
 
   .file-picker.disabled {
@@ -275,10 +320,34 @@
     line-height: 1.5;
   }
 
-  .input-example a {
+  .example-link {
+    align-self: flex-start;
+    padding: 0;
+    border: 0;
+    background: transparent;
     color: var(--brand-strong);
-    text-decoration: none;
+    font-size: inherit;
+    line-height: inherit;
+    text-align: left;
     word-break: break-all;
+    cursor: pointer;
+  }
+
+  .example-link:hover:not(:disabled),
+  .example-link:focus-visible {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .example-link:focus-visible {
+    border-radius: 3px;
+    outline: 2px solid var(--brand);
+    outline-offset: 2px;
+  }
+
+  .example-link:disabled {
+    cursor: not-allowed;
+    opacity: 0.65;
   }
 
   @media (max-width: 640px) {

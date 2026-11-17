@@ -1,6 +1,6 @@
 <script setup>
   import { computed, onBeforeUnmount, ref, watch } from 'vue'
-  import { CheckCircle2, AlertCircle, LoaderCircle } from 'lucide-vue-next'
+  import { AlertCircle, Ban, CheckCircle2, LoaderCircle } from 'lucide-vue-next'
 
   const STAGES = [
     { key: 'queued', label: '任务创建' },
@@ -28,6 +28,7 @@
   )
   const isDone = computed(() => props.job.status === 'succeeded')
   const hasFailed = computed(() => props.job.status === 'failed')
+  const isCancelled = computed(() => props.job.status === 'cancelled')
   const progressText = computed(() => `${props.job.progress}%`)
   const activeStageElapsedTick = ref(0)
   let activeStageTimer = null
@@ -38,6 +39,9 @@
     }
     if (props.job.status === 'failed') {
       return '失败'
+    }
+    if (props.job.status === 'cancelled') {
+      return '已取消'
     }
     if (props.job.status === 'running' || props.job.status === 'queued') {
       return '进行中'
@@ -143,6 +147,9 @@
     if (hasFailed.value && index === current) {
       return 'error'
     }
+    if (isCancelled.value && index === current) {
+      return 'cancelled'
+    }
     if (index < current) {
       return 'done'
     }
@@ -205,7 +212,15 @@
     </header>
 
     <div class="progress-wrap">
-      <div class="progress-bar">
+      <div
+        class="progress-bar"
+        :class="{ halted: hasFailed || isCancelled }"
+        role="progressbar"
+        aria-label="任务进度"
+        aria-valuemin="0"
+        aria-valuemax="100"
+        :aria-valuenow="Number(job.progress) || 0"
+      >
         <span :style="{ width: progressText }"></span>
       </div>
       <strong>{{ progressText }}</strong>
@@ -233,6 +248,10 @@
           v-else-if="stageStatus(stage.key) === 'error'"
           :size="14"
         />
+        <template v-else-if="stageStatus(stage.key) === 'cancelled'">
+          <Ban :size="14" aria-hidden="true" />
+          <span class="sr-only">已取消</span>
+        </template>
         <span v-else-if="stageStatus(stage.key) === 'skipped'" class="meta-tag">
           跳过
         </span>
@@ -277,32 +296,38 @@
     align-items: center;
     min-height: 25px;
     padding: 0 10px;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     font-size: 0.78rem;
     font-weight: 700;
     letter-spacing: 0.02em;
-    border: 1px solid #cbd5e1;
-    color: #334155;
-    background: #f8fafc;
+    border: 1px solid var(--line-strong);
+    color: var(--text-soft);
+    background: var(--surface-subtle);
   }
 
   .progress-state.state-running,
   .progress-state.state-queued {
-    border-color: #67e8f9;
-    color: #155e75;
-    background: #ecfeff;
+    border-color: var(--info-line);
+    color: var(--info-strong);
+    background: var(--info-soft);
   }
 
   .progress-state.state-succeeded {
-    border-color: #86efac;
-    color: #166534;
-    background: #f0fdf4;
+    border-color: var(--success-line);
+    color: var(--success-strong);
+    background: var(--success-soft);
+  }
+
+  .progress-state.state-cancelled {
+    border-color: var(--warning-line);
+    color: var(--warning-strong);
+    background: var(--warning-soft);
   }
 
   .progress-state.state-failed {
-    border-color: #fecaca;
-    color: #991b1b;
-    background: #fef2f2;
+    border-color: var(--danger-line);
+    color: var(--danger-strong);
+    background: var(--danger-soft);
   }
 
   /* ─── Progress bar ───────────────────────────────────────────── */
@@ -316,8 +341,8 @@
   .progress-bar {
     height: 7px;
     width: 100%;
-    border-radius: 999px;
-    background: #dbe4ef;
+    border-radius: var(--radius-pill);
+    background: var(--line);
     overflow: hidden;
   }
 
@@ -325,13 +350,17 @@
     display: block;
     height: 100%;
     width: 0;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background: var(--brand);
     transition: width 0.35s ease;
   }
 
+  .progress-bar.halted span {
+    background: var(--text-faint);
+  }
+
   .progress-wrap strong {
-    color: #0f766e;
+    color: var(--brand-strong);
     font-size: 0.92rem;
   }
 
@@ -349,7 +378,7 @@
     min-height: 44px;
     padding: 9px 4px;
     border: 0;
-    border-bottom: 1px solid #edf0f3;
+    border-bottom: 1px solid var(--line-soft);
     border-radius: 0;
     display: grid;
     grid-template-columns: auto 1fr auto auto;
@@ -365,8 +394,8 @@
   .dot {
     width: 8px;
     height: 8px;
-    border-radius: 999px;
-    background: #cbd5e1;
+    border-radius: var(--radius-pill);
+    background: var(--line-strong);
   }
 
   .stage-name {
@@ -380,20 +409,20 @@
   }
 
   .stage-list li svg {
-    color: #94a3b8;
+    color: var(--text-faint);
   }
 
   .stage-list .stage-done {
-    color: #166534;
+    color: var(--success-strong);
     background: transparent;
   }
 
   .stage-list .stage-done .dot {
-    background: #22c55e;
+    background: var(--success-dot);
   }
 
   .stage-list .stage-done svg {
-    color: #22c55e;
+    color: var(--success-dot);
   }
 
   .stage-list .stage-active {
@@ -410,16 +439,29 @@
   }
 
   .stage-list .stage-error {
-    color: #991b1b;
-    background: #fef2f2;
+    color: var(--danger-strong);
+    background: var(--danger-soft);
   }
 
   .stage-list .stage-error .dot {
-    background: #ef4444;
+    background: var(--danger);
   }
 
   .stage-list .stage-error svg {
-    color: #ef4444;
+    color: var(--danger);
+  }
+
+  .stage-list .stage-cancelled {
+    color: var(--warning-strong);
+    background: var(--warning-soft);
+  }
+
+  .stage-list .stage-cancelled .dot {
+    background: var(--warning-dot);
+  }
+
+  .stage-list .stage-cancelled svg {
+    color: var(--warning);
   }
 
   .stage-list .stage-skipped {

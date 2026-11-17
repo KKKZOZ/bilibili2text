@@ -140,23 +140,6 @@
               job.notice || '该视频曾经转录过，已直接返回历史文件。'
             }}</span>
           </p>
-          <div
-            v-if="job.author || job.pubdate || job.bvid"
-            class="video-metadata"
-          >
-            <h3>视频信息</h3>
-            <div class="metadata-items">
-              <span v-if="job.bvid">
-                <strong>资源 ID:</strong> {{ job.bvid }}
-              </span>
-              <span v-if="job.author">
-                <strong>UP主 / 主播:</strong> {{ job.author }}
-              </span>
-              <span v-if="job.pubdate">
-                <strong>发布时间:</strong> {{ job.pubdate }}
-              </span>
-            </div>
-          </div>
           <p v-if="isFancyHtmlPending" class="cache-hit-note">
             <LoaderCircle :size="16" class="spin" />
             <span>阅读报告正在后台生成，稍后会自动加入文件列表。</span>
@@ -177,7 +160,11 @@
           />
         </template>
         <p v-else class="download-placeholder">
-          任务完成后在这里展示可下载文件。
+          {{
+            job.status === 'failed' || job.status === 'cancelled'
+              ? '任务未完成，没有可下载的文件。'
+              : '任务完成后在这里展示可下载文件。'
+          }}
         </p>
       </div>
     </article>
@@ -300,8 +287,7 @@
 <style scoped>
   .download-layout,
   .log-layout {
-    max-width: 1220px;
-    margin: 16px auto 0;
+    min-width: 0;
   }
 
   .panel-download,
@@ -318,26 +304,9 @@
     align-items: center;
     gap: 8px;
     margin: 0 0 12px;
-    color: #065f46;
+    color: var(--success-strong);
     font-size: 0.9rem;
     font-weight: 600;
-  }
-
-  .video-metadata {
-    margin-bottom: 14px;
-  }
-
-  .video-metadata h3 {
-    margin: 0 0 8px;
-    font-size: 0.95rem;
-  }
-
-  .metadata-items {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px 18px;
-    color: var(--text-soft);
-    font-size: 0.84rem;
   }
 
   .download-placeholder,
@@ -387,16 +356,16 @@
   .follow-state {
     gap: 6px;
     margin-right: 2px;
-    color: #397069;
+    color: var(--brand-strong);
     font-size: 0.76rem;
-    font-weight: 650;
+    font-weight: 600;
   }
 
   .live-dot {
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    background: #22c55e;
+    background: var(--success-dot);
   }
 
   .follow-state.paused {
@@ -416,8 +385,8 @@
     height: 32px;
     padding: 0;
     border: 1px solid var(--line);
-    border-radius: 6px;
-    background: #fff;
+    border-radius: var(--radius-md);
+    background: var(--panel-bg);
     color: var(--text-soft);
     cursor: pointer;
   }
@@ -427,7 +396,7 @@
     border-color: var(--brand);
     outline: none;
     color: var(--brand-strong);
-    box-shadow: 0 0 0 3px rgba(15, 143, 131, 0.12);
+    box-shadow: 0 0 0 3px var(--focus-ring);
   }
 
   .log-tool-button:disabled {
@@ -436,12 +405,12 @@
   }
 
   .log-tool-button.success {
-    border-color: #86efac;
+    border-color: var(--success-line);
     color: var(--success);
   }
 
   .log-tool-button.error {
-    border-color: #fecaca;
+    border-color: var(--danger-line);
     color: var(--danger);
   }
 
@@ -450,9 +419,9 @@
     min-width: 32px;
     gap: 5px;
     padding: 0 9px;
-    border-color: #fcd34d;
-    background: #fffbeb;
-    color: #92400e;
+    border-color: var(--warning-line);
+    background: var(--warning-soft);
+    color: var(--warning-strong);
     font-size: 0.76rem;
     font-weight: 700;
     white-space: nowrap;
@@ -460,7 +429,7 @@
 
   .new-log-count {
     min-width: 1.4em;
-    color: #b45309;
+    color: var(--warning);
     font-size: 0.7rem;
     font-variant-numeric: tabular-nums;
     text-align: center;
@@ -522,7 +491,7 @@
   .log-level {
     color: #8fa3b5;
     font-size: 0.7rem;
-    font-weight: 750;
+    font-weight: 700;
   }
 
   .log-source {
@@ -560,17 +529,6 @@
 
   .log-line.level-debug {
     opacity: 0.76;
-  }
-
-  .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
   }
 
   @media (max-width: 640px) {

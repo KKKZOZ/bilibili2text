@@ -28,7 +28,7 @@
 <template>
   <div class="provider-section">
     <h3>自定义 OpenAI-compatible LLM <span>可选</span></h3>
-    <p>配置后可用于总结、知识库问答和 Fancy HTML。</p>
+    <p>配置后可用于总结、知识库问答和阅读报告。</p>
     <div class="status-row">
       <span>当前状态</span>
       <strong :class="configured ? 'ok' : 'missing'">
@@ -94,8 +94,8 @@
     gap: 9px;
     padding: 22px;
     border: 1px solid var(--line);
-    border-radius: 8px;
-    background: #fff;
+    border-radius: var(--radius-lg);
+    background: var(--panel-bg);
     box-shadow: var(--panel-shadow);
   }
   h3,
@@ -108,9 +108,9 @@
   h3 span {
     margin-left: 5px;
     padding: 2px 6px;
-    border-radius: 4px;
-    background: #f1f5f9;
-    color: #64748b;
+    border-radius: var(--radius-sm);
+    background: var(--surface-muted);
+    color: var(--text-muted);
     font-size: 0.68rem;
   }
   p {
@@ -128,15 +128,15 @@
     align-items: center;
     gap: 5px;
     padding: 4px 8px;
-    border-radius: 5px;
+    border-radius: var(--radius-md);
   }
   .ok {
-    background: #ecfdf5;
-    color: #047857;
+    background: var(--success-soft);
+    color: var(--success);
   }
   .missing {
-    background: #fff7ed;
-    color: #c2410c;
+    background: var(--warning-soft);
+    color: var(--warning-strong);
   }
   label {
     color: var(--text-soft);
@@ -148,12 +148,12 @@
     min-height: 42px;
     padding: 0 12px;
     border: 1px solid var(--line);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     outline: 0;
   }
   input:focus {
     border-color: var(--brand);
-    box-shadow: 0 0 0 3px rgba(15, 143, 131, 0.1);
+    box-shadow: 0 0 0 3px var(--focus-ring);
   }
   .key-input {
     display: flex;
@@ -161,8 +161,8 @@
     gap: 8px;
     padding-left: 12px;
     border: 1px solid var(--line);
-    border-radius: 8px;
-    background: #fff;
+    border-radius: var(--radius-lg);
+    background: var(--panel-bg);
   }
   .key-input input {
     border: 0;
@@ -170,7 +170,7 @@
   }
   .key-input:focus-within {
     border-color: var(--brand);
-    box-shadow: 0 0 0 3px rgba(15, 143, 131, 0.1);
+    box-shadow: 0 0 0 3px var(--focus-ring);
   }
   .actions {
     display: flex;
@@ -186,20 +186,20 @@
     min-height: 36px;
     padding: 0 13px;
     border: 1px solid var(--line);
-    border-radius: 7px;
-    background: #fff;
+    border-radius: var(--radius-lg);
+    background: var(--panel-bg);
     font-weight: 700;
     cursor: pointer;
   }
   .actions .submit {
     min-height: 36px;
     margin: 0;
-    background: var(--brand);
-    color: #fff;
+    background: var(--brand-solid);
+    color: var(--on-solid);
   }
   .actions .test-passed {
-    border-color: #86efac;
-    background: #f0fdf4;
-    color: #166534;
+    border-color: var(--success-line);
+    background: var(--success-soft);
+    color: var(--success-strong);
   }
 </style>

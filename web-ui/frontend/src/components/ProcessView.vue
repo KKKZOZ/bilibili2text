@@ -1,8 +1,15 @@
 <script setup>
-  import { computed, onMounted, ref, watch } from 'vue'
+  import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
   import { useRoute, useRouter } from 'vue-router'
-  import { ArrowLeft, LoaderCircle } from 'lucide-vue-next'
+  import {
+    ArrowLeft,
+    Ban,
+    BellRing,
+    LoaderCircle,
+    XCircle
+  } from 'lucide-vue-next'
   import ProgressPanel from './ProgressPanel.vue'
+  import ConfirmDialog from './common/ConfirmDialog.vue'
   import InlineNotice from './common/InlineNotice.vue'
   import ProcessJobOutput from './process/ProcessJobOutput.vue'
   import ProcessSourceInput from './process/ProcessSourceInput.vue'
@@ -11,6 +18,7 @@
   import ProcessVideoMetadata from './process/ProcessVideoMetadata.vue'
   import { processApi } from '../api'
   import { useJobStore } from '../composables/useJobStore'
+  import { setPageTitleDetail } from '../composables/usePageTitle'
   import { usePublicCredentials } from '../composables/usePublicCredentials'
   import { useRuntimeFeatures } from '../composables/useRuntimeFeatures'
   import { requestJobNotificationPermission } from '../composables/useJobNotifications'
@@ -28,7 +36,8 @@
     getJob: getStoredJob,
     loadJob,
     trackJob,
-    untrackJob
+    untrackJob,
+    cancelJob
   } = useJobStore()
   const { runtimeFeatures } = useRuntimeFeatures()
   const allowUpload = computed(() => runtimeFeatures.value.allow_upload_audio)
@@ -200,11 +209,6 @@
   const isUploadMode = computed(
     () => allowUpload.value && inputMode.value === 'upload'
   )
-  const inputBvid = computed(() => {
-    const currentBvid = String(job.value.bvid || '').trim()
-    if (currentBvid) return currentBvid
-    return String(url.value || '').match(/BV[0-9A-Za-z]{10}/i)?.[0] || ''
-  })
 
   watch(
     allowUpload,
@@ -360,13 +364,8 @@
     }
   }
 
-  const onUploadFileChange = (event) => {
-    const target = event.target
-    if (!target || !target.files || target.files.length === 0) {
-      uploadedAudioFile.value = null
-      return
-    }
-    uploadedAudioFile.value = target.files[0]
+  const onUploadFileChange = (file) => {
+    uploadedAudioFile.value = file || null
   }
 
   const validateUploadedAudio = (file) => {
@@ -551,6 +550,69 @@
     }
   }
 
+  // ─── Job detail header ────────────────────────────────────────────
+  const jobHeading = computed(
+    () => job.value.title || job.value.bvid || job.value.filename || '转录任务'
+  )
+  const jobConfigChips = computed(() => {
+    if (job.value.status === 'idle') return []
+    const chips = []
+    if (currentSkipSummary.value) {
+      chips.push('不生成总结')
+    } else {
+      const preset = summaryPresets.value.find(
+        (item) => item.name === job.value.summary_preset
+      )
+      chips.push(
+        `总结：${preset?.label || job.value.summary_preset || '默认模板'}`
+      )
+      if (job.value.summary_profile) {
+        chips.push(`模型：${job.value.summary_profile}`)
+      }
+    }
+    if (job.value.auto_generate_fancy_html) chips.push('阅读报告')
+    return chips
+  })
+
+  const cancelConfirmOpen = ref(false)
+  const cancelLoading = ref(false)
+  const cancelError = ref('')
+
+  const confirmCancelJob = async () => {
+    if (!jobId.value || cancelLoading.value) return
+    cancelLoading.value = true
+    cancelError.value = ''
+    try {
+      await cancelJob(jobId.value)
+      const latest = getStoredJob(jobId.value)
+      if (latest) applyJobUpdate(latest)
+      cancelConfirmOpen.value = false
+    } catch (err) {
+      cancelError.value = err instanceof Error ? err.message : '取消任务失败'
+    } finally {
+      cancelLoading.value = false
+    }
+  }
+
+  watch(
+    () => [
+      isJobDetailMode.value,
+      isRunning.value,
+      job.value.progress,
+      jobHeading.value
+    ],
+    ([detailMode, running, progress, heading]) => {
+      if (!detailMode) {
+        setPageTitleDetail('')
+        return
+      }
+      setPageTitleDetail(running ? `${progress || 0}% ${heading}` : heading)
+    },
+    { immediate: true }
+  )
+
+  onBeforeUnmount(() => setPageTitleDetail(''))
+
   onMounted(() => {
     loadLocalSummaryPromptTemplate()
   })
@@ -565,8 +627,11 @@
   watch(
     routeJobId,
     async (nextJobId) => {
+      cancelConfirmOpen.value = false
+      cancelError.value = ''
       if (!nextJobId) {
         jobId.value = ''
+        error.value = ''
         resetJob()
         return
       }
@@ -611,12 +676,9 @@
 
 <template>
   <div class="process-page">
-    <section class="layout">
+    <!-- New transcription -->
+    <section v-if="!isJobDetailMode" class="layout">
       <article class="panel panel-main">
-        <div v-if="job.is_ephemeral_upload" class="hero-meta">
-          <span class="hero-pill">临时结果 2 小时后删除</span>
-        </div>
-
         <form class="form" @submit.prevent="submit">
           <ProcessSourceInput
             v-model:input-mode="inputMode"
@@ -671,20 +733,6 @@
             总结和阅读报告至少需要开启一项
           </InlineNotice>
 
-          <div v-if="isJobDetailMode" class="new-job-hint">
-            <button
-              type="button"
-              class="new-job-btn"
-              @click="router.push('/process')"
-            >
-              <ArrowLeft :size="14" />
-              <span>新建转录</span>
-            </button>
-            <span class="new-job-hint-text"
-              >当前任务在后台进行，可从历史记录中查看进度</span
-            >
-          </div>
-
           <button
             class="submit"
             type="submit"
@@ -706,39 +754,136 @@
         </form>
 
         <InlineNotice v-if="error">{{ error }}</InlineNotice>
-        <InlineNotice v-if="connectionNotice" kind="warning">
-          {{ connectionNotice }}
-        </InlineNotice>
       </article>
 
       <aside class="process-sidebar">
-        <ProgressPanel :job="job" :skip-summary="shouldSkipSummary" />
-        <ProcessVideoMetadata
-          v-if="!isUploadMode"
-          :job="job"
-          :source-bvid="inputBvid"
-          :include-comments="includeComments"
-          :comment-limit="downloadAllComments ? 0 : normalizedCommentLimit"
-        />
+        <article class="panel guide-panel">
+          <h2>处理流程</h2>
+          <ol>
+            <li>
+              <strong>获取内容</strong>
+              <span>优先读取平台字幕，没有字幕时下载音频。</span>
+            </li>
+            <li>
+              <strong>转录文本</strong>
+              <span>音频转成带时间戳的原文，并整理为 Markdown。</span>
+            </li>
+            <li>
+              <strong>生成总结 / 阅读报告</strong>
+              <span>按所选模板和模型整理内容。</span>
+            </li>
+            <li>
+              <strong>导出文件</strong>
+              <span>结果可下载为 Markdown、TXT、PDF 或 PNG。</span>
+            </li>
+          </ol>
+          <p class="guide-note">
+            <BellRing :size="14" aria-hidden="true" />
+            <span>
+              提交后可以离开本页，任务会在后台继续；进度可在「历史记录」查看，完成时会发送浏览器通知。
+            </span>
+          </p>
+        </article>
       </aside>
     </section>
 
-    <ProcessJobOutput
-      :job="job"
-      :is-done="isDone"
-      :is-fancy-html-pending="isFancyHtmlPending"
-      :download-rows="allDownloadRows"
-    />
+    <!-- Job detail -->
+    <template v-else>
+      <header class="panel job-header">
+        <button type="button" class="job-back" @click="router.push('/process')">
+          <ArrowLeft :size="15" aria-hidden="true" />
+          <span>新建转录</span>
+        </button>
+        <div class="job-heading">
+          <h2>{{ jobHeading }}</h2>
+          <div
+            v-if="jobConfigChips.length || job.is_ephemeral_upload"
+            class="job-chips"
+          >
+            <span v-for="chip in jobConfigChips" :key="chip">{{ chip }}</span>
+            <span v-if="job.is_ephemeral_upload" class="chip-warning">
+              临时结果 2 小时后删除
+            </span>
+          </div>
+        </div>
+        <button
+          v-if="isRunning"
+          type="button"
+          class="job-cancel"
+          @click="cancelConfirmOpen = true"
+        >
+          <XCircle :size="15" aria-hidden="true" />
+          <span>取消任务</span>
+        </button>
+      </header>
+
+      <InlineNotice v-if="job.status === 'cancelled'" kind="warning">
+        {{ error || '任务已取消' }}
+      </InlineNotice>
+      <InlineNotice v-else-if="error">{{ error }}</InlineNotice>
+      <InlineNotice v-if="connectionNotice" kind="warning">
+        {{ connectionNotice }}
+      </InlineNotice>
+      <InlineNotice v-if="isRunning" kind="info">
+        任务在后台进行，离开本页不会中断，可在「历史记录」中随时回到这里。
+      </InlineNotice>
+
+      <section class="layout layout-job">
+        <div class="job-main">
+          <ProcessJobOutput
+            :job="job"
+            :is-done="isDone"
+            :is-fancy-html-pending="isFancyHtmlPending"
+            :download-rows="allDownloadRows"
+          />
+        </div>
+        <aside class="process-sidebar">
+          <ProgressPanel :job="job" :skip-summary="shouldSkipSummary" />
+          <ProcessVideoMetadata
+            v-if="!job.is_ephemeral_upload"
+            :job="job"
+            :source-bvid="job.bvid || ''"
+            :include-comments="includeComments"
+            :comment-limit="downloadAllComments ? 0 : normalizedCommentLimit"
+          />
+        </aside>
+      </section>
+
+      <ConfirmDialog
+        :open="cancelConfirmOpen"
+        title="确认取消任务"
+        confirm-label="取消任务"
+        cancel-label="继续处理"
+        busy-label="取消中..."
+        :busy="cancelLoading"
+        @cancel="cancelConfirmOpen = false"
+        @confirm="confirmCancelJob"
+      >
+        <p>确定要取消这个任务吗？取消后需要重新提交才能再次处理。</p>
+        <InlineNotice v-if="cancelError" compact>{{
+          cancelError
+        }}</InlineNotice>
+        <template #confirm-icon><Ban :size="16" /></template>
+      </ConfirmDialog>
+    </template>
   </div>
 </template>
 
 <style scoped>
+  .process-page {
+    display: grid;
+    gap: 14px;
+  }
+
+  .process-page > :deep(.inline-notice) {
+    margin: 0;
+  }
+
   .layout {
     display: grid;
     grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.65fr);
     gap: 16px;
-    max-width: 1220px;
-    margin: 0 auto;
+    min-width: 0;
   }
 
   .panel-main {
@@ -751,26 +896,7 @@
     align-self: start;
     display: grid;
     gap: 16px;
-  }
-
-  .hero-meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    margin-bottom: 18px;
-  }
-
-  .hero-pill {
-    display: inline-flex;
-    align-items: center;
-    min-height: 28px;
-    padding: 0 10px;
-    border: 1px solid #fcd34d;
-    border-radius: 5px;
-    background: #fffbeb;
-    color: #92400e;
-    font-size: 0.76rem;
-    font-weight: 700;
+    min-width: 0;
   }
 
   .form {
@@ -779,30 +905,169 @@
     margin-top: 0;
   }
 
-  .new-job-hint {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 10px;
+  /* ─── Guide panel (new transcription) ────────────────────────── */
+
+  .guide-panel {
+    padding: 22px;
   }
 
-  .new-job-btn {
+  .guide-panel h2 {
+    margin: 0 0 14px;
+    font-size: 1.07rem;
+  }
+
+  .guide-panel ol {
+    display: grid;
+    gap: 14px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    counter-reset: guide;
+  }
+
+  .guide-panel li {
+    position: relative;
+    display: grid;
+    gap: 2px;
+    padding-left: 34px;
+    counter-increment: guide;
+  }
+
+  .guide-panel li::before {
+    position: absolute;
+    top: 1px;
+    left: 0;
+    display: grid;
+    width: 22px;
+    height: 22px;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--brand-soft);
+    color: var(--brand-strong);
+    font-size: 0.74rem;
+    font-weight: 700;
+    content: counter(guide);
+  }
+
+  .guide-panel li strong {
+    font-size: 0.89rem;
+  }
+
+  .guide-panel li span {
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    line-height: 1.5;
+  }
+
+  .guide-note {
+    display: flex;
+    gap: 8px;
+    margin: 18px 0 0;
+    padding-top: 14px;
+    border-top: 1px solid var(--line-soft);
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    line-height: 1.55;
+  }
+
+  .guide-note svg {
+    flex: 0 0 auto;
+    margin-top: 3px;
+    color: var(--brand);
+  }
+
+  /* ─── Job detail ─────────────────────────────────────────────── */
+
+  .job-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 16px 22px;
+  }
+
+  .job-heading {
+    display: grid;
+    flex: 1;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .job-heading h2 {
+    margin: 0;
+    overflow: hidden;
+    font-size: 1.12rem;
+    line-height: 1.35;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .job-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .job-chips span {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
-    padding: 6px 12px;
+    min-height: 24px;
+    padding: 0 8px;
     border: 1px solid var(--line);
-    border-radius: 8px;
-    background: rgba(255, 255, 255, 0.9);
+    border-radius: var(--radius-md);
+    background: var(--surface-subtle);
+    color: var(--text-soft);
+    font-size: 0.76rem;
+    font-weight: 600;
+  }
+
+  .job-chips .chip-warning {
+    border-color: var(--warning-line);
+    background: var(--warning-soft);
+    color: var(--warning-strong);
+  }
+
+  .job-back,
+  .job-cancel {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 6px;
+    min-height: 36px;
+    padding: 0 12px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    background: var(--panel-bg);
     color: var(--text-soft);
     font-size: 0.84rem;
     font-weight: 600;
     cursor: pointer;
   }
 
-  .new-job-hint-text {
-    color: var(--text-muted);
-    font-size: 0.82rem;
+  .job-back:hover {
+    border-color: var(--brand);
+    color: var(--brand-strong);
+  }
+
+  .job-cancel {
+    border-color: var(--danger-line);
+    color: var(--danger);
+  }
+
+  .job-cancel:hover {
+    background: var(--danger-soft);
+  }
+
+  .job-back:focus-visible,
+  .job-cancel:focus-visible {
+    outline: 3px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+
+  .job-main {
+    display: grid;
+    align-content: start;
+    gap: 16px;
+    min-width: 0;
   }
 
   @media (max-width: 980px) {
@@ -817,6 +1082,11 @@
     .process-sidebar {
       position: static;
     }
+
+    /* Progress comes before files and logs on narrow screens. */
+    .layout-job .process-sidebar {
+      order: -1;
+    }
   }
 
   @media (max-width: 640px) {
@@ -826,6 +1096,24 @@
 
     .layout {
       gap: 12px;
+    }
+
+    .job-header {
+      flex-wrap: wrap;
+      padding: 16px 18px;
+    }
+
+    .job-heading {
+      flex-basis: 100%;
+      order: 3;
+    }
+
+    .job-heading h2 {
+      white-space: normal;
+    }
+
+    .job-cancel {
+      margin-left: auto;
     }
   }
 </style>

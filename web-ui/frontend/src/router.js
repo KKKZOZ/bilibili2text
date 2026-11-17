@@ -17,7 +17,7 @@ export default createRouter({
     { path: '/process/:jobId', component: ProcessView },
     { path: '/history', component: HistoryView },
     { path: '/history/:runId', component: HistoryView },
-    { path: '/rag', component: RagView },
+    { path: '/rag', component: RagView, meta: { contentWidth: '1060px' } },
     { path: '/settings', component: PublicApiKeyView }
   ]
 })

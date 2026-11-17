@@ -202,7 +202,7 @@
       customLlmSavedModel.value = model
       customLlmApiKeyInput.value = ''
       customLlmSuccess.value =
-        '自定义 LLM 已更新。后续总结、知识库问答和 Fancy HTML 将优先使用该模型。'
+        '自定义 LLM 已更新。后续总结、知识库问答和阅读报告将优先使用该模型。'
       notifyCredentialsUpdated()
     } catch {
       customLlmError.value = '保存失败，请检查浏览器存储权限'
@@ -365,7 +365,7 @@
       deepseekMaskedKey.value = maskKey(apiKey)
       deepseekKeyInput.value = ''
       deepseekSuccess.value =
-        'DeepSeek API Key 已更新。后续 LLM 总结、知识库问答和 Fancy HTML 将使用该 Key。'
+        'DeepSeek API Key 已更新。后续 LLM 总结、知识库问答和阅读报告将使用该 Key。'
       notifyCredentialsUpdated()
     } catch {
       deepseekError.value = '保存失败，请检查浏览器存储权限'
@@ -615,7 +615,7 @@
     justify-self: start;
     gap: 5px;
     padding: 4px 8px;
-    border-radius: 5px;
+    border-radius: var(--radius-md);
     background: var(--brand-soft);
     color: var(--brand-strong);
     font-size: 0.72rem;
@@ -627,10 +627,10 @@
     align-items: flex-start;
     gap: 9px;
     padding: 12px 14px;
-    border: 1px solid #bfdbfe;
-    border-radius: 8px;
-    background: #f0f9ff;
-    color: #075985;
+    border: 1px solid var(--info-line);
+    border-radius: var(--radius-lg);
+    background: var(--info-soft);
+    color: var(--info-strong);
     font-size: 0.8rem;
     line-height: 1.55;
   }

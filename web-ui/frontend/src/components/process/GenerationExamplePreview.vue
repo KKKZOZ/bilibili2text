@@ -133,7 +133,7 @@
     gap: 5px;
     padding: 5px 8px;
     border: 0;
-    border-radius: 5px;
+    border-radius: var(--radius-md);
     background: transparent;
     color: var(--brand-strong);
     font-size: 0.8rem;
@@ -141,7 +141,7 @@
     white-space: nowrap;
   }
   .example-trigger:hover {
-    background: #edf7f5;
+    background: var(--brand-soft);
   }
   .example-dialog {
     width: min(1100px, calc(100vw - 48px));
@@ -150,10 +150,10 @@
     max-height: none;
     margin: auto;
     padding: 0;
-    border: 1px solid #dbe1e8;
+    border: 1px solid var(--line);
     border-radius: 12px;
-    background: #fff;
-    color: #334155;
+    background: var(--panel-bg);
+    color: var(--text-soft);
     box-shadow: 0 24px 80px #0f172a40;
   }
   .example-dialog::backdrop {
@@ -187,23 +187,23 @@
     width: 36px;
     height: 36px;
     border: 0;
-    border-radius: 6px;
-    background: #f1f5f9;
+    border-radius: var(--radius-md);
+    background: var(--surface-muted);
     cursor: pointer;
-    color: #475569;
+    color: var(--text-soft);
   }
   .example-options {
     display: grid;
     gap: 8px;
     padding: 0 24px 16px;
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 1px solid var(--line);
   }
 
   .example-tabs {
     display: flex;
     gap: 24px;
     margin-bottom: 4px;
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 1px solid var(--line);
   }
   .example-tabs button {
     position: relative;
@@ -211,7 +211,7 @@
     border: 0;
     border-radius: 0;
     background: transparent;
-    color: #64748b;
+    color: var(--text-muted);
     font: inherit;
     font-size: 0.9rem;
     font-weight: 600;
@@ -219,10 +219,10 @@
     transition: color 0.15s ease;
   }
   .example-tabs button:hover {
-    color: #0b6f65;
+    color: var(--brand-strong);
   }
   .example-tabs button[aria-selected='true'] {
-    color: #0b6f65;
+    color: var(--brand-strong);
   }
   .example-tabs button[aria-selected='true']::after {
     content: '';
@@ -232,10 +232,10 @@
     left: 0;
     height: 3px;
     border-radius: 3px 3px 0 0;
-    background: #0f8f83;
+    background: var(--brand);
   }
   button:focus-visible {
-    outline: 2px solid #0f8f83;
+    outline: 2px solid var(--brand);
     outline-offset: 3px;
   }
   .example-panel {
@@ -248,7 +248,7 @@
     width: 100%;
     min-height: 0;
     border: 0;
-    background: #f2f5f7;
+    background: var(--surface-muted);
   }
   @media (max-width: 640px) {
     .example-dialog {

@@ -76,8 +76,8 @@
     gap: 12px;
     padding: 14px 16px;
     border: 1px solid var(--line);
-    border-radius: 8px;
-    background: #fff;
+    border-radius: var(--radius-lg);
+    background: var(--panel-bg);
     box-shadow: var(--panel-shadow);
   }
 
@@ -86,14 +86,14 @@
     align-items: center;
     align-self: center;
     gap: 6px;
-    color: #475569;
+    color: var(--text-soft);
     font-size: 0.82rem;
     font-weight: 700;
     white-space: nowrap;
   }
 
   .history-filter-heading svg {
-    color: #0f766e;
+    color: var(--brand-strong);
   }
 
   .history-filter-reset {
@@ -103,10 +103,10 @@
     gap: 5px;
     height: 36px;
     padding: 0 11px;
-    border: 1px solid #cbd5e1;
-    border-radius: 6px;
-    background: #fff;
-    color: #475569;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-md);
+    background: var(--panel-bg);
+    color: var(--text-soft);
     font-size: 0.78rem;
     font-weight: 700;
     cursor: pointer;

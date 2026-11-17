@@ -39,13 +39,13 @@
     border: 0;
     border-radius: 50%;
     background: transparent;
-    color: #64748b;
+    color: var(--text-muted);
     cursor: help;
   }
 
   .help-tooltip-trigger:focus-visible {
     outline: 0;
-    box-shadow: 0 0 0 3px rgba(15, 143, 131, 0.14);
+    box-shadow: 0 0 0 3px var(--focus-ring);
   }
 
   .help-tooltip-content {
@@ -55,10 +55,10 @@
     left: 50%;
     width: min(360px, calc(100vw - 48px));
     padding: 10px 12px;
-    border: 1px solid #cbd5e1;
-    border-radius: 8px;
-    background: #fff;
-    color: #334155;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-lg);
+    background: var(--panel-bg);
+    color: var(--text-soft);
     font-size: 0.82rem;
     font-weight: 500;
     line-height: 1.55;

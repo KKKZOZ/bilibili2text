@@ -69,17 +69,17 @@
   .answer-text :deep(blockquote) {
     margin-left: 0;
     padding: 10px 14px;
-    border-left: 3px solid rgba(13, 148, 136, 0.28);
+    border-left: 3px solid var(--brand-line);
     border-radius: 0 8px 8px 0;
-    background: rgba(240, 253, 250, 0.8);
+    background: var(--brand-soft);
   }
 
   .answer-text :deep(pre) {
     overflow: auto;
     padding: 12px 14px;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: #0f172a;
-    color: #e2e8f0;
+    color: var(--line);
   }
 
   .answer-text :deep(table) {
@@ -92,7 +92,7 @@
   .answer-text :deep(th),
   .answer-text :deep(td) {
     padding: 10px 12px;
-    border: 1px solid #e2e8f0;
+    border: 1px solid var(--line);
     text-align: left;
   }
 
@@ -103,7 +103,7 @@
     min-width: 18px;
     height: 18px;
     padding: 0 4px;
-    border-radius: 5px;
+    border-radius: var(--radius-md);
     background: var(--brand-soft);
     color: var(--brand-strong);
     font-size: 0.72rem;

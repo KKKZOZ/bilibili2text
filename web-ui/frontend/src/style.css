@@ -1,22 +1,107 @@
 :root {
+  color-scheme: light dark;
+
   --bg-base: #f4f6f8;
   --panel-bg: #ffffff;
+  --surface-subtle: #f8fafb;
+  --surface-muted: #f1f4f7;
   --panel-border: #dce2e8;
+  --line: #dce2e8;
+  --line-soft: #edf0f3;
+  --line-strong: #cbd5e1;
   --panel-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+  --shadow-pop: 0 12px 28px rgba(15, 23, 42, 0.16);
+  --overlay: rgba(15, 23, 42, 0.58);
+
   --text-main: #17202e;
   --text-soft: #354150;
   --text-muted: #687584;
+  --text-faint: #94a3b8;
+
   --brand: #0f8f83;
   --brand-strong: #0b6f67;
   --brand-soft: #e6f7f4;
+  --brand-line: #a9dcd5;
+  --brand-solid: #0f8f83;
+  --brand-solid-hover: #0b6f67;
+  --on-solid: #ffffff;
+  --focus-ring: rgba(15, 143, 131, 0.16);
+
   --info: #2563eb;
+  --info-strong: #0369a1;
+  --info-soft: #eef8fd;
+  --info-line: #bae6fd;
+
   --danger: #dc2626;
+  --danger-strong: #b91c1c;
+  --danger-soft: #fef2f2;
+  --danger-line: #fecaca;
+  --danger-solid: #dc2626;
+  --danger-solid-hover: #b91c1c;
+
   --success: #16835d;
+  --success-strong: #166534;
+  --success-soft: #f0fdf4;
+  --success-line: #a9dfbf;
+  --success-dot: #22c55e;
+
   --warning: #b45309;
-  --line: #dce2e8;
+  --warning-strong: #92400e;
+  --warning-soft: #fffbeb;
+  --warning-line: #f4d58b;
+  --warning-dot: #f59e0b;
+
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: 8px;
+  --radius-pill: 999px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-base: #0f1419;
+    --panel-bg: #171d24;
+    --surface-subtle: #1b222a;
+    --surface-muted: #222a33;
+    --panel-border: #2c3540;
+    --line: #2c3540;
+    --line-soft: #242c35;
+    --line-strong: #3b4653;
+    --panel-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-pop: 0 12px 28px rgba(0, 0, 0, 0.55);
+    --overlay: rgba(0, 0, 0, 0.66);
+
+    --text-main: #e6ebf0;
+    --text-soft: #c1cad3;
+    --text-muted: #94a1ae;
+    --text-faint: #6f7c89;
+
+    --brand: #2bb5a7;
+    --brand-strong: #5fd0c4;
+    --brand-soft: #12322f;
+    --brand-line: #1f5a54;
+    --focus-ring: rgba(43, 181, 167, 0.3);
+
+    --info: #7aa7ff;
+    --info-strong: #7cc4ec;
+    --info-soft: #132a36;
+    --info-line: #24506a;
+
+    --danger: #f87171;
+    --danger-strong: #fca5a5;
+    --danger-soft: #3a1d1f;
+    --danger-line: #6b2c2f;
+
+    --success: #45c08a;
+    --success-strong: #86efac;
+    --success-soft: #14301f;
+    --success-line: #2c6b45;
+
+    --warning: #f0b25a;
+    --warning-strong: #fcd34d;
+    --warning-soft: #33280f;
+    --warning-line: #6b5318;
+  }
 }
 
 * {
@@ -63,6 +148,14 @@ select {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Default field surface so unstyled fields follow the theme. */
+input:not([type='checkbox'], [type='radio'], [type='file'], [type='range']),
+textarea,
+select {
+  background-color: var(--panel-bg);
+  color: var(--text-main);
+}
+
 .panel {
   border: 1px solid var(--panel-border);
   border-radius: var(--radius-lg);
@@ -101,12 +194,12 @@ select {
   min-height: 44px;
   margin-top: 10px;
   padding: 0 20px;
-  border: 1px solid var(--brand);
+  border: 1px solid var(--brand-solid);
   border-radius: var(--radius-md);
-  background: var(--brand);
-  color: #fff;
+  background: var(--brand-solid);
+  color: var(--on-solid);
   font-size: 0.92rem;
-  font-weight: 750;
+  font-weight: 700;
   cursor: pointer;
   transition:
     background-color 0.15s ease,
@@ -115,19 +208,19 @@ select {
 }
 
 .submit:hover:not(:disabled) {
-  border-color: var(--brand-strong);
-  background: var(--brand-strong);
+  border-color: var(--brand-solid-hover);
+  background: var(--brand-solid-hover);
   box-shadow: 0 3px 10px rgba(15, 143, 131, 0.18);
 }
 
 .submit:focus-visible {
-  outline: 3px solid rgba(15, 143, 131, 0.18);
+  outline: 3px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
 .submit:disabled {
-  border-color: #94a3b8;
-  background: #94a3b8;
+  border-color: var(--text-faint);
+  background: var(--text-faint);
   cursor: not-allowed;
   opacity: 0.72;
   box-shadow: none;
@@ -147,7 +240,7 @@ select {
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   outline: none;
-  background: #fff;
+  background: var(--panel-bg);
   color: var(--text-main);
   font-size: 0.88rem;
   transition:
@@ -156,14 +249,14 @@ select {
 }
 
 .preset-select:disabled {
-  background: #f5f7f9;
-  color: #94a3b8;
+  background: var(--surface-muted);
+  color: var(--text-faint);
   cursor: not-allowed;
 }
 
 .preset-select:focus {
   border-color: var(--brand);
-  box-shadow: 0 0 0 3px rgba(15, 143, 131, 0.12);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 .preset-hint {
@@ -174,7 +267,7 @@ select {
 }
 
 .preset-hint-error {
-  color: #b91c1c;
+  color: var(--danger-strong);
 }
 
 .preset-retry {
@@ -200,7 +293,7 @@ select {
   align-items: center;
   justify-content: center;
   padding: 20px;
-  background: rgba(15, 23, 42, 0.58);
+  background: var(--overlay);
   animation: fade-in 0.15s ease;
 }
 
@@ -209,8 +302,8 @@ select {
   padding: 22px;
   border: 1px solid var(--panel-border);
   border-radius: var(--radius-lg);
-  background: #fff;
-  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.22);
+  background: var(--panel-bg);
+  box-shadow: var(--shadow-pop);
 }
 
 .modal-content h3 {
@@ -248,29 +341,46 @@ select {
 
 .cancel-button {
   border: 1px solid var(--line);
-  background: #fff;
+  background: var(--panel-bg);
   color: var(--text-soft);
 }
 
 .cancel-button:hover:not(:disabled) {
-  background: #f5f7f9;
+  background: var(--surface-muted);
 }
 
 .confirm-delete-button {
-  border: 1px solid var(--danger);
-  background: var(--danger);
-  color: #fff;
+  border: 1px solid var(--danger-solid);
+  background: var(--danger-solid);
+  color: var(--on-solid);
 }
 
 .confirm-delete-button:hover:not(:disabled) {
-  border-color: #b91c1c;
-  background: #b91c1c;
+  border-color: var(--danger-solid-hover);
+  background: var(--danger-solid-hover);
 }
 
 .cancel-button:disabled,
 .confirm-delete-button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.cancel-button:focus-visible,
+.confirm-delete-button:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 
 @keyframes spin {
@@ -303,5 +413,20 @@ select {
   .cancel-button,
   .confirm-delete-button {
     width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .spin {
+    animation: spin 2.4s linear infinite !important;
   }
 }

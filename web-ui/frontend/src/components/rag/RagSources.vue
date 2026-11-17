@@ -6,9 +6,9 @@
 
   const scorePercent = (score) => Math.round(score * 100)
   const scoreColor = (score) => {
-    if (score >= 0.7) return '#0d9488'
-    if (score >= 0.45) return '#0284c7'
-    return '#64748b'
+    if (score >= 0.7) return 'var(--brand)'
+    if (score >= 0.45) return 'var(--info-strong)'
+    return 'var(--text-muted)'
   }
 </script>
 
@@ -80,7 +80,7 @@
 
   h3 b {
     padding: 2px 6px;
-    border-radius: 99px;
+    border-radius: var(--radius-pill);
     background: var(--brand-soft);
     color: var(--brand-strong);
     font-size: 0.74rem;
@@ -97,8 +97,8 @@
     gap: 8px;
     padding: 14px 16px;
     border: 1px solid var(--line);
-    border-radius: 8px;
-    background: #fff;
+    border-radius: var(--radius-lg);
+    background: var(--panel-bg);
     color: inherit;
     text-decoration: none;
   }
@@ -120,7 +120,7 @@
     justify-content: center;
     width: 22px;
     height: 22px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: var(--brand-soft);
     color: var(--brand-strong);
     font-size: 0.74rem;
@@ -158,8 +158,8 @@
   .score-track {
     height: 3px;
     overflow: hidden;
-    border-radius: 99px;
-    background: #e2e8f0;
+    border-radius: var(--radius-pill);
+    background: var(--line);
   }
 
   .score-track div {

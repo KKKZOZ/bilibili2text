@@ -23,7 +23,7 @@
       role="button"
       tabindex="0"
       @click="emit('open', job.job_id)"
-      @keydown.enter="emit('open', job.job_id)"
+      @keydown.enter.self="emit('open', job.job_id)"
     >
       <div class="active-job-info">
         <p class="active-job-title">
@@ -63,7 +63,7 @@
     align-items: center;
     gap: 6px;
     margin: 0 0 4px;
-    color: #0284c7;
+    color: var(--brand-strong);
     font-size: 0.82rem;
     font-weight: 700;
     letter-spacing: 0;
@@ -75,15 +75,15 @@
     align-items: center;
     gap: 12px;
     padding: 12px 14px;
-    border: 1px solid #bae6fd;
-    border-radius: 8px;
-    background: #f7fbfd;
+    border: 1px solid var(--info-line);
+    border-radius: var(--radius-lg);
+    background: var(--info-soft);
     cursor: pointer;
   }
 
   .active-job-card:hover,
   .active-job-card:focus-visible {
-    border-color: #7dd3fc;
+    border-color: var(--info-line);
     outline: none;
     box-shadow: 0 2px 8px rgba(14, 165, 233, 0.12);
   }
@@ -102,7 +102,7 @@
 
   .active-job-title {
     overflow: hidden;
-    color: #0f172a;
+    color: var(--text-main);
     font-size: 0.92rem;
     font-weight: 700;
     text-overflow: ellipsis;
@@ -113,7 +113,7 @@
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-    color: #64748b;
+    color: var(--text-muted);
     font-size: 0.8rem;
   }
 
@@ -124,15 +124,15 @@
   }
 
   .active-job-stage {
-    color: #475569;
+    color: var(--text-soft);
     font-size: 0.82rem;
   }
 
   .active-job-progress {
     height: 4px;
     overflow: hidden;
-    border-radius: 999px;
-    background: #bae6fd;
+    border-radius: var(--radius-pill);
+    background: var(--info-line);
   }
 
   .active-job-progress div {
@@ -150,14 +150,14 @@
     height: 32px;
     padding: 0;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: transparent;
-    color: #94a3b8;
+    color: var(--text-faint);
     cursor: pointer;
   }
 
   .active-job-cancel:hover {
-    background: #fee2e2;
-    color: #dc2626;
+    background: var(--danger-soft);
+    color: var(--danger);
   }
 </style>

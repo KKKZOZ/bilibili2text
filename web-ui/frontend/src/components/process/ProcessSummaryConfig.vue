@@ -269,8 +269,8 @@
     height: 42px;
     overflow: hidden;
     border: 1px solid var(--line);
-    border-radius: 7px;
-    background: #fff;
+    border-radius: var(--radius-lg);
+    background: var(--panel-bg);
   }
 
   .comment-range-segments {
@@ -279,16 +279,16 @@
     gap: 2px;
     padding: 3px;
     border-right: 1px solid var(--line);
-    background: #f1f4f7;
+    background: var(--surface-muted);
   }
 
   .comment-range-segment {
     min-width: 0;
     padding: 0 8px;
     border: 0;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background: transparent;
-    color: #64748b;
+    color: var(--text-muted);
     font-size: 0.8rem;
     font-weight: 700;
     cursor: pointer;
@@ -296,7 +296,7 @@
   }
 
   .comment-range-segment.active {
-    background: #fff;
+    background: var(--panel-bg);
     color: var(--brand-strong);
     box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
   }
@@ -332,7 +332,7 @@
     padding: 0;
     border: 0;
     background: transparent;
-    color: #64748b;
+    color: var(--text-muted);
     cursor: pointer;
   }
 
@@ -342,6 +342,8 @@
     height: 100%;
     border: 0;
     outline: 0;
+    background: transparent;
+    color: var(--text-main);
     appearance: textfield;
     font: inherit;
     font-variant-numeric: tabular-nums;
@@ -356,7 +358,7 @@
 
   .comment-limit-stepper span {
     padding-right: 3px;
-    color: #64748b;
+    color: var(--text-muted);
     font-size: 0.78rem;
   }
 
@@ -370,7 +372,7 @@
     align-items: center;
     justify-content: center;
     gap: 6px;
-    color: #64748b;
+    color: var(--text-muted);
     font-size: 0.78rem;
     font-weight: 700;
   }

@@ -126,8 +126,8 @@
   .index-section {
     overflow: hidden;
     border: 1px solid var(--line);
-    border-radius: 8px;
-    background: #fff;
+    border-radius: var(--radius-lg);
+    background: var(--panel-bg);
     box-shadow: var(--panel-shadow);
   }
 
@@ -185,9 +185,9 @@
     gap: 8px;
     min-width: 120px;
     padding: 10px 14px;
-    border-radius: 8px;
-    border: 1px solid #dce9e6;
-    background: #f6fbfa;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--line);
+    background: var(--surface-subtle);
   }
   .stats-grid > div svg {
     color: var(--brand);
@@ -199,8 +199,8 @@
   .stats-grid > button {
     padding: 8px;
     border: 1px solid var(--line);
-    border-radius: 7px;
-    background: #fff;
+    border-radius: var(--radius-lg);
+    background: var(--panel-bg);
     cursor: pointer;
   }
 
@@ -213,7 +213,7 @@
   .indexed-files {
     overflow: hidden;
     border: 1px solid var(--line);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
   }
   .files-toggle {
     padding: 10px 12px;
@@ -233,7 +233,7 @@
     display: grid;
     gap: 6px;
     padding: 10px 12px;
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 1px solid var(--line);
   }
   .file-item > div {
     display: flex;
@@ -256,13 +256,13 @@
     gap: 5px;
     padding: 8px 13px;
     border: 1px solid var(--brand);
-    border-radius: 7px;
-    background: #fff;
+    border-radius: var(--radius-lg);
+    background: var(--panel-bg);
     color: var(--brand-strong);
     cursor: pointer;
   }
   .index-actions .primary {
-    background: var(--brand);
-    color: #fff;
+    background: var(--brand-solid);
+    color: var(--on-solid);
   }
 </style>

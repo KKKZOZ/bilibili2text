@@ -178,12 +178,12 @@
             {{
               detail.fancy_html_status === 'running'
                 ? '生成中...'
-                : 'Fancy HTML'
+                : '生成阅读报告'
             }}
           </button>
         </div>
         <p v-if="detail.fancy_html_status === 'running'" class="hint">
-          Fancy HTML 正在后台生成，离开当前页面后稍后再回来，状态仍会保留。
+          阅读报告正在后台生成，离开当前页面后稍后再回来，状态仍会保留。
         </p>
         <InlineNotice v-if="ragConnectionNotice" kind="warning" compact>{{
           ragConnectionNotice
@@ -308,8 +308,8 @@
   .history-detail {
     padding: 28px;
     border: 1px solid var(--line);
-    border-radius: 8px;
-    background: #fff;
+    border-radius: var(--radius-lg);
+    background: var(--panel-bg);
     box-shadow: var(--panel-shadow);
   }
   header {
@@ -368,10 +368,10 @@
     gap: 6px;
     min-height: 36px;
     padding: 0 14px;
-    border: 1px solid #fecaca;
-    border-radius: 8px;
-    background: #fef2f2;
-    color: #dc2626;
+    border: 1px solid var(--danger-line);
+    border-radius: var(--radius-lg);
+    background: var(--danger-soft);
+    color: var(--danger);
     font-weight: 600;
     cursor: pointer;
   }
@@ -381,8 +381,8 @@
     margin-bottom: 22px;
     padding: 18px 20px;
     border: 1px solid var(--line);
-    border-radius: 8px;
-    background: rgba(255, 255, 255, 0.72);
+    border-radius: var(--radius-lg);
+    background: var(--panel-bg);
   }
   .rag-preview-head {
     display: flex;
@@ -395,7 +395,7 @@
     margin: 0;
   }
   .rag-preview-head p {
-    color: #0284c7;
+    color: var(--brand-strong);
     font-size: 0.72rem;
     font-weight: 800;
   }
@@ -408,10 +408,10 @@
     align-items: center;
     gap: 5px;
     padding: 6px 11px;
-    border: 1px solid #fdba74;
-    border-radius: 7px;
-    background: #fff;
-    color: #c2410c;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    background: var(--panel-bg);
+    color: var(--text-soft);
     font-weight: 700;
     cursor: pointer;
   }
@@ -440,15 +440,15 @@
   .rag-markdown :deep(blockquote) {
     margin-left: 0;
     padding: 10px 14px;
-    border-left: 3px solid rgba(13, 148, 136, 0.28);
+    border-left: 3px solid var(--brand-line);
     background: var(--brand-soft);
   }
   .rag-markdown :deep(pre) {
     overflow: auto;
     padding: 12px 14px;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: #0f172a;
-    color: #e2e8f0;
+    color: var(--line);
   }
   .rag-markdown :deep(table) {
     display: block;
@@ -459,7 +459,7 @@
   .rag-markdown :deep(th),
   .rag-markdown :deep(td) {
     padding: 9px;
-    border: 1px solid #e2e8f0;
+    border: 1px solid var(--line);
   }
   .rag-sources {
     display: grid;
@@ -474,7 +474,7 @@
   }
   .rag-sources h3 b {
     padding: 2px 6px;
-    border-radius: 99px;
+    border-radius: var(--radius-pill);
     background: var(--brand-soft);
     color: var(--brand-strong);
     font-size: 0.72rem;
@@ -489,7 +489,7 @@
     gap: 6px;
     padding: 12px;
     border: 1px solid var(--line);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     color: inherit;
     text-decoration: none;
   }
@@ -503,9 +503,9 @@
     place-items: center;
     width: 23px;
     height: 23px;
-    border-radius: 5px;
+    border-radius: var(--radius-md);
     background: #0f172a;
-    color: #fff;
+    color: var(--on-solid);
     font-size: 0.72rem;
   }
   .rag-sources a span {
@@ -536,8 +536,8 @@
   .detail-skeleton span,
   .detail-skeleton div {
     height: 14px;
-    border-radius: 6px;
-    background: #e2e8f0;
+    border-radius: var(--radius-md);
+    background: var(--line);
     animation: pulse 1s ease-in-out infinite alternate;
   }
   .detail-skeleton span:nth-child(2) {

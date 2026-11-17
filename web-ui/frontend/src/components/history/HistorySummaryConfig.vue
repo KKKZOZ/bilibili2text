@@ -98,7 +98,7 @@
   }
 
   .history-regenerate-head > p:first-child {
-    color: #0284c7;
+    color: var(--info-strong);
     font-size: 0.72rem;
     font-weight: 800;
     text-transform: uppercase;
@@ -109,7 +109,7 @@
   }
 
   .history-regenerate-head > p:last-child {
-    color: #64748b;
+    color: var(--text-muted);
     font-size: 0.82rem;
     line-height: 1.5;
   }

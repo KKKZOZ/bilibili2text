@@ -1,7 +1,11 @@
 <script setup>
   import { computed } from 'vue'
-  import { ExternalLink, Video } from 'lucide-vue-next'
-  import { resourceUrl } from '../../utils/fileUtils'
+  import { ExternalLink, Podcast, Video } from 'lucide-vue-next'
+  import {
+    resourceDisplayLabel,
+    resourcePlatformInfo,
+    resourceUrl
+  } from '../../utils/fileUtils'
 
   const props = defineProps({
     job: { type: Object, required: true },
@@ -12,6 +16,22 @@
 
   const bvid = computed(() => props.job.bvid || props.sourceBvid || '')
   const videoUrl = computed(() => resourceUrl(bvid.value) || '')
+  const platform = computed(() => resourcePlatformInfo(bvid.value))
+  const isPodcast = computed(() =>
+    ['xiaoyuzhou', 'ximalaya'].includes(platform.value.key)
+  )
+  // Field names follow the source platform instead of assuming Bilibili.
+  const labels = computed(() => ({
+    heading: isPodcast.value ? '节目信息' : '视频信息',
+    id: platform.value.key === 'bilibili' ? 'BV 号' : '来源',
+    author: platform.value.authorLabel
+  }))
+  const resourceLabel = computed(() =>
+    bvid.value ? resourceDisplayLabel(bvid.value) : ''
+  )
+  const hasCategory = computed(() =>
+    Boolean(props.job.parent_tname || props.job.tname)
+  )
 
   const formatDuration = (seconds) => {
     const total = Math.max(0, Number.parseInt(seconds, 10) || 0)
@@ -69,32 +89,42 @@
 <template>
   <article class="panel video-metadata-panel">
     <header>
-      <Video :size="17" />
-      <h2>视频信息</h2>
+      <Podcast v-if="isPodcast" :size="17" aria-hidden="true" />
+      <Video v-else :size="17" aria-hidden="true" />
+      <h2>{{ labels.heading }}</h2>
     </header>
     <dl>
       <div class="title-row">
-        <dt>视频标题</dt>
+        <dt>标题</dt>
         <dd>{{ job.title || '等待获取' }}</dd>
       </div>
       <div>
-        <dt>BV 号</dt>
+        <dt>{{ labels.id }}</dt>
         <dd>
-          <a v-if="videoUrl" :href="videoUrl" target="_blank" rel="noopener">
-            {{ bvid }}<ExternalLink :size="12" />
+          <a
+            v-if="videoUrl"
+            :href="videoUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {{ resourceLabel }}<ExternalLink :size="12" aria-hidden="true" />
           </a>
-          <span v-else>{{ bvid || '—' }}</span>
+          <span v-else>{{ resourceLabel || '—' }}</span>
         </dd>
       </div>
       <div>
-        <dt>视频长度</dt>
+        <dt>时长</dt>
         <dd>{{ formatDuration(job.duration_seconds) }}</dd>
       </div>
       <div>
-        <dt>UP 主</dt>
+        <dt>{{ labels.author }}</dt>
         <dd>{{ job.author || '—' }}</dd>
       </div>
-      <div>
+      <div v-if="job.pubdate">
+        <dt>发布时间</dt>
+        <dd>{{ job.pubdate }}</dd>
+      </div>
+      <div v-if="hasCategory || platform.key === 'bilibili'">
         <dt>分区</dt>
         <dd>{{ category }}</dd>
       </div>
@@ -140,7 +170,7 @@
     gap: 12px;
     align-items: center;
     min-height: 39px;
-    border-bottom: 1px solid #edf0f3;
+    border-bottom: 1px solid var(--line-soft);
   }
 
   dl > div:last-child {
@@ -161,7 +191,7 @@
     min-width: 0;
     overflow: hidden;
     color: var(--text-main);
-    font-weight: 650;
+    font-weight: 600;
     text-align: right;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -190,7 +220,7 @@
   }
 
   a {
-    color: #0369a1;
+    color: var(--info-strong);
     text-decoration: none;
   }
 
@@ -199,23 +229,23 @@
     height: 7px;
     flex: 0 0 auto;
     border-radius: 50%;
-    background: #94a3b8;
+    background: var(--text-faint);
   }
 
   .tone-pending > span {
-    background: #f59e0b;
+    background: var(--warning-dot);
   }
 
   .tone-running > span {
-    background: #0891b2;
+    background: var(--info);
   }
 
   .tone-success > span {
-    background: #16a34a;
+    background: var(--success-dot);
   }
 
   .tone-error > span {
-    background: #dc2626;
+    background: var(--danger);
   }
 
   @media (max-width: 980px) {

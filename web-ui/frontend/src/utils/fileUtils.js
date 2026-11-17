@@ -109,9 +109,9 @@ export function buildArtifactDisplayName(artifact, options = {}) {
         .replace(/^rag_\d{8}_\d{6}_/, '')
         .replace(/_fancy$/i, '')
       if (questionPart) {
-        return `${questionPart.replace(/_/g, ' ')} FancyHTML`
+        return `${questionPart.replace(/_/g, ' ')}_阅读报告`
       }
-      return '知识库查询 FancyHTML'
+      return '知识库查询_阅读报告'
     }
     return `${bvid}_阅读报告`
   }
@@ -223,7 +223,7 @@ export function resourcePlatformInfo(resourceId) {
       key: 'bilibili',
       name: 'Bilibili',
       id: raw,
-      authorLabel: 'UP主',
+      authorLabel: 'UP 主',
       url: bilibiliVideoUrl(raw)
     }
   }

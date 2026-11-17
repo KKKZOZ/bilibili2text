@@ -1,8 +1,9 @@
 <script setup>
   import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
   import { useRoute, useRouter } from 'vue-router'
-  import { RefreshCw, Search, Trash2 } from 'lucide-vue-next'
+  import { RefreshCw, Search, Trash2, X } from 'lucide-vue-next'
   import ConfirmDialog from './common/ConfirmDialog.vue'
+  import InlineNotice from './common/InlineNotice.vue'
   import HistoryFilters from './history/HistoryFilters.vue'
   import HistoryDetail from './history/HistoryDetail.vue'
   import HistoryList from './history/HistoryList.vue'
@@ -16,6 +17,7 @@
     summaryApi
   } from '../api'
   import { useJobStore } from '../composables/useJobStore'
+  import { setPageTitleDetail } from '../composables/usePageTitle'
   import { usePublicCredentials } from '../composables/usePublicCredentials'
   import { useRuntimeFeatures } from '../composables/useRuntimeFeatures'
   import {
@@ -63,7 +65,11 @@
   const historyAuthorOptions = ref([])
   const historyFiltersLoading = ref(false)
   const historyLoading = ref(false)
+  // historyError: the list itself failed to load (replaces the list).
+  // actionError: a single action failed (shown above the list, list stays).
   const historyError = ref('')
+  const actionError = ref('')
+  const deleteError = ref('')
   const historyDetail = ref(null)
   const historyDetailLoading = ref(false)
   const showHistoryDetail = ref(false)
@@ -95,10 +101,11 @@
   } = useJobStore()
 
   const cancelActiveJob = async (jobId) => {
+    actionError.value = ''
     try {
       await cancelTrackedJob(jobId)
     } catch (err) {
-      historyError.value = err instanceof Error ? err.message : '取消任务失败'
+      actionError.value = err instanceof Error ? err.message : '取消任务失败'
     }
   }
 
@@ -162,6 +169,14 @@
     () => historyLoading.value && historyItems.value.length === 0
   )
   const routeRunId = computed(() => String(route.params.runId || ''))
+  const hasActiveFilters = computed(
+    () =>
+      historySearch.value.trim() !== '' ||
+      historyPlatforms.value.length +
+        historyCategoryTids.value.length +
+        historyAuthors.value.length >
+        0
+  )
 
   const historyDetailDownloadRows = computed(() => {
     const detail = historyDetail.value
@@ -281,6 +296,7 @@
       return
     }
     const requestVersion = ++historyDetailRequestVersion
+    actionError.value = ''
     historyDetailLoading.value = true
     showHistoryDetail.value = true
     historyDetail.value = null
@@ -313,7 +329,7 @@
       }
     } catch (err) {
       if (requestVersion !== historyDetailRequestVersion) return
-      historyError.value = err instanceof Error ? err.message : '获取详情失败'
+      actionError.value = err instanceof Error ? err.message : '获取详情失败'
       showHistoryDetail.value = false
       stopRagFancyHtmlEventStream()
       stopRagFancyHtmlPolling()
@@ -448,7 +464,7 @@
       },
       onDeleted: () => {
         if (historyDetail.value?.run_id !== runId) return
-        historyError.value = '转录记录不存在'
+        actionError.value = '转录记录不存在'
         showHistoryDetail.value = false
       },
       onFallback: () => {
@@ -522,7 +538,7 @@
       }
     } catch (err) {
       ragFancyHtmlError.value =
-        err instanceof Error ? err.message : '生成 Fancy HTML 失败'
+        err instanceof Error ? err.message : '生成阅读报告失败'
     } finally {
       ragFancyHtmlGenerating.value = false
     }
@@ -663,6 +679,19 @@
     if (normalizedAuthor) updateHistoryAuthors([normalizedAuthor])
   }
 
+  const clearHistorySearch = () => {
+    if (searchTimer) clearTimeout(searchTimer)
+    historySearch.value = ''
+    historyPage.value = 1
+    loadHistory()
+  }
+
+  const clearAllHistoryFilters = () => {
+    if (searchTimer) clearTimeout(searchTimer)
+    historySearch.value = ''
+    resetHistoryFilters()
+  }
+
   const resetHistoryFilters = () => {
     historyPlatforms.value = []
     historyCategoryTids.value = []
@@ -689,10 +718,12 @@
     if (!allowDelete.value) {
       return
     }
+    deleteError.value = ''
     deleteConfirmRunId.value = runId
   }
 
   const cancelDelete = () => {
+    deleteError.value = ''
     deleteConfirmRunId.value = null
   }
 
@@ -701,6 +732,7 @@
       return
     }
     deleteLoading.value = true
+    deleteError.value = ''
     try {
       await historyApi.deleteRun(runId)
       // Close detail view if currently viewing deleted item
@@ -708,12 +740,14 @@
         showHistoryDetail.value = false
         historyDetail.value = null
       }
+      deleteConfirmRunId.value = null
+      if (routeRunId.value === runId) router.replace('/history')
       // Reload list
       await loadHistory()
       await loadHistoryFilters()
-      deleteConfirmRunId.value = null
     } catch (err) {
-      historyError.value = err instanceof Error ? err.message : '删除失败'
+      // Shown inside the confirm dialog, which stays open for a retry.
+      deleteError.value = err instanceof Error ? err.message : '删除失败'
     } finally {
       deleteLoading.value = false
     }
@@ -733,7 +767,7 @@
   const onHistoryArtifactGenerated = (detail) => {
     historyDetail.value = detail
     regenerateError.value = ''
-    regenerateSuccess.value = 'Fancy HTML 已生成并归档。'
+    regenerateSuccess.value = '阅读报告已生成并归档。'
     if (detail?.record_type === 'rag_query') {
       ragFancyHtmlError.value = detail.fancy_html_error || ''
       syncRagFancyHtmlUpdates()
@@ -752,6 +786,12 @@
       loadHistoryDetail(routeRunId.value)
     }
   })
+
+  watch(
+    () => (showHistoryDetail.value ? historyDetail.value?.title || '' : ''),
+    (title) => setPageTitleDetail(title),
+    { immediate: true }
+  )
 
   watch(routeRunId, (runId) => {
     if (runId) {
@@ -789,6 +829,8 @@
   })
 
   onBeforeUnmount(() => {
+    setPageTitleDetail('')
+    if (searchTimer) clearTimeout(searchTimer)
     historyDetailRequestVersion += 1
     stopRagFancyHtmlEventStream()
     stopRagFancyHtmlPolling()
@@ -841,15 +883,40 @@
     <article v-else class="history-workspace">
       <header class="history-list-header">
         <div class="history-search-row">
-          <Search :size="16" />
+          <Search :size="16" aria-hidden="true" />
           <input
             v-model="historySearch"
-            type="text"
-            placeholder="搜索标题、BV 号或 UP 主..."
+            type="search"
+            aria-label="搜索历史记录"
+            placeholder="搜索标题、资源 ID 或作者..."
             @input="onSearchInput"
           />
+          <button
+            v-if="historySearch"
+            type="button"
+            class="history-search-clear"
+            aria-label="清除搜索"
+            title="清除搜索"
+            @click="clearHistorySearch"
+          >
+            <X :size="14" aria-hidden="true" />
+          </button>
         </div>
       </header>
+
+      <InlineNotice v-if="actionError" class="history-action-error">
+        {{ actionError }}
+        <template #action>
+          <button
+            type="button"
+            class="notice-dismiss"
+            aria-label="关闭提示"
+            @click="actionError = ''"
+          >
+            <X :size="14" aria-hidden="true" />
+          </button>
+        </template>
+      </InlineNotice>
 
       <ActiveJobsPanel
         :jobs="activeJobs"
@@ -878,9 +945,13 @@
       <HistoryList
         :items="historyItems"
         :loading="showHistorySkeleton"
+        :refreshing="historyLoading"
         :error="historyError"
+        :filtered="hasActiveFilters"
         :allow-delete="allowDelete"
         :delete-loading="deleteLoading"
+        @retry="loadHistory"
+        @clear-filters="clearAllHistoryFilters"
         @open="openHistoryDetail"
         @delete="confirmDelete"
         @filter-category="filterHistoryByCategory"
@@ -924,6 +995,7 @@
       @confirm="deleteHistory(deleteConfirmRunId)"
     >
       <p>确定要删除这条历史记录吗？此操作将删除所有相关文件，且无法恢复。</p>
+      <InlineNotice v-if="deleteError" compact>{{ deleteError }}</InlineNotice>
       <template #confirm-icon><Trash2 :size="16" /></template>
     </ConfirmDialog>
   </section>
@@ -950,15 +1022,15 @@
     width: min(320px, 100%);
     min-height: 40px;
     padding: 0 12px;
-    border: 1px solid #cbd5e1;
-    border-radius: 6px;
-    background: #fff;
-    color: #64748b;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-md);
+    background: var(--panel-bg);
+    color: var(--text-muted);
   }
 
   .history-search-row:focus-within {
     border-color: var(--brand);
-    box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.12);
+    box-shadow: 0 0 0 3px var(--focus-ring);
   }
 
   .history-search-row input {
@@ -969,6 +1041,45 @@
     background: transparent;
     color: var(--text-main);
     font: inherit;
+    appearance: none;
+  }
+
+  .history-search-row input::-webkit-search-cancel-button {
+    display: none;
+  }
+
+  .history-search-clear,
+  .notice-dismiss {
+    display: inline-grid;
+    flex: 0 0 auto;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    place-items: center;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+  }
+
+  .history-search-clear:hover,
+  .notice-dismiss:hover {
+    background: var(--surface-muted);
+  }
+
+  .history-search-clear:focus-visible,
+  .notice-dismiss:focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 1px;
+  }
+
+  .history-action-error {
+    margin: 0 0 12px;
+  }
+
+  .notice-dismiss {
+    margin-left: auto;
   }
 
   @media (max-width: 640px) {
